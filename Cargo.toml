@@ -1,0 +1,15 @@
+[package]
+
+name = "rust_hero"
+version = "0.0.1"
+authors = ["Michael Auracher <michael.auracher@gmail.com>"]
+
+[profile.dev]
+opt-level = 0
+debug = true
+rpath = false
+
+[profile.release]
+opt-level = 2
+debug = false
+rpath = false

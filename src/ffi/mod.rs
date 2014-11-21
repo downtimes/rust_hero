@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 pub use libc::{c_int, c_uint, c_long, c_void};
-pub use libc::{HANDLE, LPCSTR, WORD, DWORD, LPVOID, BOOL, LONG, BYTE};
+pub use libc::{HANDLE, LPCSTR, WORD, DWORD, LPVOID, BOOL, LONG, BYTE, SIZE_T};
 pub use std::default::Default;
 
 #[cfg(target_arch = "x86")]
@@ -47,7 +47,7 @@ pub const WM_SIZE: UINT = 0x0005;
 pub const WM_DESTROY: UINT = 0x0002;
 pub const WM_PAINT: UINT = 0x000F;
 pub const WM_ACTIVATEAPP: UINT = 0x001C;
-
+pub const WM_QUIT: UINT = 0x0012;
 
 pub const DIB_RGB_COLORS: UINT = 0;
 
@@ -67,6 +67,13 @@ pub const WS_VISIBLE: DWORD = 0x10000000;
 
 pub const BLACKNESS: DWORD = 0x00000042;
 pub const WHITENESS: DWORD = 0x00FF0062;
+
+pub const MEM_COMMIT: DWORD = 0x00001000;
+pub const MEM_RELEASE: DWORD = 0x00008000;
+
+pub const PAGE_READWRITE: DWORD = 0x00000004;
+
+pub const PM_REMOVE: DWORD = 0x00000001;
 
 #[allow(overflowing_literals)]
 pub const CW_USEDEFAULT: c_int = 0x80000000;
@@ -188,10 +195,19 @@ extern "system" {
                           style: DWORD, x: c_int, y: c_int, width: c_int,
                           height: c_int, parent: HWND, menu: HMENU,
                           instance: HINSTANCE, param: LPVOID) -> HWND;
-    pub fn GetMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: UINT, msgFilterMax: UINT) -> BOOL;
+    pub fn GetMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: UINT,
+                       msgFilterMax: UINT) -> BOOL;
+    pub fn PeekMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: UINT,
+                        msgFIlterMax: UINT, removeMsg: UINT) -> BOOL;
     pub fn TranslateMessage(msg: *const MSG) -> BOOL;
     pub fn DispatchMessageA(msg: *const MSG) -> LRESULT;
+    pub fn VirtualAlloc(lpAddress: LPVOID, dwSize: SIZE_T, 
+                        flAllocationType: DWORD, flProtect: DWORD) -> LPVOID;
+    pub fn VirtualFree(lpAddress: LPVOID, dwSize: SIZE_T, 
+                       dwFreeType: DWORD) -> BOOL;
     pub fn GetClientRect(hwnd: HWND, lpRect: LPRECT) -> BOOL;
+    pub fn ReleaseDC(hWnd: HWND, hDC : HDC) -> c_int;
+    pub fn GetDC(hWnd: HWND) -> HDC;
 }
 
 // gdi32
@@ -211,6 +227,5 @@ extern "system" {
                         dwRop: DWORD) -> c_int;
     pub fn DeleteObject(hObject: HGDIOBJ) -> BOOL;
     pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
-
 }
 

@@ -49,6 +49,10 @@ pub const WM_PAINT: UINT = 0x000F;
 pub const WM_ACTIVATEAPP: UINT = 0x001C;
 pub const WM_QUIT: UINT = 0x0012;
 
+pub const CS_OWNDC: UINT = 0x0020;
+pub const CS_HREDRAW: UINT = 0x0002;
+pub const CS_VREDRAW: UINT = 0x0001;
+
 pub const DIB_RGB_COLORS: UINT = 0;
 
 pub const BI_RGB: DWORD = 0;

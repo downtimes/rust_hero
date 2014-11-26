@@ -4,7 +4,8 @@
 #![allow(dead_code)]
 
 pub use libc::{c_int, c_uint, c_long, c_void};
-pub use libc::{HANDLE, LPCSTR, WORD, DWORD, LPVOID, BOOL, LONG, BYTE, SIZE_T};
+pub use libc::{HANDLE, LPCSTR, WORD, DWORD};
+pub use libc::{LPVOID, BOOL, LONG, BYTE, SIZE_T};
 pub use std::default::Default;
 
 #[cfg(target_arch = "x86")]
@@ -38,8 +39,11 @@ pub type LPPAINTSTRUCT = *mut PAINTSTRUCT;
 pub type HDC = HANDLE;
 pub type LPRECT = *mut RECT;
 pub type HGDIOBJ = HANDLE;
+pub type SHORT = i16;
 
 type WNDPROC = extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT;
+pub type XInputGetState_t = extern "system" fn(DWORD, *mut XINPUT_STATE) -> DWORD;
+pub type XInputSetState_t = extern "system" fn(DWORD, *mut XINPUT_VIBRATION) -> DWORD;
 
 
 pub const WM_CLOSE: UINT = 0x0010;
@@ -48,6 +52,17 @@ pub const WM_DESTROY: UINT = 0x0002;
 pub const WM_PAINT: UINT = 0x000F;
 pub const WM_ACTIVATEAPP: UINT = 0x001C;
 pub const WM_QUIT: UINT = 0x0012;
+pub const WM_KEYDOWN: UINT = 0x0100;
+pub const WM_KEYUP: UINT = 0x0101;
+pub const WM_SYSKEYDOWN: UINT = 0x0104;
+pub const WM_SYSKEYUP: UINT = 0x0105;
+
+pub const VK_ESCAPE: u8 = 0x1Bu8;
+pub const VK_SPACE: u8 = 0x20u8;
+pub const VK_LEFT: u8 = 0x25u8;
+pub const VK_UP: u8 = 0x26u8;
+pub const VK_RIGHT: u8 = 0x27u8;
+pub const VK_DOWN: u8 = 0x28u8;
 
 pub const CS_OWNDC: UINT = 0x0020;
 pub const CS_HREDRAW: UINT = 0x0002;
@@ -79,8 +94,75 @@ pub const PAGE_READWRITE: DWORD = 0x00000004;
 
 pub const PM_REMOVE: DWORD = 0x00000001;
 
+pub const XINPUT_GAMEPAD_DPAD_UP: WORD = 0x0001;
+pub const XINPUT_GAMEPAD_DPAD_DOWN: WORD = 0x0002;
+pub const XINPUT_GAMEPAD_DPAD_LEFT: WORD = 0x0004;
+pub const XINPUT_GAMEPAD_DPAD_RIGHT: WORD = 0x0008;
+pub const XINPUT_GAMEPAD_START: WORD = 0x0010;
+pub const XINPUT_GAMEPAD_BACK: WORD = 0x0020;
+pub const XINPUT_GAMEPAD_LEFT_SHOULDER: WORD = 0x0100;
+pub const XINPUT_GAMEPAD_RIGHT_SHOULDER: WORD = 0x0200;
+pub const XINPUT_GAMEPAD_A: WORD = 0x1000;
+pub const XINPUT_GAMEPAD_B: WORD = 0x2000;
+pub const XINPUT_GAMEPAD_X: WORD = 0x4000;
+pub const XINPUT_GAMEPAD_Y: WORD = 0x8000;
+
+pub const XUSER_MAX_COUNT: DWORD = 4;
+
+pub const ERROR_SUCCESS: DWORD = 0;
+pub const ERROR_DEVICE_NOT_CONNECTED: DWORD = 1167;
+
+
 #[allow(overflowing_literals)]
 pub const CW_USEDEFAULT: c_int = 0x80000000;
+
+#[repr(C)]
+pub struct XINPUT_GAMEPAD {
+    pub wButtons: WORD,
+    pub bLeftTrigger: BYTE,
+    pub bRightTrigger: BYTE,
+    pub sThumbLX: SHORT,
+    pub sThumbLY: SHORT,
+    pub sThumbRX: SHORT,
+    pub sThumbRY: SHORT,
+}
+
+impl Default for XINPUT_GAMEPAD {
+    fn default() -> XINPUT_GAMEPAD {
+        XINPUT_GAMEPAD { 
+            wButtons: 0,
+            bLeftTrigger: 0,
+            bRightTrigger: 0,
+            sThumbLX: 0,
+            sThumbLY: 0,
+            sThumbRX: 0,
+            sThumbRY: 0,
+        }
+    }
+}
+
+#[repr(C)]
+pub struct XINPUT_STATE {
+    pub dwPacketNumber: DWORD,
+    pub Gamepad: XINPUT_GAMEPAD,
+}
+
+
+impl Default for XINPUT_STATE {
+    fn default() -> XINPUT_STATE {
+        XINPUT_STATE {
+            dwPacketNumber: 0,
+            Gamepad: Default::default(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct XINPUT_VIBRATION {
+    pub wLeftMotorSpeed: WORD,
+    pub wRightMotorSpeed: WORD,
+}
+
 
 #[repr(C)]
 pub struct WNDCLASS {
@@ -212,6 +294,8 @@ extern "system" {
     pub fn GetClientRect(hwnd: HWND, lpRect: LPRECT) -> BOOL;
     pub fn ReleaseDC(hWnd: HWND, hDC : HDC) -> c_int;
     pub fn GetDC(hWnd: HWND) -> HDC;
+    pub fn LoadLibraryA(lpFileName: LPCSTR) -> HMODULE;
+    pub fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> *const c_void;
 }
 
 // gdi32

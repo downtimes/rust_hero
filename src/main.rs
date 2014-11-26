@@ -2,6 +2,7 @@
 extern crate libc;
 
 use std::ptr;
+use std::mem;
 use ffi::*;
 
 mod ffi;
@@ -42,6 +43,41 @@ struct Backbuffer {
     width: c_int,
     pitch: c_int,
 }
+
+//Stub functions if none of the XInput libraries could be loaded!
+extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
+extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
+
+
+fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
+
+    let xlib_first_name = "xinput1_4.dll".to_c_str();
+    let xlib_second_name = "xinput1_3.dll".to_c_str();
+    let xlib_third_name = "xinput9_1_0.dll".to_c_str();
+
+    let mut module = unsafe { LoadLibraryA( xlib_first_name.as_ptr() ) };
+    
+    if module.is_null() {
+        module = unsafe { LoadLibraryA( xlib_second_name.as_ptr() ) };
+        if module.is_null() {
+            module = unsafe { LoadLibraryA( xlib_third_name.as_ptr() ) };
+        }
+    }
+
+    if module.is_not_null() {
+        let get_state_name = "XInputGetState".to_c_str();
+        let set_state_name = "XInputSetState".to_c_str();
+
+        let xinput_get_state = unsafe { GetProcAddress(module, get_state_name.as_ptr() ) };
+        let xinput_set_state = unsafe { GetProcAddress(module, set_state_name.as_ptr() ) };
+
+        unsafe { (mem::transmute(xinput_get_state), 
+                  mem::transmute(xinput_set_state)) }
+    } else {
+        (xinput_get_state_stub, xinput_set_state_stub)
+    }
+}
+
 
 fn get_client_dimensions(window: HWND) -> Result<(c_int, c_int), &'static str> {
      let mut client_rect = Default::default();
@@ -136,29 +172,70 @@ extern "system" fn process_messages(window: HWND, message: UINT,
     match message {
         WM_DESTROY => unsafe {running = false},
         WM_CLOSE => unsafe {running = false},
-        WM_PAINT => { let mut paint = Default::default(); 
-                            
-                      let context = unsafe { BeginPaint(window, &mut paint) };
-                      if context.is_null() {
-                          panic!("BeginPaint failed!");
-                      }
-                      
-                      let (width, height) = get_client_dimensions(window).unwrap();
-                      unsafe { 
-                          blit_buffer_to_window(context, &back_buffer, width, height);
-                          EndPaint(window, &paint);
-                      }
-                    },
+
+        WM_SYSKEYDOWN |
+        WM_SYSKEYUP   |
+        WM_KEYDOWN    |
+        WM_KEYUP       => {
+            let vk_code = wparam as u8;
+            let was_down = (lparam & (1 << 30)) != 0;
+            let is_down = (lparam & (1 << 31)) == 0;
+
+            //Rust currently doesn't allow casts in matches so we have to
+            //conform to one type which is u8 here
+            const W: u8 = 'W' as u8;
+            const A: u8 = 'A' as u8;
+            const S: u8 = 'S' as u8;
+            const D: u8 = 'D' as u8;
+            const Q: u8 = 'Q' as u8;
+            const E: u8 = 'E' as u8;
+
+            if was_down != is_down {
+                match vk_code {
+                    VK_UP => (),
+                    VK_DOWN => (),
+                    VK_LEFT => (),
+                    VK_RIGHT => (),
+                    W => (),
+                    A => (),
+                    S => (),
+                    D => (),
+                    E => (),
+                    Q => (),
+                    VK_ESCAPE => (),
+                    VK_SPACE => (),
+                    _ => (),
+                }
+            }
+        },
+
+
+        WM_PAINT => { 
+            let mut paint = Default::default(); 
+
+            let context = unsafe { BeginPaint(window, &mut paint) };
+            if context.is_null() {
+                panic!("BeginPaint failed!");
+            }
+
+            let (width, height) = get_client_dimensions(window).unwrap();
+            unsafe { 
+                blit_buffer_to_window(context, &back_buffer, width, height);
+                EndPaint(window, &paint);
+            }
+        },
 
         _ => unsafe { 
                 res = DefWindowProcA(window, message, wparam, lparam);
-             },
+        },
     }
     
     res
 }
 
 fn main() {
+    let (XInputGetState, XInputSetState) = load_xinput_functions();
+    
     let module_handle = unsafe { GetModuleHandleA(ptr::null()) };
     if module_handle.is_null() {
         panic!("Handle to our executable could not be obtained!");
@@ -219,13 +296,47 @@ fn main() {
                 DispatchMessageA(&msg);
             }
 
+            for controller in range(0, XUSER_MAX_COUNT) {
+                let mut state = Default::default();
+                let res: u32 = XInputGetState(controller, &mut state);
+                match res {
+                    //Case the Controller is connected and we got data
+                    ERROR_SUCCESS => {
+                        let gamepad = &state.Gamepad;
+
+                        let dpad_up = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0;
+                        let dpad_down = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
+                        let dpad_left = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
+                        let dpad_right = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
+                        let start = (gamepad.wButtons & XINPUT_GAMEPAD_START) != 0;
+                        let back = (gamepad.wButtons & XINPUT_GAMEPAD_BACK) != 0;
+                        let left_shoulder = (gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
+                        let right_shoulder = (gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
+                        let abutton = (gamepad.wButtons & XINPUT_GAMEPAD_A) != 0;
+                        let bbutton = (gamepad.wButtons & XINPUT_GAMEPAD_B) != 0;
+                        let xbutton = (gamepad.wButtons & XINPUT_GAMEPAD_X) != 0;
+                        let ybutton = (gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0;
+
+                        let stick_x = gamepad.sThumbLX;
+                        let stick_y = gamepad.sThumbLY;
+
+                        green_offset -= stick_y as c_int >> 12;
+                        blue_offset += stick_x as c_int >> 12;
+                    },
+
+                    //Case the Controller is not connected
+                    ERROR_DEVICE_NOT_CONNECTED => (),
+
+
+                    //Some arbitrary Error was found
+                    _ => (),
+                }
+            }
+
             render_weird_gradient(&back_buffer, green_offset, blue_offset);
 
             let (width, height) = get_client_dimensions(window).unwrap();
             blit_buffer_to_window(context, &back_buffer, width, height);
-
-            green_offset += 1;
-            blue_offset += 2;
         }
     }
 }

@@ -11,7 +11,8 @@ mod ffi;
 
 
 //TODO:These are a global for now needs to cleanup later on by packing them in a window
-//struct. See SFML Source code for a solution to the "global problem" 
+//struct. Need to be global at the Moment because we also need them in the callback from
+//Windows. See SFML Source code for a solution to the "global problem" 
 static mut running: bool = false;
 static mut back_buffer: Backbuffer = 
                         Backbuffer { info: BITMAPINFO {
@@ -36,12 +37,17 @@ static mut back_buffer: Backbuffer =
                                      pitch: 0 as c_int,
                                     };
 
+//Graphics System constants
 const BYTES_PER_PIXEL: c_int = 4;
 
 //Sound System constants
 const CHANNELS: WORD = 2;
 const BITS_PER_CHANNEL: WORD = 16;
 const SAMPLES_PER_SECOND: DWORD = 48000;
+const TONE_FREQUENCY: DWORD = 261;
+const SQUARE_WAVE_PERIOD: DWORD = SAMPLES_PER_SECOND/TONE_FREQUENCY;
+const BYTES_PER_SAMPLE: DWORD = 4;
+const VOLUME: i16 = 3000;
 
 struct Backbuffer {
     info: BITMAPINFO,
@@ -54,6 +60,86 @@ struct Backbuffer {
 //Stub functions if none of the XInput libraries could be loaded!
 extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
 extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
+
+
+//TODO: instead of giving the buffer_size in here extract it directly from sound_buffer
+//GetCaps method returns a DSBCAPS which in turn contains the buffer size
+fn generate_sound(sound_buffer: *mut IDirectSoundBuffer, buffer_size: DWORD, 
+                  sample_index: &mut DWORD) {
+    let mut region1: *mut c_void = ptr::null_mut();
+    let mut region2: *mut c_void = ptr::null_mut();
+    let mut region1_size: DWORD = 0; 
+    let mut region2_size: DWORD = 0; 
+
+    let mut write_cursor: DWORD = 0;
+    let mut play_cursor: DWORD = 0;
+    let byte_to_lock: DWORD = *sample_index * BYTES_PER_SAMPLE % buffer_size; 
+
+    unsafe {
+        
+        if SUCCEEDED(((*(*sound_buffer).lpVtbl).GetCurrentPosition)
+                            (sound_buffer, &mut play_cursor, &mut write_cursor)) {
+
+            //TODO: In release mode we collide with the cursor. Fast Fixup
+            //is to substract one BYTES_PER_SAMPLE from this value!
+            let bytes_to_write = if byte_to_lock >= play_cursor {
+                                     buffer_size - byte_to_lock + play_cursor
+                                 } else {
+                                     play_cursor - byte_to_lock
+                                 };
+            ((*(*sound_buffer).lpVtbl).Lock)(sound_buffer, 
+                                             byte_to_lock,
+                                             bytes_to_write,
+                                             &mut region1, &mut region1_size,
+                                             &mut region2, &mut region2_size,
+                                             0 as DWORD);
+        }
+    }
+
+    assert!((region1_size % BYTES_PER_SAMPLE) == 0);
+    let region1_sample_count = region1_size/BYTES_PER_SAMPLE;
+    let mut out = region1 as *mut i16;
+    for _ in range(0, region1_sample_count) {
+        let value = if ((*sample_index / (SQUARE_WAVE_PERIOD/2)) % 2) == 0 {
+                        VOLUME
+                    } else {
+                        -VOLUME
+                    };
+        *sample_index += 1;
+
+        unsafe {
+            *out = value;
+            out = out.offset(1);
+            *out = value;
+            out = out.offset(1);
+        }
+    }
+
+    assert!((region2_size % BYTES_PER_SAMPLE) == 0);
+    let region2_sample_count = region2_size/BYTES_PER_SAMPLE;
+    out = region2 as *mut i16;
+    for _ in range(0, region2_sample_count) {
+        let value = if ((*sample_index / (SQUARE_WAVE_PERIOD/2)) % 2) == 0 {
+                        VOLUME
+                    } else {
+                        -VOLUME
+                    };
+        *sample_index += 1; 
+
+        unsafe {
+            *out = value;
+            out = out.offset(1);
+            *out = value;
+            out = out.offset(1);
+        }
+    }
+
+    unsafe {
+        ((*(*sound_buffer).lpVtbl).Unlock)(sound_buffer,
+                                           region1, region1_size,
+                                           region2, region2_size);
+    }
+}
 
 fn dsound_init(window: HWND, buffer_size_bytes: DWORD, 
                samples_per_second: DWORD) -> Option<*mut IDirectSoundBuffer> {
@@ -115,7 +201,7 @@ fn dsound_init(window: HWND, buffer_size_bytes: DWORD,
                     };
             let mut secondary_buffer: *mut IDirectSoundBuffer = ptr::null_mut();
             unsafe {
-                ((*(*direct_sound).lpVtbl).CreateSoundBuffer)(direct_sound, 
+               ((*(*direct_sound).lpVtbl).CreateSoundBuffer)(direct_sound, 
                                                               &buffer_desc_secondary, 
                                                               &mut secondary_buffer, 
                                                               ptr::null_mut());
@@ -358,8 +444,13 @@ fn main() {
         panic!("Window could not be created!");
     }
 
-    let sound_buffer = dsound_init(window, SAMPLES_PER_SECOND, 
-                                   SAMPLES_PER_SECOND * (CHANNELS as DWORD) * 2);
+    //Needed for Sound System test
+    let mut sample_index: DWORD = 0;
+    let buffer_size = SAMPLES_PER_SECOND * BYTES_PER_SAMPLE;
+
+    //TODO: Handle all the cases when there was no DirectSound and unwrap fails!
+    let sound_buffer = dsound_init(window, buffer_size, SAMPLES_PER_SECOND).unwrap();
+    unsafe { ((*(*sound_buffer).lpVtbl).Play)(sound_buffer, 0, 0, DSBPLAY_LOOPING); }
 
     let context = unsafe { GetDC(window) };
     if context.is_null() {
@@ -368,8 +459,10 @@ fn main() {
     
     let mut msg = Default::default();
 
+    //Needed for graphics test
     let mut green_offset: c_int = 0;
     let mut blue_offset: c_int = 0;
+
 
     unsafe {
         running = true;
@@ -421,6 +514,8 @@ fn main() {
             }
 
             render_weird_gradient(&back_buffer, green_offset, blue_offset);
+
+            generate_sound(sound_buffer, buffer_size, &mut sample_index);
 
             let (width, height) = get_client_dimensions(window).unwrap();
             blit_buffer_to_window(context, &back_buffer, width, height);

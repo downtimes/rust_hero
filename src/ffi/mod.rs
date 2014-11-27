@@ -3,10 +3,12 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-pub use libc::{c_int, c_uint, c_long, c_void};
-pub use libc::{HANDLE, LPCSTR, WORD, DWORD};
-pub use libc::{LPVOID, BOOL, LONG, BYTE, SIZE_T};
+pub use libc::{c_int, c_uint, c_long};
+pub use libc::{LPCSTR, LPVOID, BOOL, SIZE_T};
 pub use std::default::Default;
+
+pub use self::direct_sound::*;
+pub mod direct_sound;
 
 #[cfg(target_arch = "x86")]
 pub mod pointer {
@@ -27,7 +29,6 @@ pub type HMODULE = HINSTANCE;
 pub type HICON = HANDLE;
 pub type HCURSOR = HANDLE;
 pub type HBRUSH = HANDLE;
-pub type HWND = HANDLE;
 pub type HMENU = HANDLE;
 pub type LPCTSTR = LPCSTR;
 pub type LPARAM = pointer::LONG_PTR;
@@ -63,6 +64,7 @@ pub const VK_LEFT: u8 = 0x25u8;
 pub const VK_UP: u8 = 0x26u8;
 pub const VK_RIGHT: u8 = 0x27u8;
 pub const VK_DOWN: u8 = 0x28u8;
+pub const VK_F4: u8 = 0x73u8;
 
 pub const CS_OWNDC: UINT = 0x0020;
 pub const CS_HREDRAW: UINT = 0x0002;
@@ -88,6 +90,7 @@ pub const BLACKNESS: DWORD = 0x00000042;
 pub const WHITENESS: DWORD = 0x00FF0062;
 
 pub const MEM_COMMIT: DWORD = 0x00001000;
+pub const MEM_RESERVE: DWORD = 0x00002000;
 pub const MEM_RELEASE: DWORD = 0x00008000;
 
 pub const PAGE_READWRITE: DWORD = 0x00000004;

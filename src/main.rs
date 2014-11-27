@@ -1,4 +1,6 @@
 #![feature(globs)]
+#![allow(non_snake_case)]
+
 extern crate libc;
 
 use std::ptr;
@@ -36,6 +38,11 @@ static mut back_buffer: Backbuffer =
 
 const BYTES_PER_PIXEL: c_int = 4;
 
+//Sound System constants
+const CHANNELS: WORD = 2;
+const BITS_PER_CHANNEL: WORD = 16;
+const SAMPLES_PER_SECOND: DWORD = 48000;
+
 struct Backbuffer {
     info: BITMAPINFO,
     memory: *mut c_void,
@@ -48,6 +55,78 @@ struct Backbuffer {
 extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
 extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
 
+fn dsound_init(window: HWND, buffer_size_bytes: DWORD, 
+               samples_per_second: DWORD) -> Option<*mut IDirectSoundBuffer> {
+    let library_name = "dsound.dll".to_c_str();
+    let library = unsafe { LoadLibraryA(library_name.as_ptr()) };
+
+    if library.is_not_null() {
+        let create_name = "DirectSoundCreate".to_c_str();
+        let ds_create = unsafe { GetProcAddress(library, create_name.as_ptr()) };
+        if ds_create.is_null() { return None; }
+
+        //We have DirectSound capabilities
+        let DirectSoundCreate: DirectSoundCreate_t = unsafe { mem::transmute(ds_create) };
+        let mut direct_sound: *mut IDirectSound = ptr::null_mut();
+        if SUCCEEDED(DirectSoundCreate(ptr::null(), &mut direct_sound, ptr::null_mut())) {
+            //Creating the primary buffer and setting our format
+            let buffer_desc: DSBUFFERDESC = DSBUFFERDESC {
+                                                dwSize: std::mem::size_of::<DSBUFFERDESC>() as DWORD,
+                                                dwFlags: DSBCAPS_PRIMARYBUFFER,
+                                                dwBufferBytes: 0 as DWORD,
+                                                dwReserved: 0 as DWORD,
+                                                lpwfxFormat: ptr::null_mut(),
+                                                guid: Default::default(),
+                                          };
+            let mut primary_buffer: *mut IDirectSoundBuffer = ptr::null_mut();
+            //Holy shit: it's the syntax from hell!
+            unsafe { 
+                ((*(*direct_sound).lpVtbl).SetCooperativeLevel)(direct_sound, window, DSSCL_PRIORITY);
+                ((*(*direct_sound).lpVtbl).CreateSoundBuffer)(direct_sound, 
+                                                              &buffer_desc, 
+                                                              &mut primary_buffer, 
+                                                              ptr::null_mut());
+            }
+
+            let block_align = (CHANNELS * BITS_PER_CHANNEL) / 8;
+            let mut wave_format: WAVEFORMATEX = 
+                WAVEFORMATEX {
+                    wFormatTag: WAVE_FORMAT_PCM,
+                    nChannels: CHANNELS,
+                    nSamplesPerSec: samples_per_second,
+                    nAvgBytesPerSec: samples_per_second * (block_align as DWORD),
+                    nBlockAlign: block_align as WORD,
+                    wBitsPerSample: BITS_PER_CHANNEL,
+                    cbSize: 0 as WORD,
+                };
+            unsafe {
+                ((*(*primary_buffer).lpVtbl).SetFormat)(primary_buffer, &wave_format);
+            }
+
+            //Creating our secondary buffer
+            let buffer_desc_secondary: DSBUFFERDESC = 
+                    DSBUFFERDESC {
+                        dwSize: std::mem::size_of::<DSBUFFERDESC>() as DWORD,
+                        dwFlags: 0 as DWORD,
+                        dwBufferBytes: buffer_size_bytes,
+                        dwReserved: 0,
+                        lpwfxFormat: &mut wave_format,
+                        guid: Default::default(),
+                    };
+            let mut secondary_buffer: *mut IDirectSoundBuffer = ptr::null_mut();
+            unsafe {
+                ((*(*direct_sound).lpVtbl).CreateSoundBuffer)(direct_sound, 
+                                                              &buffer_desc_secondary, 
+                                                              &mut secondary_buffer, 
+                                                              ptr::null_mut());
+            }
+
+            return Some(secondary_buffer)
+        }
+    }
+
+    None
+}
 
 fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
 
@@ -145,7 +224,7 @@ fn resize_dib_section(buffer: &mut Backbuffer, width: c_int, height: c_int) {
 
     unsafe {
         buffer.memory = VirtualAlloc(0 as LPVOID, bitmap_size as SIZE_T,
-                                     MEM_COMMIT, PAGE_READWRITE);
+                                     MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
         if buffer.memory.is_null() {
             panic!("No memory could be allocated by VirtualAlloc");
         }
@@ -204,6 +283,12 @@ extern "system" fn process_messages(window: HWND, message: UINT,
                     Q => (),
                     VK_ESCAPE => (),
                     VK_SPACE => (),
+                    VK_F4 => {
+                        let alt_key_down = (lparam & (1 << 29)) != 0;
+                        if alt_key_down {
+                            unsafe { running = false; }
+                        }
+                    },
                     _ => (),
                 }
             }
@@ -273,8 +358,9 @@ fn main() {
         panic!("Window could not be created!");
     }
 
-    unsafe { running = true; }
-        
+    let sound_buffer = dsound_init(window, SAMPLES_PER_SECOND, 
+                                   SAMPLES_PER_SECOND * (CHANNELS as DWORD) * 2);
+
     let context = unsafe { GetDC(window) };
     if context.is_null() {
         panic!("DC for the Window not available!");
@@ -286,6 +372,7 @@ fn main() {
     let mut blue_offset: c_int = 0;
 
     unsafe {
+        running = true;
         while running {
             while PeekMessageA(&mut msg, 0 as HWND,
                                0 as UINT, 0 as UINT, PM_REMOVE) != 0 {
@@ -304,18 +391,18 @@ fn main() {
                     ERROR_SUCCESS => {
                         let gamepad = &state.Gamepad;
 
-                        let dpad_up = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0;
-                        let dpad_down = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
-                        let dpad_left = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
-                        let dpad_right = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
-                        let start = (gamepad.wButtons & XINPUT_GAMEPAD_START) != 0;
-                        let back = (gamepad.wButtons & XINPUT_GAMEPAD_BACK) != 0;
-                        let left_shoulder = (gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
-                        let right_shoulder = (gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
-                        let abutton = (gamepad.wButtons & XINPUT_GAMEPAD_A) != 0;
-                        let bbutton = (gamepad.wButtons & XINPUT_GAMEPAD_B) != 0;
-                        let xbutton = (gamepad.wButtons & XINPUT_GAMEPAD_X) != 0;
-                        let ybutton = (gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_START) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_BACK) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_A) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_B) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_X) != 0;
+                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0;
 
                         let stick_x = gamepad.sThumbLX;
                         let stick_y = gamepad.sThumbLY;

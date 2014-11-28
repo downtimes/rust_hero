@@ -4,7 +4,9 @@
 extern crate libc;
 
 use std::ptr;
-use std::mem;
+use std::mem; 
+use std::f32;
+use std::num::FloatMath;
 use ffi::*;
 
 mod ffi;
@@ -44,10 +46,17 @@ const BYTES_PER_PIXEL: c_int = 4;
 const CHANNELS: WORD = 2;
 const BITS_PER_CHANNEL: WORD = 16;
 const SAMPLES_PER_SECOND: DWORD = 48000;
-const TONE_FREQUENCY: DWORD = 261;
-const SQUARE_WAVE_PERIOD: DWORD = SAMPLES_PER_SECOND/TONE_FREQUENCY;
 const BYTES_PER_SAMPLE: DWORD = 4;
-const VOLUME: i16 = 3000;
+const LATENCY_SAMPLE_COUNT: DWORD = SAMPLES_PER_SECOND / 15;
+
+struct SoundOutput {
+    volume: i16,
+    tone_frequency: DWORD,
+    wave_period: DWORD,
+    sample_index: DWORD,
+    tsine: f32,
+    sound_buffer: *mut IDirectSoundBuffer,
+}
 
 struct Backbuffer {
     info: BITMAPINFO,
@@ -62,50 +71,39 @@ extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWOR
 extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
 
 
-//TODO: instead of giving the buffer_size in here extract it directly from sound_buffer
-//GetCaps method returns a DSBCAPS which in turn contains the buffer size
-fn generate_sound(sound_buffer: *mut IDirectSoundBuffer, buffer_size: DWORD, 
-                  sample_index: &mut DWORD) {
+fn fill_sound_buffer(sound_output: &mut SoundOutput, 
+                     byte_to_lock: DWORD,
+                     bytes_to_write: DWORD) {
+
+    let mut dsbcaps: DSBCAPS = Default::default();
+    dsbcaps.dwSize = std::mem::size_of::<DSBCAPS>() as DWORD;
+
+    unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCaps)(sound_output.sound_buffer, &mut dsbcaps); }
+
     let mut region1: *mut c_void = ptr::null_mut();
     let mut region2: *mut c_void = ptr::null_mut();
     let mut region1_size: DWORD = 0; 
     let mut region2_size: DWORD = 0; 
 
-    let mut write_cursor: DWORD = 0;
-    let mut play_cursor: DWORD = 0;
-    let byte_to_lock: DWORD = *sample_index * BYTES_PER_SAMPLE % buffer_size; 
-
     unsafe {
-        
-        if SUCCEEDED(((*(*sound_buffer).lpVtbl).GetCurrentPosition)
-                            (sound_buffer, &mut play_cursor, &mut write_cursor)) {
-
-            //TODO: In release mode we collide with the cursor. Fast Fixup
-            //is to substract one BYTES_PER_SAMPLE from this value!
-            let bytes_to_write = if byte_to_lock >= play_cursor {
-                                     buffer_size - byte_to_lock + play_cursor
-                                 } else {
-                                     play_cursor - byte_to_lock
-                                 };
-            ((*(*sound_buffer).lpVtbl).Lock)(sound_buffer, 
-                                             byte_to_lock,
-                                             bytes_to_write,
-                                             &mut region1, &mut region1_size,
-                                             &mut region2, &mut region2_size,
-                                             0 as DWORD);
-        }
+        ((*(*sound_output.sound_buffer).lpVtbl).Lock)(sound_output.sound_buffer, 
+                                         byte_to_lock,
+                                         bytes_to_write,
+                                         &mut region1, &mut region1_size,
+                                         &mut region2, &mut region2_size,
+                                         0 as DWORD);
     }
 
+    //TODO: pull theese two loops in a function and call it 2 times
     assert!((region1_size % BYTES_PER_SAMPLE) == 0);
     let region1_sample_count = region1_size/BYTES_PER_SAMPLE;
     let mut out = region1 as *mut i16;
     for _ in range(0, region1_sample_count) {
-        let value = if ((*sample_index / (SQUARE_WAVE_PERIOD/2)) % 2) == 0 {
-                        VOLUME
-                    } else {
-                        -VOLUME
-                    };
-        *sample_index += 1;
+        let sine_value: f32 = sound_output.tsine.sin();
+        let value = (sine_value * (sound_output.volume as f32)) as i16;
+
+        sound_output.sample_index += 1; 
+        sound_output.tsine += f32::consts::PI_2 / (sound_output.wave_period as f32);
 
         unsafe {
             *out = value;
@@ -119,12 +117,11 @@ fn generate_sound(sound_buffer: *mut IDirectSoundBuffer, buffer_size: DWORD,
     let region2_sample_count = region2_size/BYTES_PER_SAMPLE;
     out = region2 as *mut i16;
     for _ in range(0, region2_sample_count) {
-        let value = if ((*sample_index / (SQUARE_WAVE_PERIOD/2)) % 2) == 0 {
-                        VOLUME
-                    } else {
-                        -VOLUME
-                    };
-        *sample_index += 1; 
+        let sine_value: f32 = sound_output.tsine.sin();
+        let value = (sine_value * (sound_output.volume as f32)) as i16;
+
+        sound_output.sample_index += 1; 
+        sound_output.tsine += f32::consts::PI_2 / (sound_output.wave_period as f32);
 
         unsafe {
             *out = value;
@@ -135,7 +132,7 @@ fn generate_sound(sound_buffer: *mut IDirectSoundBuffer, buffer_size: DWORD,
     }
 
     unsafe {
-        ((*(*sound_buffer).lpVtbl).Unlock)(sound_buffer,
+        ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,
                                            region1, region1_size,
                                            region2, region2_size);
     }
@@ -445,12 +442,26 @@ fn main() {
     }
 
     //Needed for Sound System test
-    let mut sample_index: DWORD = 0;
-    let buffer_size = SAMPLES_PER_SECOND * BYTES_PER_SAMPLE;
+    let mut sound_output = SoundOutput {
+        volume: 3000,
+        tone_frequency: 261,
+        wave_period: SAMPLES_PER_SECOND/261,
+        sample_index: 0,
+        tsine: 0.0,
+        //TODO: Handle all the cases when there was no DirectSound and unwrap fails!
+        sound_buffer: dsound_init(window, SAMPLES_PER_SECOND * BYTES_PER_SAMPLE,
+                                  SAMPLES_PER_SECOND).unwrap(),
+    };
 
-    //TODO: Handle all the cases when there was no DirectSound and unwrap fails!
-    let sound_buffer = dsound_init(window, buffer_size, SAMPLES_PER_SECOND).unwrap();
-    unsafe { ((*(*sound_buffer).lpVtbl).Play)(sound_buffer, 0, 0, DSBPLAY_LOOPING); }
+    let mut dsbcaps: DSBCAPS = Default::default();
+    dsbcaps.dwSize = std::mem::size_of::<DSBCAPS>() as DWORD;
+
+    unsafe {
+        ((*(*sound_output.sound_buffer).lpVtbl).GetCaps)(sound_output.sound_buffer, &mut dsbcaps);
+
+        fill_sound_buffer(&mut sound_output, 0, LATENCY_SAMPLE_COUNT * BYTES_PER_SAMPLE);
+        ((*(*sound_output.sound_buffer).lpVtbl).Play)(sound_output.sound_buffer, 0, 0, DSBPLAY_LOOPING);
+    }
 
     let context = unsafe { GetDC(window) };
     if context.is_null() {
@@ -500,8 +511,11 @@ fn main() {
                         let stick_x = gamepad.sThumbLX;
                         let stick_y = gamepad.sThumbLY;
 
-                        green_offset -= stick_y as c_int >> 12;
-                        blue_offset += stick_x as c_int >> 12;
+                        sound_output.tone_frequency = 512 + (256.0 * (stick_y as f32 / 30000.0)) as DWORD;
+                        sound_output.wave_period = SAMPLES_PER_SECOND / sound_output.tone_frequency;
+
+                        green_offset -= stick_y as c_int / 4096;
+                        blue_offset += stick_x as c_int / 4096;
                     },
 
                     //Case the Controller is not connected
@@ -515,7 +529,22 @@ fn main() {
 
             render_weird_gradient(&back_buffer, green_offset, blue_offset);
 
-            generate_sound(sound_buffer, buffer_size, &mut sample_index);
+            let mut write_cursor: DWORD = 0;
+            let mut play_cursor: DWORD = 0;
+            if SUCCEEDED(((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
+                         (sound_output.sound_buffer, &mut play_cursor, &mut write_cursor)) {
+
+                let byte_to_lock = (sound_output.sample_index * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes; 
+                let target_cursor = (play_cursor + LATENCY_SAMPLE_COUNT * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes;
+                let bytes_to_write = if byte_to_lock > target_cursor {
+                                dsbcaps.dwBufferBytes - byte_to_lock + target_cursor
+                            } else {
+                                target_cursor - byte_to_lock
+                            };
+
+                fill_sound_buffer(&mut sound_output, byte_to_lock, bytes_to_write);
+            }
+
 
             let (width, height) = get_client_dimensions(window).unwrap();
             blit_buffer_to_window(context, &back_buffer, width, height);

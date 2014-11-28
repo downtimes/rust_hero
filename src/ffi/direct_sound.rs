@@ -36,7 +36,7 @@ pub struct IDirectSoundVtbl {
                                               ds_buffer_desc: *const DSBUFFERDESC,
                                               ds_buffer: *mut *mut IDirectSoundBuffer,
                                               pUnkOuter: *mut IUnknown) -> HRESULT,
-    pub GetCaps: *const c_void,
+    pub GetCaps: *const c_void, 
     pub DuplicateSoundBuffer: *const c_void,
     pub SetCooperativeLevel: extern "system" fn(this: *mut IDirectSound, hwnd: HWND,
                                                 dwLevel: DWORD) -> HRESULT,
@@ -44,6 +44,27 @@ pub struct IDirectSoundVtbl {
     pub GetSpeakerConfig: *const c_void,
     pub SetSpeakerConfig: *const c_void,
     pub Initialize: *const c_void,
+}
+
+#[repr(C)]
+pub struct DSBCAPS {
+    pub dwSize: DWORD,
+    pub dwFlags: DWORD,
+    pub dwBufferBytes: DWORD,
+    pub dwUnlockTransferRate: DWORD,
+    pub dwPlayCpuOverhead: DWORD,
+}
+
+impl Default for DSBCAPS {
+    fn default() -> DSBCAPS {
+        DSBCAPS {
+            dwSize: 0,
+            dwFlags: 0,
+            dwBufferBytes: 0,
+            dwUnlockTransferRate: 0,
+            dwPlayCpuOverhead: 0,
+        }
+    }
 }
 
 #[repr(C)]
@@ -82,7 +103,8 @@ pub struct IDirectSoundBufferVtbl {
 
 
     //Functions from this interface we only implement the once we actually use
-    pub GetCaps: *const c_void,
+    pub GetCaps: extern "system" fn(this: *mut IDirectSoundBuffer,
+                                    pDSBufferCaps: *mut DSBCAPS) -> HRESULT,
     pub GetCurrentPosition: extern "system" fn(this: *mut IDirectSoundBuffer, pdwCurrentPlayCursor: *mut DWORD,
                                                pdwCurrentWriteCursor: *mut DWORD) -> HRESULT,
     pub GetFormat: *const c_void,

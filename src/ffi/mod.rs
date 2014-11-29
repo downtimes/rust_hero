@@ -5,6 +5,8 @@
 
 pub use libc::{c_int, c_uint, c_long};
 pub use libc::{LPCSTR, LPVOID, BOOL, SIZE_T};
+pub use libc::{QueryPerformanceCounter, QueryPerformanceFrequency};
+pub use libc::{VirtualAlloc, VirtualFree};
 pub use std::default::Default;
 
 pub use self::direct_sound::*;
@@ -290,10 +292,6 @@ extern "system" {
                         msgFIlterMax: UINT, removeMsg: UINT) -> BOOL;
     pub fn TranslateMessage(msg: *const MSG) -> BOOL;
     pub fn DispatchMessageA(msg: *const MSG) -> LRESULT;
-    pub fn VirtualAlloc(lpAddress: LPVOID, dwSize: SIZE_T, 
-                        flAllocationType: DWORD, flProtect: DWORD) -> LPVOID;
-    pub fn VirtualFree(lpAddress: LPVOID, dwSize: SIZE_T, 
-                       dwFreeType: DWORD) -> BOOL;
     pub fn GetClientRect(hwnd: HWND, lpRect: LPRECT) -> BOOL;
     pub fn ReleaseDC(hWnd: HWND, hDC : HDC) -> c_int;
     pub fn GetDC(hWnd: HWND) -> HDC;
@@ -320,3 +318,18 @@ extern "system" {
     pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
 }
 
+#[inline(always)]
+pub mod intrinsics {
+    pub fn __rdtsc() -> u64 {
+        let lower: u32;
+        let higher: u32;
+
+        unsafe {
+            asm!("rdtsc"
+                 : "={eax}"(lower)
+                   "={edx}"(higher));
+        }
+
+        ((higher as u64) << 32) | lower as u64
+    }
+}

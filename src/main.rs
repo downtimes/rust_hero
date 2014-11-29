@@ -1,4 +1,5 @@
 #![feature(globs)]
+#![feature(asm)]
 #![allow(non_snake_case)]
 
 extern crate libc;
@@ -221,9 +222,9 @@ fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
     
     if module.is_null() {
         module = unsafe { LoadLibraryA( xlib_second_name.as_ptr() ) };
-        if module.is_null() {
-            module = unsafe { LoadLibraryA( xlib_third_name.as_ptr() ) };
-        }
+    }
+    if module.is_null() {
+        module = unsafe { LoadLibraryA( xlib_third_name.as_ptr() ) };
     }
 
     if module.is_not_null() {
@@ -476,6 +477,14 @@ fn main() {
 
 
     unsafe {
+        let mut counter_frequency: i64 = 0;
+        QueryPerformanceFrequency(&mut counter_frequency);
+
+        let mut last_cycles = intrinsics::__rdtsc();
+
+        let mut last_counter: i64 = 0;
+        QueryPerformanceCounter(&mut last_counter);
+        
         running = true;
         while running {
             while PeekMessageA(&mut msg, 0 as HWND,
@@ -548,6 +557,21 @@ fn main() {
 
             let (width, height) = get_client_dimensions(window).unwrap();
             blit_buffer_to_window(context, &back_buffer, width, height);
+
+            //Calculations for fps and other performance metrics
+            let mut end_counter: i64 = 0;
+            QueryPerformanceCounter(&mut end_counter);
+            let end_cycles = intrinsics::__rdtsc();
+
+            let elapsed_counter = end_counter - last_counter;
+            let ms_per_frame = 1000.0 * (elapsed_counter as f32) / (counter_frequency as f32);
+            let fps = counter_frequency as f32 / elapsed_counter as f32;
+            let mc_per_second = (end_cycles - last_cycles) as f32/ (1000.0 * 1000.0);
+
+            println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
+
+            last_counter = end_counter;
+            last_cycles = end_cycles;
         }
     }
 }

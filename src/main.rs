@@ -184,42 +184,29 @@ fn fill_sound_buffer(sound_output: &mut SoundOutput,
                                          0 as DWORD);
     }
 
-    //TODO: pull theese two loops in a function and call it 2 times
-    assert!((region1_size % BYTES_PER_SAMPLE) == 0);
-    let region1_sample_count = region1_size/BYTES_PER_SAMPLE;
-    let mut out = region1 as *mut i16;
-    for _ in range(0, region1_sample_count) {
-        let sine_value: f32 = sound_output.tsine.sin();
-        let value = (sine_value * (sound_output.volume as f32)) as i16;
+    fn fill_region(region: *mut c_void, region_size: DWORD,
+                   sound_output: &mut SoundOutput) {
+        assert!((region_size % BYTES_PER_SAMPLE) == 0);
+        let region_sample_count = region_size/BYTES_PER_SAMPLE;
+        let mut out = region as *mut i16;
+        for _ in range(0, region_sample_count) {
+            let sine_value: f32 = sound_output.tsine.sin();
+            let value = (sine_value * (sound_output.volume as f32)) as i16;
 
-        sound_output.sample_index += 1; 
-        sound_output.tsine += f32::consts::PI_2 / (sound_output.wave_period as f32);
+            sound_output.sample_index += 1; 
+            sound_output.tsine += f32::consts::PI_2 / (sound_output.wave_period as f32);
 
-        unsafe {
-            *out = value;
-            out = out.offset(1);
-            *out = value;
-            out = out.offset(1);
+            unsafe {
+                *out = value;
+                out = out.offset(1);
+                *out = value;
+                out = out.offset(1);
+            }
         }
     }
-
-    assert!((region2_size % BYTES_PER_SAMPLE) == 0);
-    let region2_sample_count = region2_size/BYTES_PER_SAMPLE;
-    out = region2 as *mut i16;
-    for _ in range(0, region2_sample_count) {
-        let sine_value: f32 = sound_output.tsine.sin();
-        let value = (sine_value * (sound_output.volume as f32)) as i16;
-
-        sound_output.sample_index += 1; 
-        sound_output.tsine += f32::consts::PI_2 / (sound_output.wave_period as f32);
-
-        unsafe {
-            *out = value;
-            out = out.offset(1);
-            *out = value;
-            out = out.offset(1);
-        }
-    }
+    
+    fill_region(region1, region1_size, sound_output);
+    fill_region(region2, region2_size, sound_output);
 
     unsafe {
         ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,

@@ -12,34 +12,6 @@ use ffi::*;
 
 mod ffi;
 
-
-//TODO:These are a global for now needs to cleanup later on by packing them in a window
-//struct. Need to be global at the Moment because we also need them in the callback from
-//Windows. See SFML Source code for a solution to the "global problem" 
-static mut running: bool = false;
-static mut back_buffer: Backbuffer = 
-                        Backbuffer { info: BITMAPINFO {
-                                            bmiHeader: BITMAPINFOHEADER {
-                                                biSize: 0 as DWORD,
-                                                biWidth: 0 as LONG,
-                                                biHeight: 0 as LONG,
-                                                biPlanes: 1 as WORD,
-                                                biBitCount: 0 as WORD,
-                                                biCompression: BI_RGB,
-                                                biSizeImage: 0 as DWORD,
-                                                biXPelsPerMeter: 0 as LONG,
-                                                biYPelsPerMeter: 0 as LONG,
-                                                biClrUsed: 0 as DWORD,
-                                                biClrImportant: 0 as DWORD,
-                                            },
-                                            bmiColors: 0 as *mut RGBQUAD,
-                                           },
-                                     memory: 0 as *mut c_void,
-                                     height: 0 as c_int,
-                                     width: 0 as c_int,
-                                     pitch: 0 as c_int,
-                                    };
-
 //Graphics System constants
 const BYTES_PER_PIXEL: c_int = 4;
 
@@ -66,6 +38,123 @@ struct Backbuffer {
     width: c_int,
     pitch: c_int,
 }
+
+struct Window {
+    handle: HWND,
+    running: bool,
+    backbuffer: Backbuffer,
+}
+
+impl Window {
+    fn process_messages(&mut self, message: UINT, 
+                        wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+
+        let mut res: LRESULT = 0;
+
+        match message {
+            WM_DESTROY => self.running = false,
+            WM_CLOSE => self.running = false,
+
+            WM_SYSKEYDOWN |
+            WM_SYSKEYUP   |
+            WM_KEYDOWN    |
+            WM_KEYUP       => {
+                let vk_code = wparam as u8;
+                let was_down = (lparam & (1 << 30)) != 0;
+                let is_down = (lparam & (1 << 31)) == 0;
+
+                //Rust currently doesn't allow casts in matches so we have to
+                //conform to one type which is u8 here
+                const W: u8 = 'W' as u8;
+                const A: u8 = 'A' as u8;
+                const S: u8 = 'S' as u8;
+                const D: u8 = 'D' as u8;
+                const Q: u8 = 'Q' as u8;
+                const E: u8 = 'E' as u8;
+
+                if was_down != is_down {
+                    match vk_code {
+                        VK_UP => (),
+                        VK_DOWN => (),
+                        VK_LEFT => (),
+                        VK_RIGHT => (),
+                        W => (),
+                        A => (),
+                        S => (),
+                        D => (),
+                        E => (),
+                        Q => (),
+                        VK_ESCAPE => (),
+                        VK_SPACE => (),
+                        VK_F4 => {
+                            let alt_key_down = (lparam & (1 << 29)) != 0;
+                            if alt_key_down {
+                                self.running = false; 
+                            }
+                        },
+                        _ => (),
+                    }
+                }
+            },
+
+
+            WM_PAINT => { 
+                let mut paint = Default::default(); 
+
+                let context = unsafe { BeginPaint(self.handle, &mut paint) };
+                if context.is_null() {
+                    panic!("BeginPaint failed!");
+                }
+
+                let (width, height) = get_client_dimensions(self.handle).unwrap();
+                unsafe { 
+                    blit_buffer_to_window(context, &self.backbuffer, width, height);
+                    EndPaint(self.handle, &paint);
+                }
+            },
+
+            _ => unsafe { 
+                res = DefWindowProcA(self.handle, message, wparam, lparam);
+            },
+        }
+
+        res
+    }
+}
+
+extern "system" fn process_messages(handle: HWND, message: UINT, wparam: WPARAM, 
+                                    lparam: LPARAM) -> LRESULT {
+    let mut res: LRESULT = 0;
+
+    match message {
+        //When creating the window we pass the window struct containing all our information
+        //and registering it with windows
+        WM_CREATE => {
+            unsafe { 
+                let ptr_to_window = (*(lparam as *const CREATESTRUCT)).lpCreateParams as LONG_PTR;
+                SetWindowLongPtrA(handle, GWLP_USERDATA, ptr_to_window); 
+            }
+        },
+
+        //For all the other messages we know we have a window struct registered
+        //with windows. So we get it and dispatch to its message handleing
+        _ => {
+            unsafe { 
+                let window = GetWindowLongPtrA(handle, GWLP_USERDATA) as *mut Window;
+                if window.is_not_null() {
+                    res = (*window).process_messages(message, wparam, lparam);
+                //During construction when there is still no struct registered we need to 
+                //handle all the cases with the default behavior
+                } else {
+                    res = DefWindowProcA(handle, message, wparam, lparam);
+                }
+            }
+        },
+    }
+
+    res
+}
+
 
 //Stub functions if none of the XInput libraries could be loaded!
 extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
@@ -327,80 +416,6 @@ fn blit_buffer_to_window(context: HDC, buffer: &Backbuffer, client_width: c_int,
     };
 }
 
-extern "system" fn process_messages(window: HWND, message: UINT, 
-                                    wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-
-    let mut res: LRESULT = 0;
-
-    match message {
-        WM_DESTROY => unsafe {running = false},
-        WM_CLOSE => unsafe {running = false},
-
-        WM_SYSKEYDOWN |
-        WM_SYSKEYUP   |
-        WM_KEYDOWN    |
-        WM_KEYUP       => {
-            let vk_code = wparam as u8;
-            let was_down = (lparam & (1 << 30)) != 0;
-            let is_down = (lparam & (1 << 31)) == 0;
-
-            //Rust currently doesn't allow casts in matches so we have to
-            //conform to one type which is u8 here
-            const W: u8 = 'W' as u8;
-            const A: u8 = 'A' as u8;
-            const S: u8 = 'S' as u8;
-            const D: u8 = 'D' as u8;
-            const Q: u8 = 'Q' as u8;
-            const E: u8 = 'E' as u8;
-
-            if was_down != is_down {
-                match vk_code {
-                    VK_UP => (),
-                    VK_DOWN => (),
-                    VK_LEFT => (),
-                    VK_RIGHT => (),
-                    W => (),
-                    A => (),
-                    S => (),
-                    D => (),
-                    E => (),
-                    Q => (),
-                    VK_ESCAPE => (),
-                    VK_SPACE => (),
-                    VK_F4 => {
-                        let alt_key_down = (lparam & (1 << 29)) != 0;
-                        if alt_key_down {
-                            unsafe { running = false; }
-                        }
-                    },
-                    _ => (),
-                }
-            }
-        },
-
-
-        WM_PAINT => { 
-            let mut paint = Default::default(); 
-
-            let context = unsafe { BeginPaint(window, &mut paint) };
-            if context.is_null() {
-                panic!("BeginPaint failed!");
-            }
-
-            let (width, height) = get_client_dimensions(window).unwrap();
-            unsafe { 
-                blit_buffer_to_window(context, &back_buffer, width, height);
-                EndPaint(window, &paint);
-            }
-        },
-
-        _ => unsafe { 
-                res = DefWindowProcA(window, message, wparam, lparam);
-        },
-    }
-    
-    res
-}
 
 fn main() {
     let (XInputGetState, XInputSetState) = load_xinput_functions();
@@ -411,7 +426,19 @@ fn main() {
     }
     
 
-    unsafe { resize_dib_section(&mut back_buffer, 1280, 720); }
+    let mut window = Window {
+                        handle: ptr::null_mut(),
+                        running: false,
+                        backbuffer: Backbuffer {
+                            info: Default::default(), 
+                            memory: ptr::null_mut(),
+                            height: 0,
+                            width: 0,
+                            pitch: 0,
+                        },
+                    };
+
+    resize_dib_section(&mut window.backbuffer, 1280, 720); 
 
     let class_str = "HandmadeHeroWindowClass".to_c_str();
     let window_class = WNDCLASS{style: CS_OWNDC|CS_HREDRAW|CS_VREDRAW, 
@@ -429,16 +456,16 @@ fn main() {
 
     let window_title = "Handmade Hero".to_c_str();
 
-    let window = unsafe {
+    window.handle = unsafe {
         CreateWindowExA(0 as DWORD, window_class.lpszClassName, 
                         window_title.as_ptr(),
                         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                         CW_USEDEFAULT, CW_USEDEFAULT, 
                         CW_USEDEFAULT, CW_USEDEFAULT, 
-                        0 as HWND, 0 as HWND, module_handle, ptr::null_mut())
+                        0 as HWND, 0 as HWND, module_handle, (&mut window) as *mut _ as *mut c_void)
     };
 
-    if window.is_null() {
+    if window.handle.is_null() {
         panic!("Window could not be created!");
     }
 
@@ -450,7 +477,7 @@ fn main() {
         sample_index: 0,
         tsine: 0.0,
         //TODO: Handle all the cases when there was no DirectSound and unwrap fails!
-        sound_buffer: dsound_init(window, SAMPLES_PER_SECOND * BYTES_PER_SAMPLE,
+        sound_buffer: dsound_init(window.handle, SAMPLES_PER_SECOND * BYTES_PER_SAMPLE,
                                   SAMPLES_PER_SECOND).unwrap(),
     };
 
@@ -464,7 +491,7 @@ fn main() {
         ((*(*sound_output.sound_buffer).lpVtbl).Play)(sound_output.sound_buffer, 0, 0, DSBPLAY_LOOPING);
     }
 
-    let context = unsafe { GetDC(window) };
+    let context = unsafe { GetDC(window.handle) };
     if context.is_null() {
         panic!("DC for the Window not available!");
     }
@@ -476,102 +503,105 @@ fn main() {
     let mut blue_offset: c_int = 0;
 
 
-    unsafe {
-        let mut counter_frequency: i64 = 0;
-        QueryPerformanceFrequency(&mut counter_frequency);
+    let mut counter_frequency: i64 = 0;
+    unsafe { QueryPerformanceFrequency(&mut counter_frequency); }
 
-        let mut last_cycles = intrinsics::__rdtsc();
+    let mut last_cycles = intrinsics::__rdtsc();
 
-        let mut last_counter: i64 = 0;
-        QueryPerformanceCounter(&mut last_counter);
-        
-        running = true;
-        while running {
+    let mut last_counter: i64 = 0;
+    unsafe { QueryPerformanceCounter(&mut last_counter); }
+
+    window.running = true;
+    while window.running {
+        unsafe {
+            //Process the Message Queue
             while PeekMessageA(&mut msg, 0 as HWND,
                                0 as UINT, 0 as UINT, PM_REMOVE) != 0 {
                 if msg.message == WM_QUIT {
-                    running = false;
+                    window.running = false;
                 }
                 TranslateMessage(&msg);
                 DispatchMessageA(&msg);
             }
+        }
 
-            for controller in range(0, XUSER_MAX_COUNT) {
-                let mut state = Default::default();
-                let res: u32 = XInputGetState(controller, &mut state);
-                match res {
-                    //Case the Controller is connected and we got data
-                    ERROR_SUCCESS => {
-                        let gamepad = &state.Gamepad;
+        for controller in range(0, XUSER_MAX_COUNT) {
+            let mut state = Default::default();
+            let res: u32 = XInputGetState(controller, &mut state);
+            match res {
+                //Case the Controller is connected and we got data
+                ERROR_SUCCESS => {
+                    let gamepad = &state.Gamepad;
 
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_START) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_BACK) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_A) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_B) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_X) != 0;
-                        let _ = (gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_START) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_BACK) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_A) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_B) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_X) != 0;
+                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0;
 
-                        let stick_x = gamepad.sThumbLX;
-                        let stick_y = gamepad.sThumbLY;
+                    let stick_x = gamepad.sThumbLX;
+                    let stick_y = gamepad.sThumbLY;
 
-                        sound_output.tone_frequency = 512 + (256.0 * (stick_y as f32 / 30000.0)) as DWORD;
-                        sound_output.wave_period = SAMPLES_PER_SECOND / sound_output.tone_frequency;
+                    sound_output.tone_frequency = 512 + (256.0 * (stick_y as f32 / 30000.0)) as DWORD;
+                    sound_output.wave_period = SAMPLES_PER_SECOND / sound_output.tone_frequency;
 
-                        green_offset -= stick_y as c_int / 4096;
-                        blue_offset += stick_x as c_int / 4096;
-                    },
+                    green_offset -= stick_y as c_int / 4096;
+                    blue_offset += stick_x as c_int / 4096;
+                },
 
-                    //Case the Controller is not connected
-                    ERROR_DEVICE_NOT_CONNECTED => (),
+                //Case the Controller is not connected
+                ERROR_DEVICE_NOT_CONNECTED => (),
 
 
-                    //Some arbitrary Error was found
-                    _ => (),
-                }
+                //Some arbitrary Error was found
+                _ => (),
             }
+        }
 
-            render_weird_gradient(&back_buffer, green_offset, blue_offset);
+        render_weird_gradient(&window.backbuffer, green_offset, blue_offset); 
 
-            let mut write_cursor: DWORD = 0;
-            let mut play_cursor: DWORD = 0;
-            if SUCCEEDED(((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
-                         (sound_output.sound_buffer, &mut play_cursor, &mut write_cursor)) {
+        let mut write_cursor: DWORD = 0;
+        let mut play_cursor: DWORD = 0;
 
-                let byte_to_lock = (sound_output.sample_index * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes; 
-                let target_cursor = (play_cursor + LATENCY_SAMPLE_COUNT * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes;
-                let bytes_to_write = if byte_to_lock > target_cursor {
-                                dsbcaps.dwBufferBytes - byte_to_lock + target_cursor
-                            } else {
-                                target_cursor - byte_to_lock
-                            };
+        if SUCCEEDED( unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
+                         (sound_output.sound_buffer, &mut play_cursor, &mut write_cursor) }) {
 
-                fill_sound_buffer(&mut sound_output, byte_to_lock, bytes_to_write);
-            }
+            let byte_to_lock = (sound_output.sample_index * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes; 
+            let target_cursor = (play_cursor + LATENCY_SAMPLE_COUNT * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes;
+            let bytes_to_write = if byte_to_lock > target_cursor {
+                dsbcaps.dwBufferBytes - byte_to_lock + target_cursor
+            } else {
+                target_cursor - byte_to_lock
+            };
+
+            fill_sound_buffer(&mut sound_output, byte_to_lock, bytes_to_write);
+        }
 
 
-            let (width, height) = get_client_dimensions(window).unwrap();
-            blit_buffer_to_window(context, &back_buffer, width, height);
+        let (width, height) = get_client_dimensions(window.handle).unwrap();
+        blit_buffer_to_window(context, &window.backbuffer, width, height);
 
             //Calculations for fps and other performance metrics
-            let mut end_counter: i64 = 0;
-            QueryPerformanceCounter(&mut end_counter);
-            let end_cycles = intrinsics::__rdtsc();
+        let mut end_counter: i64 = 0;
+        unsafe { QueryPerformanceCounter(&mut end_counter); }
+        let end_cycles = intrinsics::__rdtsc();
 
-            let elapsed_counter = end_counter - last_counter;
-            let ms_per_frame = 1000.0 * (elapsed_counter as f32) / (counter_frequency as f32);
-            let fps = counter_frequency as f32 / elapsed_counter as f32;
-            let mc_per_second = (end_cycles - last_cycles) as f32/ (1000.0 * 1000.0);
+        let elapsed_counter = end_counter - last_counter;
+        let ms_per_frame = 1000.0 * (elapsed_counter as f32) / (counter_frequency as f32);
+        let fps = counter_frequency as f32 / elapsed_counter as f32;
+        let mc_per_second = (end_cycles - last_cycles) as f32/ (1000.0 * 1000.0);
 
-            println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
+        println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
 
-            last_counter = end_counter;
-            last_cycles = end_cycles;
-        }
+        last_counter = end_counter;
+        last_cycles = end_cycles;
+        
     }
 }

@@ -10,6 +10,7 @@ pub use libc::{VirtualAlloc, VirtualFree};
 pub use std::default::Default;
 
 pub use self::direct_sound::*;
+pub use self::pointer::{LONG_PTR, UINT_PTR};
 pub mod direct_sound;
 
 #[cfg(target_arch = "x86")]
@@ -49,6 +50,7 @@ pub type XInputGetState_t = extern "system" fn(DWORD, *mut XINPUT_STATE) -> DWOR
 pub type XInputSetState_t = extern "system" fn(DWORD, *mut XINPUT_VIBRATION) -> DWORD;
 
 
+pub const WM_CREATE: UINT = 0x0001;
 pub const WM_CLOSE: UINT = 0x0010;
 pub const WM_SIZE: UINT = 0x0005;
 pub const WM_DESTROY: UINT = 0x0002;
@@ -59,6 +61,8 @@ pub const WM_KEYDOWN: UINT = 0x0100;
 pub const WM_KEYUP: UINT = 0x0101;
 pub const WM_SYSKEYDOWN: UINT = 0x0104;
 pub const WM_SYSKEYUP: UINT = 0x0105;
+
+pub const GWLP_USERDATA: c_int = -21;
 
 pub const VK_ESCAPE: u8 = 0x1Bu8;
 pub const VK_SPACE: u8 = 0x20u8;
@@ -168,6 +172,21 @@ pub struct XINPUT_VIBRATION {
     pub wRightMotorSpeed: WORD,
 }
 
+#[repr(C)]
+pub struct CREATESTRUCT {
+    pub lpCreateParams: *mut c_void,
+    pub hInstance: HINSTANCE,
+    pub hMenu: HMENU,
+    pub hwndParent: HWND,
+    pub cy: c_int,
+    pub cx: c_int,
+    pub y: c_int,
+    pub x: c_int,
+    pub style: LONG,
+    pub lpszName: LPCTSTR,
+    pub lpszClass: LPCTSTR,
+    pub dwExStyle: DWORD,
+}
 
 #[repr(C)]
 pub struct WNDCLASS {
@@ -262,6 +281,24 @@ pub struct BITMAPINFOHEADER {
     pub biClrImportant: DWORD,
 }
 
+impl Default for BITMAPINFOHEADER {
+    fn default() -> BITMAPINFOHEADER {
+        BITMAPINFOHEADER {
+            biSize: 0,
+            biWidth: 0,
+            biHeight: 0,
+            biPlanes: 0,
+            biBitCount: 0,
+            biCompression: 0,
+            biSizeImage: 0,
+            biXPelsPerMeter: 0,
+            biYPelsPerMeter: 0,
+            biClrUsed: 0,
+            biClrImportant: 0,
+        }
+    }
+}
+
 #[repr(C)]
 pub struct RGBQUAD {
     pub rgbBlue: BYTE,
@@ -274,6 +311,15 @@ pub struct RGBQUAD {
 pub struct BITMAPINFO {
     pub bmiHeader: BITMAPINFOHEADER,
     pub bmiColors: *mut RGBQUAD,
+}
+
+impl Default for BITMAPINFO {
+    fn default() -> BITMAPINFO {
+        BITMAPINFO {
+            bmiHeader: Default::default(),
+            bmiColors: 0 as *mut RGBQUAD,
+        }
+    }
 }
 
 //user32 and kernel32
@@ -297,6 +343,9 @@ extern "system" {
     pub fn GetDC(hWnd: HWND) -> HDC;
     pub fn LoadLibraryA(lpFileName: LPCSTR) -> HMODULE;
     pub fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> *const c_void;
+    pub fn GetWindowLongPtrA(hWnd: HWND, nIndex: c_int) -> pointer::LONG_PTR;
+    pub fn SetWindowLongPtrA(hWnd: HWND, nIndex: c_int, 
+                             dwNewLong: pointer::LONG_PTR) -> pointer::LONG_PTR;
 }
 
 // gdi32

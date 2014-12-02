@@ -186,14 +186,18 @@ fn fill_sound_buffer(sound_output: &mut SoundOutput,
 
     fn fill_region(region: *mut c_void, region_size: DWORD,
                    sound_output: &mut SoundOutput) {
+                       
         assert!((region_size % BYTES_PER_SAMPLE) == 0);
         let region_sample_count = region_size/BYTES_PER_SAMPLE;
         let mut out = region as *mut i16;
+
         for _ in range(0, region_sample_count) {
             let sine_value: f32 = sound_output.tsine.sin();
             let value = (sine_value * (sound_output.volume as f32)) as i16;
 
             sound_output.sample_index += 1; 
+            //TODO: this value gets too big for the sine function so were left
+            //with only a few steps after some seconds. Needs a fix.
             sound_output.tsine += f32::consts::PI_2 / (sound_output.wave_period as f32);
 
             unsafe {

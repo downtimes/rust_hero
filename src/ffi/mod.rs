@@ -349,7 +349,6 @@ extern "system" {
 }
 
 // gdi32
-#[link(name = "gdi32")]
 extern "system" {
     pub fn BeginPaint(hwnd: HWND, lpPaint: LPPAINTSTRUCT) -> HDC;
     pub fn EndPaint(hwnd: HWND, lpPaint: *const PAINTSTRUCT) -> BOOL;

@@ -533,11 +533,11 @@ fn main() {
         }
 
         let mut buf = game::Buffer {
-            memory: unsafe { mem::transmute(raw::Slice { data: window.backbuffer.memory as *const u8, 
-                                 len: window.backbuffer.size as uint})},
+            memory: unsafe { mem::transmute(raw::Slice { data: window.backbuffer.memory as *const u32, 
+                                 len: (window.backbuffer.size/BYTES_PER_PIXEL) as uint})},
             width: window.backbuffer.width as uint,
             height: window.backbuffer.height as uint,
-            pitch: window.backbuffer.pitch as uint,
+            pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as uint,
         };
 
         game::game_update_and_render(&mut buf, green_offset as int, blue_offset as int); 

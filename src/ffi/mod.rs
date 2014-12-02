@@ -1,7 +1,5 @@
-#![allow(non_snake_case)]
-#![allow(non_camel_case_types)]
-#![allow(unused_imports)]
 #![allow(dead_code)]
+#![allow(non_camel_case_types)]
 
 pub use libc::{c_int, c_uint, c_long};
 pub use libc::{LPCSTR, LPVOID, BOOL, SIZE_T};
@@ -11,6 +9,7 @@ pub use std::default::Default;
 
 pub use self::direct_sound::*;
 pub use self::pointer::{LONG_PTR, UINT_PTR};
+
 pub mod direct_sound;
 
 #[cfg(target_arch = "x86")]

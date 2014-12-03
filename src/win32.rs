@@ -1,8 +1,6 @@
 use std::ptr;
 use std::raw;
 use std::mem; 
-use std::f32;
-use std::num::FloatMath;
 use ffi::*;
 use game;
 
@@ -14,14 +12,11 @@ const CHANNELS: WORD = 2;
 const BITS_PER_CHANNEL: WORD = 16;
 const SAMPLES_PER_SECOND: DWORD = 48000;
 const BYTES_PER_SAMPLE: DWORD = 4;
-const LATENCY_SAMPLE_COUNT: DWORD = SAMPLES_PER_SECOND / 15;
+const LATENCY_SAMPLE_COUNT: DWORD = SAMPLES_PER_SECOND / 10;
 
 struct SoundOutput {
-    volume: i16,
     tone_frequency: DWORD,
-    wave_period: DWORD,
     sample_index: DWORD,
-    tsine: f32,
     sound_buffer: *mut IDirectSoundBuffer,
 }
 
@@ -156,61 +151,94 @@ extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWOR
 extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
 
 
-fn fill_sound_buffer(sound_output: &mut SoundOutput, 
+fn fill_sound_output(sound_output: &mut SoundOutput, 
                      byte_to_lock: DWORD,
-                     bytes_to_write: DWORD) {
-
-    let mut dsbcaps: DSBCAPS = Default::default();
-    dsbcaps.dwSize = mem::size_of::<DSBCAPS>() as DWORD;
-
-    unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCaps)(sound_output.sound_buffer, &mut dsbcaps); }
+                     bytes_to_write: DWORD,
+                     source: &game::SoundBuffer) {
 
     let mut region1: *mut c_void = ptr::null_mut();
     let mut region2: *mut c_void = ptr::null_mut();
     let mut region1_size: DWORD = 0; 
     let mut region2_size: DWORD = 0; 
 
-    unsafe {
+    let lock = unsafe {
         ((*(*sound_output.sound_buffer).lpVtbl).Lock)(sound_output.sound_buffer, 
                                          byte_to_lock,
                                          bytes_to_write,
                                          &mut region1, &mut region1_size,
                                          &mut region2, &mut region2_size,
-                                         0 as DWORD);
-    }
+                                         0 as DWORD)
+    };
 
-    fn fill_region(region: *mut c_void, region_size: DWORD,
-                   sound_output: &mut SoundOutput) {
-                       
-        assert!((region_size % BYTES_PER_SAMPLE) == 0);
-        let region_sample_count = region_size/BYTES_PER_SAMPLE;
-        let mut out = region as *mut i16;
+    if SUCCEEDED(lock) {
+        fn fill_region(region: *mut c_void, region_size: DWORD,
+                       sound_output: &mut SoundOutput, buffer: &game::SoundBuffer) {
+                           
+            assert!((region_size % BYTES_PER_SAMPLE) == 0);
+            let region_sample_count = region_size/BYTES_PER_SAMPLE;
+            let mut out = region as *mut i16;
+            let mut source: *const i16 = buffer.samples.as_ptr();
 
-        for _ in range(0, region_sample_count) {
-            let sine_value: f32 = sound_output.tsine.sin();
-            let value = (sine_value * (sound_output.volume as f32)) as i16;
-
-            sound_output.sample_index += 1; 
-            //TODO: this value gets too big for the sine function so were left
-            //with only a few steps after some seconds. Needs a fix.
-            sound_output.tsine += f32::consts::PI_2 / (sound_output.wave_period as f32);
-
-            unsafe {
-                *out = value;
-                out = out.offset(1);
-                *out = value;
-                out = out.offset(1);
+            for _ in range(0, region_sample_count) {
+                unsafe {
+                    *out = *source;
+                    out = out.offset(1);
+                    source = source.offset(1);
+                    *out = *source;
+                    out = out.offset(1);
+                    source = source.offset(1);
+                }
+                sound_output.sample_index += 1;
             }
         }
-    }
-    
-    fill_region(region1, region1_size, sound_output);
-    fill_region(region2, region2_size, sound_output);
+        
+        fill_region(region1, region1_size, sound_output, source);
+        fill_region(region2, region2_size, sound_output, source);
 
-    unsafe {
-        ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,
-                                           region1, region1_size,
-                                           region2, region2_size);
+        unsafe {
+            ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,
+                                               region1, region1_size,
+                                               region2, region2_size);
+        }
+    }
+}
+
+fn clear_sound_output(sound_output: &mut SoundOutput, dsbcaps: &DSBCAPS) {
+
+    let mut region1: *mut c_void = ptr::null_mut();
+    let mut region2: *mut c_void = ptr::null_mut();
+    let mut region1_size: DWORD = 0; 
+    let mut region2_size: DWORD = 0; 
+
+    let lock = unsafe { 
+        ((*(*sound_output.sound_buffer).lpVtbl).Lock)(sound_output.sound_buffer, 
+                                         0,
+                                         dsbcaps.dwBufferBytes,
+                                         &mut region1, &mut region1_size,
+                                         &mut region2, &mut region2_size,
+                                         0 as DWORD)
+    };
+
+    if SUCCEEDED(lock) {
+
+        fn fill_region(region: *mut c_void, region_size: DWORD) {
+            let mut out = region as *mut u8;
+            for _ in range(0, region_size) {
+                unsafe { 
+                    *out = 0;
+                    out = out.offset(1);
+                }
+            }
+        }
+
+        fill_region(region1, region1_size);
+        fill_region(region2, region2_size);
+
+        unsafe {
+            ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,
+                                               region1, region1_size,
+                                               region2, region2_size);
+        }
     }
 }
 
@@ -363,6 +391,7 @@ fn resize_dib_section(buffer: &mut Backbuffer, width: c_int, height: c_int) {
     buffer.size = buffer.width * buffer.height * BYTES_PER_PIXEL;
 
     unsafe {
+        //The last created buffer is implicitly destroyed at end of execution
         buffer.memory = VirtualAlloc(0 as LPVOID, buffer.size as SIZE_T,
                                      MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
         if buffer.memory.is_null() {
@@ -438,11 +467,8 @@ fn main() {
 
     //Needed for Sound System test
     let mut sound_output = SoundOutput {
-        volume: 3000,
         tone_frequency: 261,
-        wave_period: SAMPLES_PER_SECOND/261,
         sample_index: 0,
-        tsine: 0.0,
         //TODO: Handle all the cases when there was no DirectSound and unwrap fails!
         sound_buffer: dsound_init(window.handle, SAMPLES_PER_SECOND * BYTES_PER_SAMPLE,
                                   SAMPLES_PER_SECOND).unwrap(),
@@ -454,7 +480,7 @@ fn main() {
     unsafe {
         ((*(*sound_output.sound_buffer).lpVtbl).GetCaps)(sound_output.sound_buffer, &mut dsbcaps);
 
-        fill_sound_buffer(&mut sound_output, 0, LATENCY_SAMPLE_COUNT * BYTES_PER_SAMPLE);
+        clear_sound_output(&mut sound_output, &dsbcaps);
         ((*(*sound_output.sound_buffer).lpVtbl).Play)(sound_output.sound_buffer, 0, 0, DSBPLAY_LOOPING);
     }
 
@@ -462,8 +488,16 @@ fn main() {
     if context.is_null() {
         panic!("DC for the Window not available!");
     }
+
+    //TODO: not safe operation because VirtualAlloc could fail!
+    let mut sound_samples: &mut [i16] = unsafe { 
+            //Allocation implicitly freed at the end of the execution
+            let data = VirtualAlloc(0 as LPVOID, (48000u * 4) as SIZE_T,
+                                     MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+            mem::transmute(
+                raw::Slice { data: data as *const i16, len: 48000 * 2 } )
+        };
     
-    let mut msg = Default::default();
 
     //Needed for graphics test
     let mut green_offset: c_int = 0;
@@ -480,6 +514,8 @@ fn main() {
 
     window.running = true;
     while window.running {
+
+        let mut msg = Default::default();
         unsafe {
             //Process the Message Queue
             while PeekMessageA(&mut msg, 0 as HWND,
@@ -517,7 +553,6 @@ fn main() {
                     let stick_y = gamepad.sThumbLY;
 
                     sound_output.tone_frequency = 512 + (256.0 * (stick_y as f32 / 30000.0)) as DWORD;
-                    sound_output.wave_period = SAMPLES_PER_SECOND / sound_output.tone_frequency;
 
                     green_offset -= stick_y as c_int / 4096;
                     blue_offset += stick_x as c_int / 4096;
@@ -532,31 +567,46 @@ fn main() {
             }
         }
 
-        let mut buf = game::Buffer {
-            memory: unsafe { mem::transmute(raw::Slice { data: window.backbuffer.memory as *const u32, 
-                                 len: (window.backbuffer.size/BYTES_PER_PIXEL) as uint})},
+        let mut write_cursor: DWORD = 0;
+        let mut play_cursor: DWORD = 0;
+        let mut bytes_to_write = 0;
+        let mut byte_to_lock = 0;
+
+        let sound_is_valid = 
+            if SUCCEEDED( unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
+                         (sound_output.sound_buffer, &mut play_cursor, &mut write_cursor) }) {
+
+                byte_to_lock = (sound_output.sample_index * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes; 
+                let target_cursor = (play_cursor + LATENCY_SAMPLE_COUNT * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes;
+                bytes_to_write = if byte_to_lock > target_cursor {
+                    dsbcaps.dwBufferBytes - byte_to_lock + target_cursor
+                } else {
+                    target_cursor - byte_to_lock
+                };
+
+                true
+            } else { false };
+
+        let mut sound_buf = game::SoundBuffer {
+            samples: sound_samples.slice_to_mut(bytes_to_write as uint/2),
+            samples_per_second: SAMPLES_PER_SECOND,
+        };
+
+        let mut video_buf = game::VideoBuffer {
+            memory: unsafe { mem::transmute(
+                             raw::Slice { data: window.backbuffer.memory as *const u32, 
+                                 len: (window.backbuffer.size/BYTES_PER_PIXEL) as uint})
+                           },
             width: window.backbuffer.width as uint,
             height: window.backbuffer.height as uint,
             pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as uint,
         };
 
-        game::game_update_and_render(&mut buf, green_offset as int, blue_offset as int); 
+        game::game_update_and_render(&mut video_buf, green_offset, blue_offset,
+                                     &mut sound_buf, sound_output.tone_frequency);
 
-        let mut write_cursor: DWORD = 0;
-        let mut play_cursor: DWORD = 0;
-
-        if SUCCEEDED( unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
-                         (sound_output.sound_buffer, &mut play_cursor, &mut write_cursor) }) {
-
-            let byte_to_lock = (sound_output.sample_index * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes; 
-            let target_cursor = (play_cursor + LATENCY_SAMPLE_COUNT * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes;
-            let bytes_to_write = if byte_to_lock > target_cursor {
-                dsbcaps.dwBufferBytes - byte_to_lock + target_cursor
-            } else {
-                target_cursor - byte_to_lock
-            };
-
-            fill_sound_buffer(&mut sound_output, byte_to_lock, bytes_to_write);
+        if sound_is_valid {
+            fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
         }
 
 

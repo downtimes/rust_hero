@@ -1,6 +1,7 @@
 use std::ptr;
 use std::raw;
 use std::mem; 
+use std::i16;
 use ffi::*;
 use game;
 
@@ -15,7 +16,6 @@ const BYTES_PER_SAMPLE: DWORD = 4;
 const LATENCY_SAMPLE_COUNT: DWORD = SAMPLES_PER_SECOND / 10;
 
 struct SoundOutput {
-    tone_frequency: DWORD,
     sample_index: DWORD,
     sound_buffer: *mut IDirectSoundBuffer,
 }
@@ -412,6 +412,20 @@ fn blit_buffer_to_window(context: HDC, buffer: &Backbuffer, client_width: c_int,
     };
 }
 
+fn process_xinput_button(xinput_button_state: WORD,
+                         old_state: &game::Button, 
+                         new_state: &mut game::Button,
+                         button_bit: WORD) {
+
+    new_state.ended_down = (xinput_button_state & button_bit) == button_bit;
+    new_state.half_transitions =
+        if old_state.ended_down != new_state.ended_down {
+            1
+        } else {
+            0
+        };
+ }
+
 #[main]
 fn main() {
     let (XInputGetState, XInputSetState) = load_xinput_functions();
@@ -458,7 +472,8 @@ fn main() {
                         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                         CW_USEDEFAULT, CW_USEDEFAULT, 
                         CW_USEDEFAULT, CW_USEDEFAULT, 
-                        0 as HWND, 0 as HWND, module_handle, (&mut window) as *mut _ as *mut c_void)
+                        0 as HWND, 0 as HWND, module_handle,
+                        (&mut window) as *mut _ as *mut c_void)
     };
 
     if window.handle.is_null() {
@@ -467,7 +482,6 @@ fn main() {
 
     //Needed for Sound System test
     let mut sound_output = SoundOutput {
-        tone_frequency: 261,
         sample_index: 0,
         //TODO: Handle all the cases when there was no DirectSound and unwrap fails!
         sound_buffer: dsound_init(window.handle, SAMPLES_PER_SECOND * BYTES_PER_SAMPLE,
@@ -492,17 +506,14 @@ fn main() {
     //TODO: not safe operation because VirtualAlloc could fail!
     let mut sound_samples: &mut [i16] = unsafe { 
             //Allocation implicitly freed at the end of the execution
-            let data = VirtualAlloc(0 as LPVOID, (48000u * 4) as SIZE_T,
+            let data = VirtualAlloc(0 as LPVOID, (48000 * BYTES_PER_SAMPLE) as SIZE_T,
                                      MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
             mem::transmute(
                 raw::Slice { data: data as *const i16, len: 48000 * 2 } )
         };
-    
 
-    //Needed for graphics test
-    let mut green_offset: c_int = 0;
-    let mut blue_offset: c_int = 0;
-
+    let mut new_input: &mut game::Input = &mut Default::default();
+    let mut old_input: &mut game::Input = &mut Default::default();
 
     let mut counter_frequency: i64 = 0;
     unsafe { QueryPerformanceFrequency(&mut counter_frequency); }
@@ -528,34 +539,78 @@ fn main() {
             }
         }
 
-        for controller in range(0, XUSER_MAX_COUNT) {
+        let max_controller_count = 
+            if XUSER_MAX_COUNT > new_input.controllers.len() as u32 {
+                new_input.controllers.len() as u32
+            } else {
+                XUSER_MAX_COUNT
+            };
+
+        for controller in range(0, max_controller_count) {
             let mut state = Default::default();
             let res: u32 = XInputGetState(controller, &mut state);
             match res {
                 //Case the Controller is connected and we got data
                 ERROR_SUCCESS => {
+                    let old_controller = &old_input.controllers[controller as uint];
+                    let mut new_controller = &mut new_input.controllers[controller as uint];
+
                     let gamepad = &state.Gamepad;
 
                     let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0;
                     let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
                     let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
                     let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_START) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_BACK) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_A) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_B) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_X) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_Y) != 0;
+                    
+                    let stick_x = 
+                        if gamepad.sThumbLX < 0 {
+                            -(gamepad.sThumbLX as f32) / i16::MIN as f32
+                        } else {
+                            gamepad.sThumbLX as f32 / i16::MAX as f32
+                        };
+                    let stick_y = 
+                        if gamepad.sThumbLY < 0 {
+                            -(gamepad.sThumbLY as f32) / i16::MIN as f32
+                        } else {
+                            gamepad.sThumbLY as f32 / i16::MAX as f32
+                        };
 
-                    let stick_x = gamepad.sThumbLX;
-                    let stick_y = gamepad.sThumbLY;
+                    new_controller.is_analog = true;
+                    new_controller.start_x = old_controller.end_x;
+                    new_controller.start_y = old_controller.end_y;
 
-                    sound_output.tone_frequency = 512 + (256.0 * (stick_y as f32 / 30000.0)) as DWORD;
+                    new_controller.max_x = stick_x;
+                    new_controller.min_x = stick_x;
+                    new_controller.end_x = stick_x;
+                    new_controller.max_y = stick_y;
+                    new_controller.min_y = stick_y;
+                    new_controller.end_y = stick_y;
 
-                    green_offset -= stick_y as c_int / 4096;
-                    blue_offset += stick_x as c_int / 4096;
+
+                    process_xinput_button(gamepad.wButtons,
+                                           &old_controller.left_shoulder,
+                                           &mut new_controller.left_shoulder,
+                                           XINPUT_GAMEPAD_LEFT_SHOULDER);
+                    process_xinput_button(gamepad.wButtons,
+                                           &old_controller.right_shoulder, 
+                                           &mut new_controller.right_shoulder,
+                                           XINPUT_GAMEPAD_RIGHT_SHOULDER);
+                    process_xinput_button(gamepad.wButtons,
+                                           &old_controller.up, 
+                                           &mut new_controller.up,
+                                           XINPUT_GAMEPAD_Y);
+                    process_xinput_button(gamepad.wButtons,
+                                           &old_controller.down, 
+                                           &mut new_controller.down,
+                                           XINPUT_GAMEPAD_A);
+                    process_xinput_button(gamepad.wButtons,
+                                           &old_controller.left, 
+                                           &mut new_controller.left,
+                                           XINPUT_GAMEPAD_X);
+                    process_xinput_button(gamepad.wButtons,
+                                           &old_controller.right, 
+                                           &mut new_controller.right,
+                                           XINPUT_GAMEPAD_B);
                 },
 
                 //Case the Controller is not connected
@@ -588,7 +643,8 @@ fn main() {
             } else { false };
 
         let mut sound_buf = game::SoundBuffer {
-            samples: sound_samples.slice_to_mut(bytes_to_write as uint/2),
+            samples: sound_samples.slice_to_mut(bytes_to_write as uint/
+                                                mem::size_of::<i16>()),
             samples_per_second: SAMPLES_PER_SECOND,
         };
 
@@ -602,8 +658,9 @@ fn main() {
             pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as uint,
         };
 
-        game::game_update_and_render(&mut video_buf, green_offset, blue_offset,
-                                     &mut sound_buf, sound_output.tone_frequency);
+        game::game_update_and_render(new_input,
+                                     &mut video_buf,
+                                     &mut sound_buf);
 
         if sound_is_valid {
             fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
@@ -613,7 +670,7 @@ fn main() {
         let (width, height) = get_client_dimensions(window.handle).unwrap();
         blit_buffer_to_window(context, &window.backbuffer, width, height);
 
-            //Calculations for fps and other performance metrics
+        //Calculations for fps and other performance metrics
         let mut end_counter: i64 = 0;
         unsafe { QueryPerformanceCounter(&mut end_counter); }
         let end_cycles = intrinsics::__rdtsc();
@@ -627,6 +684,8 @@ fn main() {
 
         last_counter = end_counter;
         last_cycles = end_cycles;
-        
+
+        //TODO: clear the inputs here?
+        mem::swap(new_input, old_input);
     }
 }

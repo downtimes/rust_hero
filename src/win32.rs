@@ -145,12 +145,6 @@ extern "system" fn process_messages(handle: HWND, message: UINT, wparam: WPARAM,
     res
 }
 
-
-//Stub functions if none of the XInput libraries could be loaded!
-extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
-extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
-
-
 fn fill_sound_output(sound_output: &mut SoundOutput, 
                      byte_to_lock: DWORD,
                      bytes_to_write: DWORD,
@@ -174,7 +168,7 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
         fn fill_region(region: *mut c_void, region_size: DWORD,
                        sound_output: &mut SoundOutput, buffer: &game::SoundBuffer) {
                            
-            assert!((region_size % BYTES_PER_SAMPLE) == 0);
+            debug_assert!((region_size % BYTES_PER_SAMPLE) == 0);
             let region_sample_count = region_size/BYTES_PER_SAMPLE;
             let mut out = region as *mut i16;
             let mut source: *const i16 = buffer.samples.as_ptr();
@@ -315,6 +309,10 @@ fn dsound_init(window: HWND, buffer_size_bytes: DWORD,
     None
 }
 
+//Stub functions if none of the XInput libraries could be loaded!
+extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
+extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
+
 fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
 
     let xlib_first_name = "xinput1_4.dll".to_c_str();
@@ -424,11 +422,27 @@ fn process_xinput_button(xinput_button_state: WORD,
         } else {
             0
         };
- }
+}
+
+fn kilo_bytes(b: uint) -> uint {
+    b * 1024
+}
+
+fn mega_bytes(mb: uint) -> uint {
+    kilo_bytes(mb) * 1024
+}
+
+fn giga_bytes(gb: uint) -> uint {
+    mega_bytes(gb) * 1024
+}
+
+fn tera_bytes(tb: uint) -> uint {
+    giga_bytes(tb) * 1024
+}
 
 #[main]
 fn main() {
-    let (XInputGetState, XInputSetState) = load_xinput_functions();
+    let (XInputGetState, _) = load_xinput_functions();
     
     let module_handle = unsafe { GetModuleHandleA(ptr::null()) };
     if module_handle.is_null() {
@@ -506,11 +520,42 @@ fn main() {
     //TODO: not safe operation because VirtualAlloc could fail!
     let mut sound_samples: &mut [i16] = unsafe { 
             //Allocation implicitly freed at the end of the execution
-            let data = VirtualAlloc(0 as LPVOID, (48000 * BYTES_PER_SAMPLE) as SIZE_T,
+            let data = VirtualAlloc(0 as LPVOID, dsbcaps.dwBufferBytes as SIZE_T,
                                      MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
             mem::transmute(
-                raw::Slice { data: data as *const i16, len: 48000 * 2 } )
+                raw::Slice { data: data as *const i16,
+                             len: dsbcaps.dwBufferBytes as uint / mem::size_of::<i16>()})
         };
+   
+    let base_address = if cfg!(ndebug) { 0 } else { tera_bytes(2) };
+    let permanent_store_size = mega_bytes(64);
+    let transient_store_size = giga_bytes(4);
+    let memory = unsafe { VirtualAlloc(base_address as LPVOID, 
+                                       (permanent_store_size + transient_store_size) as SIZE_T,
+                                       MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE) };
+
+    if memory.is_null() { panic!("Memory for the Game could not be obtained!"); }
+
+    let mut game_memory: game::GameMemory = 
+        game::GameMemory {
+            initialized: false,
+            permanent: unsafe { 
+                        mem::transmute( raw::Slice { 
+                                            data: memory as *const u8, 
+                                            len: permanent_store_size
+                                        } 
+                                      ) 
+                        },
+            transient: unsafe { 
+                        mem::transmute( raw::Slice { 
+                                            data: (memory as *const u8)
+                                                   .offset(permanent_store_size as int), 
+                                            len: transient_store_size
+                                        }
+                                      ) 
+                        },
+        };
+
 
     let mut new_input: &mut game::Input = &mut Default::default();
     let mut old_input: &mut game::Input = &mut Default::default();
@@ -658,7 +703,8 @@ fn main() {
             pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as uint,
         };
 
-        game::game_update_and_render(new_input,
+        game::game_update_and_render(&mut game_memory,
+                                     new_input,
                                      &mut video_buf,
                                      &mut sound_buf);
 

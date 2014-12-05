@@ -1,8 +1,9 @@
 use std::f32;
 use std::num::FloatMath;
 use std::default::Default;
+use std::mem;
 
-//The public interface of the game
+// ============= The public interface ===============
 pub struct VideoBuffer<'a> {
     //Buffer memory is assumed to be BB GG RR xx
     pub memory: &'a mut [u32],
@@ -59,17 +60,32 @@ impl Default for Input {
     }
 }
 
-static mut blue: i32 = 0;
-static mut green: i32 = 0;
 
-pub fn game_update_and_render(input: &Input,
+pub struct GameMemory<'a> {
+    pub initialized: bool,
+    pub permanent: &'a mut[u8], //REQUIRED to be zeroed
+    pub transient: &'a mut[u8], //REQUIRED to be zeroed
+}
+
+
+pub fn game_update_and_render(game_memory: &mut GameMemory,
+                              input: &Input,
                               vidoe_buffer: &mut VideoBuffer,
                               sound_buffer: &mut SoundBuffer,) {
 
+    debug_assert!(mem::size_of::<GameState>() <= game_memory.permanent.len());
+
+    let mut state: &mut GameState = 
+        unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
+
+    if !game_memory.initialized {
+        game_memory.initialized = true;
+    }
+    
     let p1_input = &input.controllers[0];
     let frequency = 
         if p1_input.is_analog {
-            unsafe { blue += (4.0f32 * p1_input.end_x) as i32; }
+            state.blue_offset += (4.0f32 * p1_input.end_x) as i32;
 
             (256f32 + 128.0f32 * p1_input.end_y) as u32
         } else { 
@@ -77,27 +93,34 @@ pub fn game_update_and_render(input: &Input,
         };
 
     if p1_input.down.ended_down {
-        unsafe { green += 1; }
+        state.green_offset += 1;
     }
 
-    generate_sound(sound_buffer, frequency);
-    unsafe { render_weird_gradient(vidoe_buffer, green, blue); }
+    generate_sound(sound_buffer, frequency, &mut state.tsine);
+    render_weird_gradient(vidoe_buffer, state.green_offset, state.blue_offset);
 }
-//End of the public interface
 
-static mut T_SINE: f32 = 0.0;
+// ======== End of the public interface =========
 
-fn generate_sound(buffer: &mut SoundBuffer, tone_frequency: u32) {
+
+struct GameState {
+    green_offset: i32,
+    blue_offset: i32,
+    tsine: f32,
+}
+
+
+fn generate_sound(buffer: &mut SoundBuffer, tone_frequency: u32, tsine: &mut f32) {
     let volume: f32 = 3000.0;
     let wave_period = buffer.samples_per_second / tone_frequency;
 
-    assert!(buffer.samples.len() % 2 == 0);
+    debug_assert!(buffer.samples.len() % 2 == 0);
     for sample in buffer.samples.chunks_mut(2) {
-        let sine_value: f32 = unsafe { T_SINE.sin() };
+        let sine_value: f32 = tsine.sin();
         let value = (sine_value * volume as f32) as i16;
         //TODO: this value gets too big for the sine function so we're left
         //with only a few discrete sound steps after some seconds. Needs a fix.
-        unsafe { T_SINE += f32::consts::PI_2 / (wave_period as f32); }
+        *tsine += f32::consts::PI_2 / (wave_period as f32); 
 
         for channel in sample.iter_mut() {
             *channel = value;

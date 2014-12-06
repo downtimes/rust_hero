@@ -3,6 +3,11 @@ use std::num::FloatMath;
 use std::default::Default;
 use std::mem;
 
+#[cfg(target_os="windows")]
+use win32::*;
+#[cfg(target_os="linux")]
+use linux::*;
+
 // ============= The public interface ===============
 pub struct VideoBuffer<'a> {
     //Buffer memory is assumed to be BB GG RR xx
@@ -79,6 +84,14 @@ pub fn game_update_and_render(game_memory: &mut GameMemory,
         unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
 
     if !game_memory.initialized {
+        let file = debug::platform_read_entire_file("test.txt");
+        match file {
+            Some(debug::ReadFileResult{ size, contents }) => {
+                debug::platform_write_entire_file("tester.txt", size, contents);
+                debug::platform_free_file_memory(contents);
+            },
+            None => println!("Error as expected"),
+        }
         game_memory.initialized = true;
     }
     

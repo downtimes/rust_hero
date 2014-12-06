@@ -5,6 +5,117 @@ use std::i16;
 use ffi::*;
 use game;
 
+#[cfg(not(ndebug))]
+pub mod debug {
+    use ffi::*;
+    use std::ptr;
+    use super::util;
+
+    pub struct ReadFileResult {
+        pub size: u32,
+        pub contents: *mut c_void,
+    }
+
+    //TODO: make generic over the thing we want to load?
+    //or just return a byteslice?
+    pub fn platform_read_entire_file(filename: &str) -> Option<ReadFileResult> {
+        debug_assert!(filename.len() <= MAX_PATH);
+
+        let mut result = None;
+        let name = filename.to_c_str();
+        let handle =
+            unsafe { CreateFileA(name.as_ptr(), 
+                                 GENERIC_READ, FILE_SHARE_READ,
+                                 ptr::null_mut(), OPEN_EXISTING, 
+                                 FILE_ATTRIBUTE_NORMAL, ptr::null_mut()) };
+
+        if handle != INVALID_HANDLE_VALUE as *mut c_void {
+            let mut file_size: i64 = 0;
+            if unsafe { GetFileSizeEx(handle, &mut file_size) } != 0 {
+                let memory: *mut c_void = 
+                    unsafe { VirtualAlloc(ptr::null_mut(), file_size as SIZE_T,
+                                          MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE) };
+
+                if memory.is_not_null() {
+                let size = util::safe_truncate_u64(file_size as u64);
+                    let mut bytes_read = 0;
+                    if (unsafe { ReadFile(handle, memory, size, 
+                                &mut bytes_read, ptr::null_mut()) } != 0)
+                        && (bytes_read == size) {
+
+                        result = Some(ReadFileResult {
+                                        size: size,
+                                        contents: memory,
+                                      });
+                    } else {
+                        platform_free_file_memory(memory);
+                    }
+                }
+            }
+            unsafe { CloseHandle(handle); }
+        }
+
+        result
+    }
+    
+    pub fn platform_free_file_memory(memory: *mut c_void) {
+        if memory.is_not_null() {
+            unsafe { VirtualFree(memory, 0, MEM_RELEASE); }
+        }
+    }
+
+    pub fn platform_write_entire_file(filename: &str, size: DWORD,
+                                      memory: *mut c_void) -> bool {
+        debug_assert!(filename.len() <= MAX_PATH);
+
+        let mut result = false;
+        let name = filename.to_c_str();
+        let handle =
+            unsafe { CreateFileA(name.as_ptr(), 
+                                 GENERIC_WRITE, 0,
+                                 ptr::null_mut(), CREATE_ALWAYS, 
+                                 FILE_ATTRIBUTE_NORMAL, ptr::null_mut()) };
+
+        if handle != INVALID_HANDLE_VALUE as *mut c_void {
+            let mut bytes_written = 0;
+            if unsafe { WriteFile(handle, memory, size, 
+                                  &mut bytes_written, ptr::null_mut()) } != 0 {
+
+                result = bytes_written == size;
+            }
+            unsafe { CloseHandle(handle); }
+        }
+        result
+    }
+}
+
+//TODO: this part should be moved to a platform independant file
+mod util {
+    use std::u32;
+
+    pub fn safe_truncate_u64(value: u64) -> u32 {
+        debug_assert!(value <= u32::MAX as u64);
+        value as u32
+    }
+
+    pub fn kilo_bytes(b: uint) -> uint {
+        b * 1024
+    }
+
+    pub fn mega_bytes(mb: uint) -> uint {
+        kilo_bytes(mb) * 1024
+    }
+
+    pub fn giga_bytes(gb: uint) -> uint {
+        mega_bytes(gb) * 1024
+    }
+
+    pub fn tera_bytes(tb: uint) -> uint {
+        giga_bytes(tb) * 1024
+    }
+
+}
+
 //Graphics System constants
 const BYTES_PER_PIXEL: c_int = 4;
 
@@ -390,7 +501,7 @@ fn resize_dib_section(buffer: &mut Backbuffer, width: c_int, height: c_int) {
 
     unsafe {
         //The last created buffer is implicitly destroyed at end of execution
-        buffer.memory = VirtualAlloc(0 as LPVOID, buffer.size as SIZE_T,
+        buffer.memory = VirtualAlloc(ptr::null_mut(), buffer.size as SIZE_T,
                                      MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
         if buffer.memory.is_null() {
             panic!("No memory could be allocated by VirtualAlloc");
@@ -422,22 +533,6 @@ fn process_xinput_button(xinput_button_state: WORD,
         } else {
             0
         };
-}
-
-fn kilo_bytes(b: uint) -> uint {
-    b * 1024
-}
-
-fn mega_bytes(mb: uint) -> uint {
-    kilo_bytes(mb) * 1024
-}
-
-fn giga_bytes(gb: uint) -> uint {
-    mega_bytes(gb) * 1024
-}
-
-fn tera_bytes(tb: uint) -> uint {
-    giga_bytes(tb) * 1024
 }
 
 #[main]
@@ -520,16 +615,16 @@ fn main() {
     //TODO: not safe operation because VirtualAlloc could fail!
     let mut sound_samples: &mut [i16] = unsafe { 
             //Allocation implicitly freed at the end of the execution
-            let data = VirtualAlloc(0 as LPVOID, dsbcaps.dwBufferBytes as SIZE_T,
+            let data = VirtualAlloc(ptr::null_mut(), dsbcaps.dwBufferBytes as SIZE_T,
                                      MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
             mem::transmute(
                 raw::Slice { data: data as *const i16,
                              len: dsbcaps.dwBufferBytes as uint / mem::size_of::<i16>()})
         };
    
-    let base_address = if cfg!(ndebug) { 0 } else { tera_bytes(2) };
-    let permanent_store_size = mega_bytes(64);
-    let transient_store_size = giga_bytes(4);
+    let base_address = if cfg!(ndebug) { 0 } else { util::tera_bytes(2) };
+    let permanent_store_size = util::mega_bytes(64);
+    let transient_store_size = util::giga_bytes(4);
     let memory = unsafe { VirtualAlloc(base_address as LPVOID, 
                                        (permanent_store_size + transient_store_size) as SIZE_T,
                                        MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE) };

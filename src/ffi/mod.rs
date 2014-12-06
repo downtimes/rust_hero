@@ -5,6 +5,7 @@ pub use libc::{c_int, c_uint, c_long};
 pub use libc::{LPCSTR, LPVOID, BOOL, SIZE_T};
 pub use libc::{QueryPerformanceCounter, QueryPerformanceFrequency};
 pub use libc::{VirtualAlloc, VirtualFree};
+pub use libc::{CloseHandle, ReadFile, WriteFile};
 pub use std::default::Default;
 
 pub use self::direct_sound::*;
@@ -120,9 +121,22 @@ pub const XUSER_MAX_COUNT: DWORD = 4;
 pub const ERROR_SUCCESS: DWORD = 0;
 pub const ERROR_DEVICE_NOT_CONNECTED: DWORD = 1167;
 
+pub const GENERIC_READ: DWORD = 0x80000000;
+pub const GENERIC_WRITE: DWORD = 0x40000000;
+
+pub const FILE_SHARE_READ: DWORD = 0x00000001;
+
+pub const FILE_ATTRIBUTE_NORMAL: DWORD = 0x80;
+
+pub const CREATE_ALWAYS: DWORD = 2;
+pub const OPEN_EXISTING: DWORD = 3;
+
+pub const MAX_PATH: uint = 260;
 
 #[allow(overflowing_literals)]
 pub const CW_USEDEFAULT: c_int = 0x80000000;
+
+pub const INVALID_HANDLE_VALUE: int = -1;
 
 #[repr(C)]
 pub struct XINPUT_GAMEPAD {
@@ -299,6 +313,13 @@ impl Default for BITMAPINFOHEADER {
 }
 
 #[repr(C)]
+pub struct SECURITY_ATTRIBUTES {
+    pub nLenght: DWORD,
+    pub lpSecurityDescriptor: LPVOID,
+    pub bInheritHandle: bool,
+}
+
+#[repr(C)]
 pub struct RGBQUAD {
     pub rgbBlue: BYTE,
     pub rgbGreen: BYTE,
@@ -345,6 +366,11 @@ extern "system" {
     pub fn GetWindowLongPtrA(hWnd: HWND, nIndex: c_int) -> pointer::LONG_PTR;
     pub fn SetWindowLongPtrA(hWnd: HWND, nIndex: c_int, 
                              dwNewLong: pointer::LONG_PTR) -> pointer::LONG_PTR;
+    pub fn CreateFileA(lpFileName: LPCTSTR, dwDesiredAccess: DWORD,
+                      dwShareMode: DWORD, lpSecurityAttributes: *mut SECURITY_ATTRIBUTES,
+                      dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD,
+                      hTemplateFile: HANDLE) -> HANDLE;
+    pub fn GetFileSizeEx(hFile: HANDLE, lpFileSize: *mut i64) -> BOOL;
 }
 
 // gdi32

@@ -86,11 +86,11 @@ pub fn game_update_and_render(game_memory: &mut GameMemory,
     if !game_memory.initialized {
         let file = debug::platform_read_entire_file("test.txt");
         match file {
-            Some(debug::ReadFileResult{ size, contents }) => {
+            Ok(debug::ReadFileResult{ size, contents }) => {
                 debug::platform_write_entire_file("tester.txt", size, contents);
                 debug::platform_free_file_memory(contents);
             },
-            None => println!("Error as expected"),
+            Err(_) => println!("Error as expected"),
         }
         game_memory.initialized = true;
     }

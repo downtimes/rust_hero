@@ -18,10 +18,10 @@ pub mod debug {
 
     //TODO: make generic over the thing we want to load?
     //or just return a byteslice?
-    pub fn platform_read_entire_file(filename: &str) -> Option<ReadFileResult> {
+    pub fn platform_read_entire_file(filename: &str) -> Result<ReadFileResult, ()> {
         debug_assert!(filename.len() <= MAX_PATH);
 
-        let mut result = None;
+        let mut result: Result<ReadFileResult, ()> = Err(());
         let name = filename.to_c_str();
         let handle =
             unsafe { CreateFileA(name.as_ptr(), 
@@ -43,7 +43,7 @@ pub mod debug {
                                 &mut bytes_read, ptr::null_mut()) } != 0)
                         && (bytes_read == size) {
 
-                        result = Some(ReadFileResult {
+                        result = Ok(ReadFileResult {
                                         size: size,
                                         contents: memory,
                                       });
@@ -156,49 +156,6 @@ impl Window {
             WM_DESTROY => self.running = false,
             WM_CLOSE => self.running = false,
 
-            WM_SYSKEYDOWN |
-            WM_SYSKEYUP   |
-            WM_KEYDOWN    |
-            WM_KEYUP       => {
-                let vk_code = wparam as u8;
-                let was_down = (lparam & (1 << 30)) != 0;
-                let is_down = (lparam & (1 << 31)) == 0;
-
-                //Rust currently doesn't allow casts in matches so we have to
-                //conform to one type which is u8 here
-                const W: u8 = 'W' as u8;
-                const A: u8 = 'A' as u8;
-                const S: u8 = 'S' as u8;
-                const D: u8 = 'D' as u8;
-                const Q: u8 = 'Q' as u8;
-                const E: u8 = 'E' as u8;
-
-                if was_down != is_down {
-                    match vk_code {
-                        VK_UP => (),
-                        VK_DOWN => (),
-                        VK_LEFT => (),
-                        VK_RIGHT => (),
-                        W => (),
-                        A => (),
-                        S => (),
-                        D => (),
-                        E => (),
-                        Q => (),
-                        VK_ESCAPE => (),
-                        VK_SPACE => (),
-                        VK_F4 => {
-                            let alt_key_down = (lparam & (1 << 29)) != 0;
-                            if alt_key_down {
-                                self.running = false; 
-                            }
-                        },
-                        _ => (),
-                    }
-                }
-            },
-
-
             WM_PAINT => { 
                 let mut paint = Default::default(); 
 
@@ -240,7 +197,7 @@ extern "system" fn process_messages(handle: HWND, message: UINT, wparam: WPARAM,
         //For all the other messages we know we have a window struct registered
         //with windows. So we get it and dispatch to its message handleing
         _ => {
-            unsafe { 
+            unsafe {
                 let window = GetWindowLongPtrA(handle, GWLP_USERDATA) as *mut Window;
                 if window.is_not_null() {
                     res = (*window).process_messages(message, wparam, lparam);
@@ -348,14 +305,14 @@ fn clear_sound_output(sound_output: &mut SoundOutput, dsbcaps: &DSBCAPS) {
 }
 
 fn dsound_init(window: HWND, buffer_size_bytes: DWORD, 
-               samples_per_second: DWORD) -> Option<*mut IDirectSoundBuffer> {
+               samples_per_second: DWORD) -> Result<*mut IDirectSoundBuffer, ()> {
     let library_name = "dsound.dll".to_c_str();
     let library = unsafe { LoadLibraryA(library_name.as_ptr()) };
 
     if library.is_not_null() {
         let create_name = "DirectSoundCreate".to_c_str();
         let ds_create = unsafe { GetProcAddress(library, create_name.as_ptr()) };
-        if ds_create.is_null() { return None; }
+        if ds_create.is_null() { return Err(()); }
 
         //We have DirectSound capabilities
         let DirectSoundCreate: DirectSoundCreate_t = unsafe { mem::transmute(ds_create) };
@@ -397,14 +354,14 @@ fn dsound_init(window: HWND, buffer_size_bytes: DWORD,
 
             //Creating our secondary buffer
             let buffer_desc_secondary: DSBUFFERDESC = 
-                    DSBUFFERDESC {
-                        dwSize: mem::size_of::<DSBUFFERDESC>() as DWORD,
-                        dwFlags: 0 as DWORD,
-                        dwBufferBytes: buffer_size_bytes,
-                        dwReserved: 0,
-                        lpwfxFormat: &mut wave_format,
-                        guid: Default::default(),
-                    };
+                DSBUFFERDESC {
+                    dwSize: mem::size_of::<DSBUFFERDESC>() as DWORD,
+                    dwFlags: 0 as DWORD,
+                    dwBufferBytes: buffer_size_bytes,
+                    dwReserved: 0,
+                    lpwfxFormat: &mut wave_format,
+                    guid: Default::default(),
+                };
             let mut secondary_buffer: *mut IDirectSoundBuffer = ptr::null_mut();
             unsafe {
                ((*(*direct_sound).lpVtbl).CreateSoundBuffer)(direct_sound, 
@@ -413,11 +370,11 @@ fn dsound_init(window: HWND, buffer_size_bytes: DWORD,
                                                               ptr::null_mut());
             }
 
-            return Some(secondary_buffer)
+            return Ok(secondary_buffer)
         }
     }
 
-    None
+    Err(())
 }
 
 //Stub functions if none of the XInput libraries could be loaded!
@@ -533,6 +490,76 @@ fn process_xinput_button(xinput_button_state: WORD,
         } else {
             0
         };
+}
+
+fn process_pending_messages(window: &mut Window, 
+                            keyboard_controller: &mut game::ControllerInput) {
+    let mut msg = Default::default();
+    //Process the Message Queue
+    while unsafe {PeekMessageA(&mut msg, 0 as HWND,
+                       0 as UINT, 0 as UINT, PM_REMOVE) } != 0 {
+        match msg.message {
+            WM_QUIT => window.running = false,
+
+            WM_SYSKEYDOWN |
+            WM_SYSKEYUP   |
+            WM_KEYDOWN    |
+            WM_KEYUP       => {
+                let vk_code = msg.wparam as u8;
+                let was_down = (msg.lparam & (1 << 30)) != 0;
+                let is_down = (msg.lparam & (1 << 31)) == 0;
+
+                //Rust currently doesn't allow casts in matches so we have to
+                //conform to one type which is u8 here
+                const W: u8 = 'W' as u8;
+                const A: u8 = 'A' as u8;
+                const S: u8 = 'S' as u8;
+                const D: u8 = 'D' as u8;
+                const Q: u8 = 'Q' as u8;
+                const E: u8 = 'E' as u8;
+
+                if was_down != is_down {
+                    match vk_code {
+                        VK_UP => process_keyboard_message(
+                                        &mut keyboard_controller.up, is_down),
+                        VK_DOWN => process_keyboard_message(
+                                        &mut keyboard_controller.down, is_down),
+                        VK_LEFT => process_keyboard_message(
+                                        &mut keyboard_controller.left, is_down),
+                        VK_RIGHT => process_keyboard_message(
+                                        &mut keyboard_controller.right, is_down),
+                        W => (),
+                        A => (),
+                        S => (),
+                        D => (),
+                        E => process_keyboard_message(
+                                        &mut keyboard_controller.right_shoulder, is_down),
+                        Q => process_keyboard_message(
+                                        &mut keyboard_controller.left_shoulder, is_down),
+                        VK_ESCAPE => (),
+                        VK_SPACE => (),
+                        VK_F4 => {
+                            let alt_key_down = (msg.lparam & (1 << 29)) != 0;
+                            if alt_key_down {
+                                window.running = false; 
+                            }
+                        },
+                        _ => (),
+                    }
+                }
+            },
+
+            _ => unsafe {
+                TranslateMessage(&msg);
+                DispatchMessageA(&msg);
+            },
+        }
+    }
+}
+
+fn process_keyboard_message(button: &mut game::Button, is_down: bool) {
+    button.ended_down = is_down;
+    button.half_transitions += 1;
 }
 
 #[main]
@@ -666,18 +693,10 @@ fn main() {
     window.running = true;
     while window.running {
 
-        let mut msg = Default::default();
-        unsafe {
-            //Process the Message Queue
-            while PeekMessageA(&mut msg, 0 as HWND,
-                               0 as UINT, 0 as UINT, PM_REMOVE) != 0 {
-                if msg.message == WM_QUIT {
-                    window.running = false;
-                }
-                TranslateMessage(&msg);
-                DispatchMessageA(&msg);
-            }
-        }
+        //Zero out the last input to get a reliable half-transition count for
+        //Keyboard input.
+        new_input.controllers[0] = Default::default();
+        process_pending_messages(&mut window, &mut new_input.controllers[0]);
 
         let max_controller_count = 
             if XUSER_MAX_COUNT > new_input.controllers.len() as u32 {

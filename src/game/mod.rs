@@ -31,36 +31,60 @@ pub struct Button {
 
 #[deriving(Default)]
 pub struct ControllerInput {
-    pub is_analog: bool,
+    pub is_connected: bool,
 
-    pub end_x: f32,
-    pub end_y: f32,
+    pub average_x: Option<f32>,
+    pub average_y: Option<f32>,
+    
+    pub move_up: Button,
+    pub move_down: Button,
+    pub move_left: Button,
+    pub move_right: Button,
 
-    pub min_x: f32,
-    pub min_y: f32,
+    pub action_up: Button,
+    pub action_down: Button,
+    pub action_left: Button,
+    pub action_right: Button,
 
-    pub max_x: f32,
-    pub max_y: f32,
-
-    pub start_x: f32,
-    pub start_y: f32,
-
-    pub up: Button,
-    pub down: Button,
-    pub left: Button,
-    pub right: Button,
     pub left_shoulder: Button,
     pub right_shoulder: Button,
+    
+    pub start: Button,
+    pub back: Button,
+}
+
+impl ControllerInput {
+    pub fn zero_half_transitions(&mut self) {
+        self.move_up.half_transitions = 0;
+        self.move_down.half_transitions = 0;
+        self.move_left.half_transitions = 0;
+        self.move_right.half_transitions = 0;
+        self.action_up.half_transitions = 0;
+        self.action_down.half_transitions = 0;
+        self.action_left.half_transitions = 0;
+        self.action_right.half_transitions = 0;
+        self.left_shoulder.half_transitions = 0;
+        self.right_shoulder.half_transitions = 0;
+        self.start.half_transitions = 0;
+        self.back.half_transitions = 0;
+    }
+
+    pub fn is_analog(&self) -> bool {
+        self.average_x.is_some() && self.average_y.is_some()
+    }
 }
 
 pub struct Input {
-    pub controllers: [ControllerInput, ..4],
+    //TODO: see if it fits rustaceans better if we have an Option of 
+    //ControllerInputs here?
+    //The 0 Controller is the keyboard all the others are possible joysticks
+    pub controllers: [ControllerInput, ..5],
 }
 
 impl Default for Input {
     fn default() -> Input {
         Input {
-            controllers: [Default::default(), .. 4],
+            controllers: [Default::default(), ..5],
         }
     }
 }
@@ -95,18 +119,24 @@ pub fn game_update_and_render(game_memory: &mut GameMemory,
         game_memory.initialized = true;
     }
     
-    let p1_input = &input.controllers[0];
-    let frequency = 
-        if p1_input.is_analog {
-            state.blue_offset += (4.0f32 * p1_input.end_x) as i32;
+    let mut frequency = 256;
+    for controller in input.controllers.iter() {
 
-            (256f32 + 128.0f32 * p1_input.end_y) as u32
-        } else { 
-            256
-        };
+        if controller.is_analog() {
+            state.blue_offset += (4.0f32 * controller.average_x.unwrap()) as i32;
 
-    if p1_input.down.ended_down {
-        state.green_offset += 1;
+            frequency = (256f32 + 128.0f32 * controller.average_y.unwrap()) as u32;
+        } else {
+            if controller.move_left.ended_down {
+                state.blue_offset -= 1;
+            } else if controller.move_right.ended_down {
+                state.blue_offset += 1;
+            }
+        }
+
+        if controller.action_down.ended_down {
+            state.green_offset += 1;
+        }
     }
 
     generate_sound(sound_buffer, frequency, &mut state.tsine);

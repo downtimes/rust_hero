@@ -156,6 +156,12 @@ impl Window {
             WM_DESTROY => self.running = false,
             WM_CLOSE => self.running = false,
 
+            WM_SYSKEYDOWN
+            | WM_SYSKEYUP
+            | WM_KEYDOWN
+            | WM_KEYUP => debug_assert!(false, "There sould be no key-messages in\
+                                                the windows message callback!"),
+
             WM_PAINT => { 
                 let mut paint = Default::default(); 
 
@@ -501,10 +507,10 @@ fn process_pending_messages(window: &mut Window,
         match msg.message {
             WM_QUIT => window.running = false,
 
-            WM_SYSKEYDOWN |
-            WM_SYSKEYUP   |
-            WM_KEYDOWN    |
-            WM_KEYUP       => {
+            WM_SYSKEYDOWN
+            | WM_SYSKEYUP
+            | WM_KEYDOWN
+            | WM_KEYUP => {
                 let vk_code = msg.wparam as u8;
                 let was_down = (msg.lparam & (1 << 30)) != 0;
                 let is_down = (msg.lparam & (1 << 31)) == 0;
@@ -521,23 +527,29 @@ fn process_pending_messages(window: &mut Window,
                 if was_down != is_down {
                     match vk_code {
                         VK_UP => process_keyboard_message(
-                                        &mut keyboard_controller.up, is_down),
+                                        &mut keyboard_controller.action_up, is_down),
                         VK_DOWN => process_keyboard_message(
-                                        &mut keyboard_controller.down, is_down),
+                                        &mut keyboard_controller.action_down, is_down),
                         VK_LEFT => process_keyboard_message(
-                                        &mut keyboard_controller.left, is_down),
+                                        &mut keyboard_controller.action_left, is_down),
                         VK_RIGHT => process_keyboard_message(
-                                        &mut keyboard_controller.right, is_down),
-                        W => (),
-                        A => (),
-                        S => (),
-                        D => (),
+                                        &mut keyboard_controller.action_right, is_down),
+                        W => process_keyboard_message(
+                                        &mut keyboard_controller.move_up, is_down),
+                        A => process_keyboard_message(
+                                        &mut keyboard_controller.move_left, is_down),
+                        S => process_keyboard_message(
+                                        &mut keyboard_controller.move_down, is_down),
+                        D => process_keyboard_message(
+                                        &mut keyboard_controller.move_right, is_down),
                         E => process_keyboard_message(
                                         &mut keyboard_controller.right_shoulder, is_down),
                         Q => process_keyboard_message(
                                         &mut keyboard_controller.left_shoulder, is_down),
-                        VK_ESCAPE => (),
-                        VK_SPACE => (),
+                        VK_ESCAPE => process_keyboard_message(
+                                        &mut keyboard_controller.back, is_down),
+                        VK_SPACE => process_keyboard_message(
+                                        &mut keyboard_controller.start, is_down),
                         VK_F4 => {
                             let alt_key_down = (msg.lparam & (1 << 29)) != 0;
                             if alt_key_down {
@@ -558,6 +570,7 @@ fn process_pending_messages(window: &mut Window,
 }
 
 fn process_keyboard_message(button: &mut game::Button, is_down: bool) {
+    debug_assert!(is_down != button.ended_down);
     button.ended_down = is_down;
     button.half_transitions += 1;
 }
@@ -693,58 +706,94 @@ fn main() {
     window.running = true;
     while window.running {
 
-        //Zero out the last input to get a reliable half-transition count for
-        //Keyboard input.
-        new_input.controllers[0] = Default::default();
+        //Keep the old button state but zero out the halftransitoncount to not mess up
+        new_input.controllers[0] = old_input.controllers[0];
+        new_input.controllers[0].is_connected = true;
+        new_input.controllers[0].zero_half_transitions();
         process_pending_messages(&mut window, &mut new_input.controllers[0]);
 
         let max_controller_count = 
-            if XUSER_MAX_COUNT > new_input.controllers.len() as u32 {
-                new_input.controllers.len() as u32
+            if XUSER_MAX_COUNT > (new_input.controllers.len() - 1) as u32 {
+                (new_input.controllers.len() - 1) as u32
             } else {
                 XUSER_MAX_COUNT
             };
 
         for controller in range(0, max_controller_count) {
             let mut state = Default::default();
+            let controller_num: uint = controller as uint + 1;
             let res: u32 = XInputGetState(controller, &mut state);
             match res {
                 //Case the Controller is connected and we got data
                 ERROR_SUCCESS => {
-                    let old_controller = &old_input.controllers[controller as uint];
-                    let mut new_controller = &mut new_input.controllers[controller as uint];
+                    let old_controller = &old_input.controllers[controller_num];
+                    let mut new_controller = &mut new_input.controllers[controller_num];
+                    new_controller.is_connected = true;
 
                     let gamepad = &state.Gamepad;
 
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
-                    let _ = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
-                    
-                    let stick_x = 
-                        if gamepad.sThumbLX < 0 {
-                            -(gamepad.sThumbLX as f32) / i16::MIN as f32
-                        } else {
-                            gamepad.sThumbLX as f32 / i16::MAX as f32
-                        };
-                    let stick_y = 
-                        if gamepad.sThumbLY < 0 {
-                            -(gamepad.sThumbLY as f32) / i16::MIN as f32
-                        } else {
-                            gamepad.sThumbLY as f32 / i16::MAX as f32
-                        };
+                    fn process_xinput_stick(value: SHORT,
+                                            dead_zone: SHORT) -> f32 {
+                        if value < -dead_zone {
+                            -((value + dead_zone) as f32) / (i16::MIN + dead_zone) as f32
+                        } else if value > dead_zone {
+                            (value - dead_zone) as f32 / (i16::MAX - dead_zone) as f32
+                        } else { 
+                            0.0
+                        }
+                    }
+                                
+                    let mut xvalue = process_xinput_stick(gamepad.sThumbLX, 
+                                                       XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+                    let mut yvalue = process_xinput_stick(gamepad.sThumbLY, 
+                                                       XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
 
-                    new_controller.is_analog = true;
-                    new_controller.start_x = old_controller.end_x;
-                    new_controller.start_y = old_controller.end_y;
+                    let dpad_up = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0;
+                    let dpad_down = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_DOWN) != 0;
+                    let dpad_left = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) != 0;
+                    let dpad_right = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) != 0;
 
-                    new_controller.max_x = stick_x;
-                    new_controller.min_x = stick_x;
-                    new_controller.end_x = stick_x;
-                    new_controller.max_y = stick_y;
-                    new_controller.min_y = stick_y;
-                    new_controller.end_y = stick_y;
+                    //If the DPAD was not used default to analog input with
+                    //the controllers
+                    if !(dpad_up || dpad_down || dpad_left || dpad_right) {
+                        new_controller.average_x = Some(xvalue);
+                        new_controller.average_y = Some(yvalue);
+                    } else {
+                        new_controller.average_x = None;
+                        new_controller.average_y = None;
+                        if dpad_up {
+                            yvalue = 1.0;
+                        } else if dpad_down {
+                            yvalue = -1.0;
+                        }
+                        if dpad_left {
+                            xvalue = -1.0;
+                        } else if dpad_right {
+                            xvalue = 1.0;
+                        }
+                    }
 
+                    let threshhold = 0.5;
+                    let up_fake = if yvalue > threshhold { 1 } else { 0 };
+                    let down_fake = if yvalue < -threshhold { 1 } else { 0 };
+                    let left_fake = if xvalue < -threshhold { 1 } else { 0 };
+                    let right_fake = if xvalue > threshhold { 1 } else { 0 };
+                    process_xinput_button(up_fake,
+                                           &old_controller.move_up,
+                                           &mut new_controller.move_up,
+                                           1);
+                    process_xinput_button(down_fake,
+                                           &old_controller.move_down,
+                                           &mut new_controller.move_down,
+                                           1);
+                    process_xinput_button(left_fake,
+                                           &old_controller.move_left,
+                                           &mut new_controller.move_left,
+                                           1);
+                    process_xinput_button(right_fake,
+                                           &old_controller.move_right,
+                                           &mut new_controller.move_right,
+                                           1);
 
                     process_xinput_button(gamepad.wButtons,
                                            &old_controller.left_shoulder,
@@ -755,25 +804,35 @@ fn main() {
                                            &mut new_controller.right_shoulder,
                                            XINPUT_GAMEPAD_RIGHT_SHOULDER);
                     process_xinput_button(gamepad.wButtons,
-                                           &old_controller.up, 
-                                           &mut new_controller.up,
+                                           &old_controller.action_up, 
+                                           &mut new_controller.action_up,
                                            XINPUT_GAMEPAD_Y);
                     process_xinput_button(gamepad.wButtons,
-                                           &old_controller.down, 
-                                           &mut new_controller.down,
+                                           &old_controller.action_down, 
+                                           &mut new_controller.action_down,
                                            XINPUT_GAMEPAD_A);
                     process_xinput_button(gamepad.wButtons,
-                                           &old_controller.left, 
-                                           &mut new_controller.left,
+                                           &old_controller.action_left, 
+                                           &mut new_controller.action_left,
                                            XINPUT_GAMEPAD_X);
                     process_xinput_button(gamepad.wButtons,
-                                           &old_controller.right, 
-                                           &mut new_controller.right,
+                                           &old_controller.action_right, 
+                                           &mut new_controller.action_right,
                                            XINPUT_GAMEPAD_B);
+
+                    process_xinput_button(gamepad.wButtons,
+                                           &old_controller.start,
+                                           &mut new_controller.start,
+                                           XINPUT_GAMEPAD_START);
+                    process_xinput_button(gamepad.wButtons,
+                                           &old_controller.back,
+                                           &mut new_controller.back,
+                                           XINPUT_GAMEPAD_BACK);
                 },
 
                 //Case the Controller is not connected
-                ERROR_DEVICE_NOT_CONNECTED => (),
+                ERROR_DEVICE_NOT_CONNECTED => 
+                    new_input.controllers[controller_num].is_connected = false,
 
 
                 //Some arbitrary Error was found

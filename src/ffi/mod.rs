@@ -15,6 +15,7 @@ pub mod direct_sound;
 
 #[cfg(target_arch = "x86")]
 pub mod pointer {
+    use libc::{c_long, c_uint};
     pub type LONG_PTR = c_long;
     pub type UINT_PTR = c_uint;
 }
@@ -43,6 +44,7 @@ pub type LPPAINTSTRUCT = *mut PAINTSTRUCT;
 pub type HDC = HANDLE;
 pub type LPRECT = *mut RECT;
 pub type HGDIOBJ = HANDLE;
+pub type MMRESULT = UINT;
 pub type SHORT = i16;
 
 type WNDPROC = extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT;
@@ -134,6 +136,8 @@ pub const CREATE_ALWAYS: DWORD = 2;
 pub const OPEN_EXISTING: DWORD = 3;
 
 pub const MAX_PATH: uint = 260;
+
+pub const TIMERR_NOERROR: UINT = 0;
 
 #[allow(overflowing_literals)]
 pub const CW_USEDEFAULT: c_int = 0x80000000;
@@ -373,6 +377,7 @@ extern "system" {
                       dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD,
                       hTemplateFile: HANDLE) -> HANDLE;
     pub fn GetFileSizeEx(hFile: HANDLE, lpFileSize: *mut i64) -> BOOL;
+    pub fn Sleep(dwMilliseconds: DWORD);
 }
 
 // gdi32
@@ -391,6 +396,13 @@ extern "system" {
                         dwRop: DWORD) -> c_int;
     pub fn DeleteObject(hObject: HGDIOBJ) -> BOOL;
     pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
+}
+
+
+// Winmm
+extern "system" {
+    pub fn timeBeginPeriod(uPeriod: UINT) -> MMRESULT;
+    pub fn timeEndPeriod(uPeriod: UINT) -> MMRESULT;
 }
 
 #[inline(always)]

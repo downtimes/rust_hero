@@ -124,7 +124,7 @@ const CHANNELS: WORD = 2;
 const BITS_PER_CHANNEL: WORD = 16;
 const SAMPLES_PER_SECOND: DWORD = 48000;
 const BYTES_PER_SAMPLE: DWORD = 4;
-const LATENCY_SAMPLE_COUNT: DWORD = SAMPLES_PER_SECOND / 10;
+const LATENCY_SAMPLE_COUNT: DWORD = SAMPLES_PER_SECOND / 15;
 
 struct SoundOutput {
     sample_index: DWORD,
@@ -575,6 +575,18 @@ fn process_keyboard_message(button: &mut game::Button, is_down: bool) {
     button.half_transitions += 1;
 }
 
+
+fn get_wall_clock() -> i64 {
+    let mut res: i64 = 0;
+    unsafe { QueryPerformanceCounter(&mut res); }
+    res
+}
+
+fn get_seconds_elapsed(start: i64, end: i64, frequency: i64) -> f32 {
+    debug_assert!(start < end);
+    (end - start) as f32 / frequency as f32
+}
+
 #[main]
 fn main() {
     let (XInputGetState, _) = load_xinput_functions();
@@ -691,6 +703,12 @@ fn main() {
                         },
         };
 
+    let sleep_is_granular = unsafe { timeBeginPeriod(1) == TIMERR_NOERROR };
+
+    //TODO: we need to get the actual refresh rate here
+    let moniter_refresh_rate: u32 = 60;
+    let game_refresh_rate =  moniter_refresh_rate / 2;
+    let target_seconds_per_frame = 1.0 / game_refresh_rate as f32;
 
     let mut new_input: &mut game::Input = &mut Default::default();
     let mut old_input: &mut game::Input = &mut Default::default();
@@ -700,8 +718,7 @@ fn main() {
 
     let mut last_cycles = intrinsics::__rdtsc();
 
-    let mut last_counter: i64 = 0;
-    unsafe { QueryPerformanceCounter(&mut last_counter); }
+    let mut last_counter: i64 = get_wall_clock();
 
     window.running = true;
     while window.running {
@@ -885,26 +902,46 @@ fn main() {
             fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
         }
 
+        let mut seconds_elapsed_for_work = get_seconds_elapsed(last_counter,
+                                                               get_wall_clock(),
+                                                               counter_frequency);
+        if seconds_elapsed_for_work < target_seconds_per_frame {
+            while seconds_elapsed_for_work < target_seconds_per_frame {
+                if sleep_is_granular {
+                    let sleep_ms = (1000.0 * (target_seconds_per_frame 
+                                              - seconds_elapsed_for_work)) as DWORD;
+                    if sleep_ms > 0 {
+                        unsafe { Sleep(sleep_ms); }
+                    }
+                }
+                seconds_elapsed_for_work = get_seconds_elapsed(last_counter,
+                                                               get_wall_clock(),
+                                                               counter_frequency);
+            }
+        } else {
+            //TODO: missed frame time we have to put out a log
+        }
 
         let (width, height) = get_client_dimensions(window.handle).unwrap();
         blit_buffer_to_window(context, &window.backbuffer, width, height);
 
-        //Calculations for fps and other performance metrics
-        let mut end_counter: i64 = 0;
-        unsafe { QueryPerformanceCounter(&mut end_counter); }
-        let end_cycles = intrinsics::__rdtsc();
-
-        let elapsed_counter = end_counter - last_counter;
-        let ms_per_frame = 1000.0 * (elapsed_counter as f32) / (counter_frequency as f32);
-        let fps = counter_frequency as f32 / elapsed_counter as f32;
-        let mc_per_second = (end_cycles - last_cycles) as f32/ (1000.0 * 1000.0);
+        let ms_per_frame = 1000.0 * get_seconds_elapsed(last_counter,
+                                                        get_wall_clock(),
+                                                        counter_frequency);
+        let fps: f32 = 1000.0 / ms_per_frame;
+        let display_cicles = intrinsics::__rdtsc();
+        let mc_per_second = (display_cicles - last_cycles) as f32/ (1000.0 * 1000.0);
 
         println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
 
-        last_counter = end_counter;
-        last_cycles = end_cycles;
-
         //TODO: clear the inputs here?
         mem::swap(new_input, old_input);
+
+        last_counter = get_wall_clock();
+        last_cycles = intrinsics::__rdtsc();
     }
+
+    //Reset the Sheduler resolution back to normal
+    //TODO: the timer resolution change should happen in an RAII manner
+    unsafe { timeEndPeriod(1); }
 }

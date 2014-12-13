@@ -12,11 +12,15 @@ pub type DirectSoundCreate_t = extern "system" fn(pcGuidDevice: *const GUID,
                                                   pUnkOuter: *mut IUnknown) -> HRESULT;
 
 pub const DSBCAPS_PRIMARYBUFFER: DWORD = 0x00000001;
+pub const DSBCAPS_GETCURRENTPOSITION2: DWORD = 0x00010000;
+
 pub const DSBPLAY_LOOPING: DWORD = 0x00000001;
 
 pub const WAVE_FORMAT_PCM: WORD = 1;
 
 pub const DSSCL_PRIORITY: DWORD = 0x00000002;
+
+pub const DS_OK: HRESULT = 0x00000000;
 
 
 pub fn SUCCEEDED(hr: HRESULT) -> bool {

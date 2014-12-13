@@ -16,6 +16,11 @@ pub mod debug {
         pub contents: *mut c_void,
     }
 
+    pub struct SoundTimeMarker {
+        pub play_cursor: DWORD,
+        pub write_cursor: DWORD,
+    }
+
     //TODO: make generic over the thing we want to load?
     //or just return a byteslice?
     pub fn platform_read_entire_file(filename: &str) -> Result<ReadFileResult, ()> {
@@ -87,6 +92,46 @@ pub mod debug {
         }
         result
     }
+
+    unsafe fn draw_vertical(buffer: &mut super::Backbuffer,
+                            x: i32, top: i32, bottom: i32, color: u32) {
+        let mut pixel = buffer.memory as *mut u8;
+        pixel = pixel.offset((x * super::BYTES_PER_PIXEL + top * buffer.pitch) as int);
+        for _ in range(top, bottom) {
+            let out = pixel as *mut u32;
+            *out = color;
+            pixel = pixel.offset(buffer.pitch as int);
+        }
+    }
+
+    fn draw_sound_buffer_marker(c: f32, sound_size: DWORD, cursor: DWORD, 
+                                buffer: &mut super::Backbuffer,
+                                pad_x: i32, 
+                                top: i32, bottom: i32, color: u32) {
+        assert!(cursor < sound_size);
+        let x: i32 = pad_x + (c * cursor as f32) as i32;
+        unsafe { draw_vertical(buffer, x, top, bottom, color); }
+    }
+
+    pub fn sound_sync_display(video_backbuffer: &mut super::Backbuffer, 
+                              last_time_markers: &[SoundTimeMarker],
+                              sound_output: &super::SoundOutput) {
+
+        let pad_x: i32 = 16;
+        let pad_y: i32 = 16;
+        let sound_size: DWORD = sound_output.get_buffer_size();
+        let bottom = video_backbuffer.height as i32 - pad_y;
+        let top = pad_y;
+        let c = (video_backbuffer.width - 2 * pad_x) as f32 / 
+                        sound_size as f32;
+        for marker in last_time_markers.iter() {
+
+            draw_sound_buffer_marker(c, sound_size, marker.play_cursor,
+                                     video_backbuffer, pad_x, top, bottom, 0xFFFFFFFF);
+            draw_sound_buffer_marker(c, sound_size, marker.write_cursor,
+                                     video_backbuffer, pad_x, top, bottom, 0xFFFF0000);
+        }
+    }
 }
 
 //TODO: this part should be moved to a platform independant file
@@ -118,17 +163,35 @@ mod util {
 
 //Graphics System constants
 const BYTES_PER_PIXEL: c_int = 4;
+//TODO: get the actual refresh rate from windows reliably
+const MONITOR_REFRESH_RATE: uint = 60;
+const GAME_REFRESH_RATE: uint = MONITOR_REFRESH_RATE / 2;
 
 //Sound System constants
+const FRAME_AUDIO_LATENCY: DWORD = 3;
 const CHANNELS: WORD = 2;
 const BITS_PER_CHANNEL: WORD = 16;
-const SAMPLES_PER_SECOND: DWORD = 48000;
 const BYTES_PER_SAMPLE: DWORD = 4;
-const LATENCY_SAMPLE_COUNT: DWORD = SAMPLES_PER_SECOND / 15;
+const SOUND_BYTES_PER_SECOND: DWORD = 48000 * BYTES_PER_SAMPLE;
+const SOUND_LATENCY_BYTES: DWORD = FRAME_AUDIO_LATENCY * 
+                                   (SOUND_BYTES_PER_SECOND / GAME_REFRESH_RATE as DWORD);
 
 struct SoundOutput {
-    sample_index: DWORD,
+    byte_index: DWORD,
     sound_buffer: *mut IDirectSoundBuffer,
+}
+
+
+impl SoundOutput {
+    fn get_buffer_size(&self) -> DWORD {
+        let mut dsbcaps: DSBCAPS = Default::default();
+        dsbcaps.dwSize = mem::size_of::<DSBCAPS>() as DWORD;
+
+        unsafe { ((*(*self.sound_buffer).lpVtbl).GetCaps)
+                        (self.sound_buffer, &mut dsbcaps); }
+        
+        dsbcaps.dwBufferBytes
+    }
 }
 
 struct Backbuffer {
@@ -270,28 +333,29 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
 
     if SUCCEEDED(lock) {
         fn fill_region(region: *mut c_void, region_size: DWORD,
-                       sound_output: &mut SoundOutput, buffer: &game::SoundBuffer) {
+                       sound_output: &mut SoundOutput, source: &mut *const i16) {
                            
             debug_assert!((region_size % BYTES_PER_SAMPLE) == 0);
             let region_sample_count = region_size/BYTES_PER_SAMPLE;
             let mut out = region as *mut i16;
-            let mut source: *const i16 = buffer.samples.as_ptr();
 
             for _ in range(0, region_sample_count) {
                 unsafe {
-                    *out = *source;
+                    *out = **source;
                     out = out.offset(1);
-                    source = source.offset(1);
-                    *out = *source;
+                    *source = source.offset(1);
+
+                    *out = **source;
                     out = out.offset(1);
-                    source = source.offset(1);
+                    *source = source.offset(1);
                 }
-                sound_output.sample_index += 1;
+                sound_output.byte_index += 4;
             }
         }
         
-        fill_region(region1, region1_size, sound_output, source);
-        fill_region(region2, region2_size, sound_output, source);
+        let mut buffer: *const i16 = source.samples.as_ptr();
+        fill_region(region1, region1_size, sound_output, &mut buffer);
+        fill_region(region2, region2_size, sound_output, &mut buffer);
 
         unsafe {
             ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,
@@ -301,7 +365,7 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
     }
 }
 
-fn clear_sound_output(sound_output: &mut SoundOutput, dsbcaps: &DSBCAPS) {
+fn clear_sound_output(sound_output: &mut SoundOutput) {
 
     let mut region1: *mut c_void = ptr::null_mut();
     let mut region2: *mut c_void = ptr::null_mut();
@@ -311,7 +375,7 @@ fn clear_sound_output(sound_output: &mut SoundOutput, dsbcaps: &DSBCAPS) {
     let lock = unsafe { 
         ((*(*sound_output.sound_buffer).lpVtbl).Lock)(sound_output.sound_buffer, 
                                          0,
-                                         dsbcaps.dwBufferBytes,
+                                         sound_output.get_buffer_size(),
                                          &mut region1, &mut region1_size,
                                          &mut region2, &mut region2_size,
                                          0 as DWORD)
@@ -392,7 +456,7 @@ fn dsound_init(window: HWND, buffer_size_bytes: DWORD,
             let buffer_desc_secondary: DSBUFFERDESC = 
                 DSBUFFERDESC {
                     dwSize: mem::size_of::<DSBUFFERDESC>() as DWORD,
-                    dwFlags: 0 as DWORD,
+                    dwFlags: DSBCAPS_GETCURRENTPOSITION2,
                     dwBufferBytes: buffer_size_bytes,
                     dwReserved: 0,
                     lpwfxFormat: &mut wave_format,
@@ -800,21 +864,27 @@ fn main() {
 
     //Needed for Sound System test
     let mut sound_output = SoundOutput {
-        sample_index: 0,
+        byte_index: 0,
         //TODO: Handle all the cases when there was no DirectSound and unwrap fails!
-        sound_buffer: dsound_init(window.handle, SAMPLES_PER_SECOND * BYTES_PER_SAMPLE,
-                                  SAMPLES_PER_SECOND).unwrap(),
+        sound_buffer: dsound_init(window.handle, SOUND_BYTES_PER_SECOND,
+                                  SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE).unwrap(),
     };
 
-    let mut dsbcaps: DSBCAPS = Default::default();
-    dsbcaps.dwSize = mem::size_of::<DSBCAPS>() as DWORD;
-
     unsafe {
-        ((*(*sound_output.sound_buffer).lpVtbl).GetCaps)(sound_output.sound_buffer, &mut dsbcaps);
-
-        clear_sound_output(&mut sound_output, &dsbcaps);
+        clear_sound_output(&mut sound_output);
         ((*(*sound_output.sound_buffer).lpVtbl).Play)(sound_output.sound_buffer, 0, 0, DSBPLAY_LOOPING);
     }
+
+//    loop {
+//        let mut play_cursor: DWORD = 0;
+//        let mut write_cursor: DWORD = 0;
+//        if unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
+//                     (sound_output.sound_buffer, 
+//                      &mut play_cursor,
+//                      &mut write_cursor) == DS_OK } {
+//            println!("PC:{} WC:{}", play_cursor, write_cursor);
+//        }
+//    }
 
     let context = unsafe { GetDC(window.handle) };
     if context.is_null() {
@@ -824,11 +894,11 @@ fn main() {
     //TODO: not safe operation because VirtualAlloc could fail!
     let mut sound_samples: &mut [i16] = unsafe { 
             //Allocation implicitly freed at the end of the execution
-            let data = VirtualAlloc(ptr::null_mut(), dsbcaps.dwBufferBytes as SIZE_T,
+            let data = VirtualAlloc(ptr::null_mut(), sound_output.get_buffer_size() as SIZE_T,
                                      MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
             mem::transmute(
                 raw::Slice { data: data as *const i16,
-                             len: dsbcaps.dwBufferBytes as uint / mem::size_of::<i16>()})
+                             len: sound_output.get_buffer_size() as uint / mem::size_of::<i16>()})
         };
    
     let base_address = if cfg!(ndebug) { 0 } else { util::tera_bytes(2) };
@@ -862,12 +932,20 @@ fn main() {
 
     let sleep_is_granular = TimePeriod::new();
 
-    let moniter_refresh_rate: u32 = 60;
-    let game_refresh_rate =  moniter_refresh_rate / 2;
-    let target_seconds_per_frame = 1.0 / game_refresh_rate as f32;
+    let target_seconds_per_frame = 1.0 / GAME_REFRESH_RATE as f32;
+
+    let mut last_time_marker_index: uint = 0;
+    let mut last_time_markers: [debug::SoundTimeMarker, ..GAME_REFRESH_RATE/2] = 
+                                [debug::SoundTimeMarker { 
+                                    play_cursor: 0,
+                                    write_cursor: 0,
+                                 }, ..GAME_REFRESH_RATE/2];
 
     let mut new_input: &mut game::Input = &mut Default::default();
     let mut old_input: &mut game::Input = &mut Default::default();
+
+    let mut sound_is_valid = false;
+    let mut last_play_cursor: DWORD = 0;
 
     let mut counter_frequency: i64 = 0;
     unsafe { QueryPerformanceFrequency(&mut counter_frequency); }
@@ -889,30 +967,27 @@ fn main() {
                        new_input.controllers.slice_from_mut(1), 
                        old_input.controllers.slice_from(1));
 
-        let mut write_cursor: DWORD = 0;
-        let mut play_cursor: DWORD = 0;
         let mut bytes_to_write = 0;
         let mut byte_to_lock = 0;
 
-        let sound_is_valid = 
-            if SUCCEEDED( unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
-                         (sound_output.sound_buffer, &mut play_cursor, &mut write_cursor) }) {
+        if sound_is_valid { 
+            let sound_buffer_size = sound_output.get_buffer_size(); 
 
-                byte_to_lock = (sound_output.sample_index * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes; 
-                let target_cursor = (play_cursor + LATENCY_SAMPLE_COUNT * BYTES_PER_SAMPLE) % dsbcaps.dwBufferBytes;
-                bytes_to_write = if byte_to_lock > target_cursor {
-                    dsbcaps.dwBufferBytes - byte_to_lock + target_cursor
+            byte_to_lock = sound_output.byte_index % sound_buffer_size; 
+            let target_cursor = (last_play_cursor + SOUND_LATENCY_BYTES) 
+                            % sound_buffer_size;
+            bytes_to_write = 
+                if byte_to_lock > target_cursor {
+                    sound_buffer_size - byte_to_lock + target_cursor
                 } else {
                     target_cursor - byte_to_lock
                 };
-
-                true
-            } else { false };
+        } 
 
         let mut sound_buf = game::SoundBuffer {
             samples: sound_samples.slice_to_mut(bytes_to_write as uint/
                                                 mem::size_of::<i16>()),
-            samples_per_second: SAMPLES_PER_SECOND,
+            samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,
         };
 
         let mut video_buf = game::VideoBuffer {
@@ -931,6 +1006,17 @@ fn main() {
                                      &mut sound_buf);
 
         if sound_is_valid {
+            if cfg!(not(ndebug)) {
+                let mut play_cursor: DWORD = 0;
+                let mut write_cursor: DWORD = 0;
+                unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
+                                            (sound_output.sound_buffer, 
+                                             &mut play_cursor,
+                                             &mut write_cursor); }
+                println!("LPC:{} BTL:{} BTW:{} - PC:{} WC:{}",
+                         last_play_cursor, byte_to_lock,
+                         bytes_to_write, play_cursor, write_cursor);
+            }
             fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
         }
 
@@ -954,11 +1040,44 @@ fn main() {
             //TODO: missed frame time we have to put out a log
         }
 
+        let end_counter = get_wall_clock();
+
+        if cfg!(not(ndebug)) {
+            debug::sound_sync_display(&mut window.backbuffer, &last_time_markers,
+                                      &sound_output);
+        }
+
         let (width, height) = get_client_dimensions(window.handle).unwrap();
         blit_buffer_to_window(context, &window.backbuffer, width, height);
 
+
+        let mut play_cursor: DWORD = 0;
+        let mut write_cursor: DWORD = 0;
+        if unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
+                     (sound_output.sound_buffer, 
+                      &mut play_cursor,
+                      &mut write_cursor) == DS_OK } {
+
+            last_play_cursor = play_cursor;
+            if !sound_is_valid {
+                sound_output.byte_index = write_cursor; 
+                sound_is_valid = true;
+            }
+        } else {
+            sound_is_valid = false;
+        }
+
+        if cfg!(not(ndebug)) {
+            last_time_markers[last_time_marker_index].play_cursor = play_cursor;
+            last_time_markers[last_time_marker_index].write_cursor = write_cursor;
+            last_time_marker_index += 1;
+            if last_time_marker_index >= last_time_markers.len()  {
+                last_time_marker_index = 0;
+            }
+        }
+
         let ms_per_frame = 1000.0 * get_seconds_elapsed(last_counter,
-                                                        get_wall_clock(),
+                                                        end_counter,
                                                         counter_frequency);
         let fps: f32 = 1000.0 / ms_per_frame;
         let display_cicles = intrinsics::__rdtsc();
@@ -969,7 +1088,7 @@ fn main() {
 
         mem::swap(new_input, old_input);
 
-        last_counter = get_wall_clock();
+        last_counter = end_counter;
         last_cycles = intrinsics::__rdtsc();
     }
 }

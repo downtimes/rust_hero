@@ -17,9 +17,35 @@ pub mod debug {
     }
 
     pub struct SoundTimeMarker {
-        pub play_cursor: DWORD,
-        pub write_cursor: DWORD,
+        pub flip_play_cursor: DWORD,
+        pub flip_write_cursor: DWORD,
+
+        pub output_play_cursor: DWORD,
+        pub output_write_cursor: DWORD,
+
+        pub output_location: DWORD,
+        pub output_byte_count: DWORD,
+
+        pub expected_frame_byte: DWORD,
     }
+
+    impl Default for SoundTimeMarker {
+        fn default() -> SoundTimeMarker {
+            SoundTimeMarker {
+                flip_play_cursor: 0,
+                flip_write_cursor: 0,
+
+                output_play_cursor: 0,
+                output_write_cursor: 0,
+
+                output_location: 0,
+                output_byte_count: 0,
+
+                expected_frame_byte: 0,
+            }
+        }
+    }
+
 
     //TODO: make generic over the thing we want to load?
     //or just return a byteslice?
@@ -115,21 +141,56 @@ pub mod debug {
 
     pub fn sound_sync_display(video_backbuffer: &mut super::Backbuffer, 
                               last_time_markers: &[SoundTimeMarker],
+                              current_marker: uint,
                               sound_output: &super::SoundOutput) {
 
         let pad_x: i32 = 16;
         let pad_y: i32 = 16;
+        let line_height = 64;
         let sound_size: DWORD = sound_output.get_buffer_size();
-        let bottom = video_backbuffer.height as i32 - pad_y;
-        let top = pad_y;
+
         let c = (video_backbuffer.width - 2 * pad_x) as f32 / 
                         sound_size as f32;
-        for marker in last_time_markers.iter() {
 
-            draw_sound_buffer_marker(c, sound_size, marker.play_cursor,
-                                     video_backbuffer, pad_x, top, bottom, 0xFFFFFFFF);
-            draw_sound_buffer_marker(c, sound_size, marker.write_cursor,
-                                     video_backbuffer, pad_x, top, bottom, 0xFFFF0000);
+        for (index, marker) in last_time_markers.iter().enumerate() {
+
+            let play_color = 0xFFFFFFFF;
+            let write_color = 0xFFFF0000;
+            let expected_color = 0xFFFFFF00;
+
+            let mut bottom = pad_y + line_height;
+            let mut top = pad_y;
+            if index == current_marker {
+                let byte_loc_plus_count = (marker.output_location + marker.output_byte_count)
+                                            % sound_size;
+                let expected_pos = marker.expected_frame_byte % sound_size;
+
+                bottom += line_height + pad_y; 
+                top += line_height + pad_y;
+                let firsttop = top;
+                draw_sound_buffer_marker(c, sound_size, marker.output_play_cursor,
+                                         video_backbuffer, pad_x, top, bottom, play_color);
+                draw_sound_buffer_marker(c, sound_size, marker.output_write_cursor,
+                                         video_backbuffer, pad_x, top, bottom, write_color);
+                bottom += line_height + pad_y; 
+                top += line_height + pad_y;
+
+                draw_sound_buffer_marker(c, sound_size, marker.output_location,
+                                         video_backbuffer, pad_x, top, bottom, play_color);
+                draw_sound_buffer_marker(c, sound_size, byte_loc_plus_count,
+                                         video_backbuffer, pad_x, top, bottom, write_color);
+                bottom += line_height + pad_y; 
+                top += line_height + pad_y;
+
+                draw_sound_buffer_marker(c, sound_size, expected_pos,
+                                         video_backbuffer, pad_x, firsttop, bottom, expected_color);
+
+            }
+
+            draw_sound_buffer_marker(c, sound_size, marker.flip_play_cursor,
+                                     video_backbuffer, pad_x, top, bottom, play_color);
+            draw_sound_buffer_marker(c, sound_size, marker.flip_write_cursor,
+                                     video_backbuffer, pad_x, top, bottom, write_color);
         }
     }
 }
@@ -168,13 +229,12 @@ const MONITOR_REFRESH_RATE: uint = 60;
 const GAME_REFRESH_RATE: uint = MONITOR_REFRESH_RATE / 2;
 
 //Sound System constants
-const FRAME_AUDIO_LATENCY: DWORD = 3;
 const CHANNELS: WORD = 2;
 const BITS_PER_CHANNEL: WORD = 16;
 const BYTES_PER_SAMPLE: DWORD = 4;
 const SOUND_BYTES_PER_SECOND: DWORD = 48000 * BYTES_PER_SAMPLE;
-const SOUND_LATENCY_BYTES: DWORD = FRAME_AUDIO_LATENCY * 
-                                   (SOUND_BYTES_PER_SECOND / GAME_REFRESH_RATE as DWORD);
+//TODO: see how low we can go with this value reasonably
+const SOUND_SAFETY_BYTES: DWORD = (SOUND_BYTES_PER_SECOND / GAME_REFRESH_RATE as u32) / 2;
 
 struct SoundOutput {
     byte_index: DWORD,
@@ -206,11 +266,12 @@ struct Backbuffer {
 struct Window {
     handle: HWND,
     running: bool,
+    pause: bool,
     backbuffer: Backbuffer,
 }
 
 
-//Struct to encapsulate RAII of timeBeginPeriod and timeEndPeriod on win32
+//Struct to do RAII with timeBeginPeriod and timeEndPeriod on win32
 struct TimePeriod(bool);
 
 impl TimePeriod {
@@ -332,30 +393,38 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
     };
 
     if SUCCEEDED(lock) {
+        
+        debug_assert!(bytes_to_write == region1_size + region2_size);
+
+        let (samples_1, samples_2) = 
+            source.samples.split_at(region1_size as uint / mem::size_of::<i16>());
+        fill_region(region1, region1_size, sound_output, samples_1);
+        fill_region(region2, region2_size, sound_output, samples_2);
+
         fn fill_region(region: *mut c_void, region_size: DWORD,
-                       sound_output: &mut SoundOutput, source: &mut *const i16) {
+                       sound_output: &mut SoundOutput, source: &[i16]) {
                            
             debug_assert!((region_size % BYTES_PER_SAMPLE) == 0);
             let region_sample_count = region_size/BYTES_PER_SAMPLE;
             let mut out = region as *mut i16;
 
+            let mut input = source.as_ptr();
+
+            //TODO: auf iteratorenlösung umsteigen. wird wahrscheinlich
+            //schneller sein und vllt lösen sich dann auch die Probleme?
             for _ in range(0, region_sample_count) {
                 unsafe {
-                    *out = **source;
+                    *out = *input;
                     out = out.offset(1);
-                    *source = source.offset(1);
+                    input = input.offset(1);
 
-                    *out = **source;
+                    *out = *input;
                     out = out.offset(1);
-                    *source = source.offset(1);
+                    input = input.offset(1);
                 }
                 sound_output.byte_index += 4;
             }
         }
-        
-        let mut buffer: *const i16 = source.samples.as_ptr();
-        fill_region(region1, region1_size, sound_output, &mut buffer);
-        fill_region(region2, region2_size, sound_output, &mut buffer);
 
         unsafe {
             ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,
@@ -383,6 +452,10 @@ fn clear_sound_output(sound_output: &mut SoundOutput) {
 
     if SUCCEEDED(lock) {
 
+
+        fill_region(region1, region1_size);
+        fill_region(region2, region2_size);
+
         fn fill_region(region: *mut c_void, region_size: DWORD) {
             let mut out = region as *mut u8;
             for _ in range(0, region_size) {
@@ -392,9 +465,6 @@ fn clear_sound_output(sound_output: &mut SoundOutput) {
                 }
             }
         }
-
-        fill_region(region1, region1_size);
-        fill_region(region2, region2_size);
 
         unsafe {
             ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,
@@ -736,15 +806,6 @@ fn process_pending_messages(window: &mut Window,
                 let was_down = (msg.lparam & (1 << 30)) != 0;
                 let is_down = (msg.lparam & (1 << 31)) == 0;
 
-                //Rust currently doesn't allow casts in matches so we have to
-                //conform to one type which is u8 here
-                const W: u8 = 'W' as u8;
-                const A: u8 = 'A' as u8;
-                const S: u8 = 'S' as u8;
-                const D: u8 = 'D' as u8;
-                const Q: u8 = 'Q' as u8;
-                const E: u8 = 'E' as u8;
-
                 if was_down != is_down {
                     match vk_code {
                         VK_UP => process_keyboard_message(
@@ -755,18 +816,23 @@ fn process_pending_messages(window: &mut Window,
                                         &mut keyboard_controller.action_left, is_down),
                         VK_RIGHT => process_keyboard_message(
                                         &mut keyboard_controller.action_right, is_down),
-                        W => process_keyboard_message(
+                        b'W' => process_keyboard_message(
                                         &mut keyboard_controller.move_up, is_down),
-                        A => process_keyboard_message(
+                        b'A' => process_keyboard_message(
                                         &mut keyboard_controller.move_left, is_down),
-                        S => process_keyboard_message(
+                        b'S' => process_keyboard_message(
                                         &mut keyboard_controller.move_down, is_down),
-                        D => process_keyboard_message(
+                        b'D' => process_keyboard_message(
                                         &mut keyboard_controller.move_right, is_down),
-                        E => process_keyboard_message(
+                        b'E' => process_keyboard_message(
                                         &mut keyboard_controller.right_shoulder, is_down),
-                        Q => process_keyboard_message(
+                        b'Q' => process_keyboard_message(
                                         &mut keyboard_controller.left_shoulder, is_down),
+                        b'P' => {
+                            if is_down {
+                                window.pause = !window.pause;
+                            }
+                        },
                         VK_ESCAPE => process_keyboard_message(
                                         &mut keyboard_controller.back, is_down),
                         VK_SPACE => process_keyboard_message(
@@ -820,6 +886,7 @@ fn main() {
     let mut window = Window {
                         handle: ptr::null_mut(),
                         running: false,
+                        pause: false,
                         backbuffer: Backbuffer {
                             info: Default::default(), 
                             memory: ptr::null_mut(),
@@ -934,18 +1001,16 @@ fn main() {
 
     let target_seconds_per_frame = 1.0 / GAME_REFRESH_RATE as f32;
 
+    let mut sound_is_valid = false;
     let mut last_time_marker_index: uint = 0;
     let mut last_time_markers: [debug::SoundTimeMarker, ..GAME_REFRESH_RATE/2] = 
-                                [debug::SoundTimeMarker { 
-                                    play_cursor: 0,
-                                    write_cursor: 0,
-                                 }, ..GAME_REFRESH_RATE/2];
+                                [Default::default(), ..GAME_REFRESH_RATE/2];
 
     let mut new_input: &mut game::Input = &mut Default::default();
     let mut old_input: &mut game::Input = &mut Default::default();
 
-    let mut sound_is_valid = false;
-    let mut last_play_cursor: DWORD = 0;
+    let mut audio_latency_bytes: uint;
+    let mut audio_latency_seconds: f32;
 
     let mut counter_frequency: i64 = 0;
     unsafe { QueryPerformanceFrequency(&mut counter_frequency); }
@@ -953,6 +1018,7 @@ fn main() {
     let mut last_cycles = intrinsics::__rdtsc();
 
     let mut last_counter: i64 = get_wall_clock();
+    let mut flip_wall_clock: i64 = 0;
 
     window.running = true;
     while window.running {
@@ -963,32 +1029,10 @@ fn main() {
         new_input.controllers[0].zero_half_transitions();
         process_pending_messages(&mut window, &mut new_input.controllers[0]);
 
+        if !window.pause {
         process_xinput(XInputGetState,
                        new_input.controllers.slice_from_mut(1), 
                        old_input.controllers.slice_from(1));
-
-        let mut bytes_to_write = 0;
-        let mut byte_to_lock = 0;
-
-        if sound_is_valid { 
-            let sound_buffer_size = sound_output.get_buffer_size(); 
-
-            byte_to_lock = sound_output.byte_index % sound_buffer_size; 
-            let target_cursor = (last_play_cursor + SOUND_LATENCY_BYTES) 
-                            % sound_buffer_size;
-            bytes_to_write = 
-                if byte_to_lock > target_cursor {
-                    sound_buffer_size - byte_to_lock + target_cursor
-                } else {
-                    target_cursor - byte_to_lock
-                };
-        } 
-
-        let mut sound_buf = game::SoundBuffer {
-            samples: sound_samples.slice_to_mut(bytes_to_write as uint/
-                                                mem::size_of::<i16>()),
-            samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,
-        };
 
         let mut video_buf = game::VideoBuffer {
             memory: unsafe { mem::transmute(
@@ -1000,24 +1044,95 @@ fn main() {
             pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as uint,
         };
 
-        game::game_update_and_render(&mut game_memory,
-                                     new_input,
-                                     &mut video_buf,
-                                     &mut sound_buf);
+        game::update_and_render(&mut game_memory,
+                                new_input,
+                                &mut video_buf);
 
-        if sound_is_valid {
-            if cfg!(not(ndebug)) {
-                let mut play_cursor: DWORD = 0;
-                let mut write_cursor: DWORD = 0;
-                unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
-                                            (sound_output.sound_buffer, 
-                                             &mut play_cursor,
-                                             &mut write_cursor); }
-                println!("LPC:{} BTL:{} BTW:{} - PC:{} WC:{}",
-                         last_play_cursor, byte_to_lock,
-                         bytes_to_write, play_cursor, write_cursor);
+        let from_begin_to_audio = get_seconds_elapsed(flip_wall_clock, get_wall_clock(),
+                                                       counter_frequency);
+        let mut play_cursor: DWORD = 0;
+        let mut write_cursor: DWORD = 0;
+
+        if unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
+                     (sound_output.sound_buffer, 
+                      &mut play_cursor,
+                      &mut write_cursor) == DS_OK } {
+
+            if !sound_is_valid {
+                sound_output.byte_index = write_cursor; 
+                sound_is_valid = true;
             }
+
+            let sound_buffer_size = sound_output.get_buffer_size(); 
+            let byte_to_lock = sound_output.byte_index % sound_buffer_size; 
+
+            let safe_write_cursor = 
+                if write_cursor < play_cursor {
+                    write_cursor + SOUND_SAFETY_BYTES + sound_buffer_size
+                } else {
+                    write_cursor + SOUND_SAFETY_BYTES
+                };
+            debug_assert!(safe_write_cursor >= play_cursor);
+
+            let expected_sound_bytes_per_frame = SOUND_BYTES_PER_SECOND / GAME_REFRESH_RATE as u32;
+            let seconds_to_flip = target_seconds_per_frame - from_begin_to_audio;
+            let expected_bytes_to_flip = (expected_sound_bytes_per_frame as f32 * 
+                                        (seconds_to_flip / target_seconds_per_frame)) as DWORD;
+            let expected_frame_boundary_byte = play_cursor + expected_bytes_to_flip;
+            let audio_card_not_latent = safe_write_cursor < expected_frame_boundary_byte;
+
+            let target_cursor = 
+                if audio_card_not_latent {
+                    (((expected_frame_boundary_byte + expected_sound_bytes_per_frame) 
+                        / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE)
+                    % sound_buffer_size
+                } else {
+                    (((write_cursor + expected_sound_bytes_per_frame + SOUND_SAFETY_BYTES) 
+                        / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE)
+                     % sound_buffer_size
+                };
+
+            let bytes_to_write = 
+                if byte_to_lock > target_cursor {
+                    sound_buffer_size - byte_to_lock + target_cursor
+                } else {
+                    target_cursor - byte_to_lock
+                };
+
+            let mut sound_buf = game::SoundBuffer {
+                samples: sound_samples.slice_to_mut(bytes_to_write as uint/
+                                                    mem::size_of::<i16>()),
+                samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,
+            };
+
+            game::get_sound_samples(&mut game_memory, &mut sound_buf);
+
             fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
+
+            if cfg!(not(ndebug)) {
+                last_time_markers[last_time_marker_index].output_write_cursor = write_cursor;
+                last_time_markers[last_time_marker_index].expected_frame_byte = expected_frame_boundary_byte;
+                last_time_markers[last_time_marker_index].output_play_cursor = play_cursor;
+                last_time_markers[last_time_marker_index].output_location = byte_to_lock;
+                last_time_markers[last_time_marker_index].output_byte_count = bytes_to_write;
+                let unwraped_write_cursor = 
+                    if write_cursor < play_cursor {
+                        write_cursor + sound_output.get_buffer_size()
+                    } else {
+                        write_cursor
+                    };
+
+                audio_latency_bytes = (unwraped_write_cursor - play_cursor) as uint;
+                audio_latency_seconds = audio_latency_bytes as f32 /
+                                            SOUND_BYTES_PER_SECOND as f32;
+
+                println!("BTL:{} BTW:{} - PC:{} WC:{} Delta:{} ({}s)",
+                         byte_to_lock,
+                         bytes_to_write, play_cursor, write_cursor,
+                         audio_latency_bytes, audio_latency_seconds);
+            }
+        } else {
+            sound_is_valid = false;
         }
 
         let mut seconds_elapsed_for_work = get_seconds_elapsed(last_counter,
@@ -1043,36 +1158,35 @@ fn main() {
         let end_counter = get_wall_clock();
 
         if cfg!(not(ndebug)) {
+            let current_marker = 
+                if last_time_marker_index == 0 {
+                    last_time_markers.len() - 1
+                } else {
+                    last_time_marker_index - 1
+                };
             debug::sound_sync_display(&mut window.backbuffer, &last_time_markers,
-                                      &sound_output);
+                                      current_marker, &sound_output);
         }
 
         let (width, height) = get_client_dimensions(window.handle).unwrap();
         blit_buffer_to_window(context, &window.backbuffer, width, height);
 
-
-        let mut play_cursor: DWORD = 0;
-        let mut write_cursor: DWORD = 0;
-        if unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
-                     (sound_output.sound_buffer, 
-                      &mut play_cursor,
-                      &mut write_cursor) == DS_OK } {
-
-            last_play_cursor = play_cursor;
-            if !sound_is_valid {
-                sound_output.byte_index = write_cursor; 
-                sound_is_valid = true;
-            }
-        } else {
-            sound_is_valid = false;
-        }
+        flip_wall_clock = get_wall_clock();
 
         if cfg!(not(ndebug)) {
-            last_time_markers[last_time_marker_index].play_cursor = play_cursor;
-            last_time_markers[last_time_marker_index].write_cursor = write_cursor;
-            last_time_marker_index += 1;
-            if last_time_marker_index >= last_time_markers.len()  {
-                last_time_marker_index = 0;
+            let mut play_cursor: DWORD = 0;
+            let mut write_cursor: DWORD = 0;
+            if unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
+                         (sound_output.sound_buffer, 
+                          &mut play_cursor,
+                          &mut write_cursor) == DS_OK } {
+                last_time_markers[last_time_marker_index].flip_play_cursor = play_cursor;
+                last_time_markers[last_time_marker_index].flip_write_cursor = write_cursor;
+
+                last_time_marker_index += 1;
+                if last_time_marker_index >= last_time_markers.len()  {
+                    last_time_marker_index = 0;
+                }
             }
         }
 
@@ -1090,5 +1204,6 @@ fn main() {
 
         last_counter = end_counter;
         last_cycles = intrinsics::__rdtsc();
+    }
     }
 }

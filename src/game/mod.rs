@@ -96,15 +96,22 @@ pub struct GameMemory<'a> {
     pub transient: &'a mut[u8], //REQUIRED to be zeroed
 }
 
+//Has to be very low latency!
+pub fn get_sound_samples(game_memory: &mut GameMemory,
+                              sound_buffer: &mut SoundBuffer) {
+                                  
+    let state: &mut GameState = 
+        unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
+    generate_sound(sound_buffer, state.frequency, &mut state.tsine);
+}
 
-pub fn game_update_and_render(game_memory: &mut GameMemory,
+pub fn update_and_render(game_memory: &mut GameMemory,
                               input: &Input,
-                              vidoe_buffer: &mut VideoBuffer,
-                              sound_buffer: &mut SoundBuffer,) {
+                              vidoe_buffer: &mut VideoBuffer) {
 
     debug_assert!(mem::size_of::<GameState>() <= game_memory.permanent.len());
 
-    let mut state: &mut GameState = 
+    let state: &mut GameState = 
         unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
 
     if !game_memory.initialized {
@@ -124,7 +131,7 @@ pub fn game_update_and_render(game_memory: &mut GameMemory,
         if controller.is_analog() {
             state.blue_offset += (4.0f32 * controller.average_x.unwrap()) as i32;
 
-            state.frequency = (256f32 + 128.0f32 * controller.average_y.unwrap()) as u32;
+            state.frequency = (512f32 + 128.0f32 * controller.average_y.unwrap()) as u32;
         } else {
             if controller.move_left.ended_down {
                 state.blue_offset -= 1;
@@ -138,7 +145,6 @@ pub fn game_update_and_render(game_memory: &mut GameMemory,
         }
     }
 
-    generate_sound(sound_buffer, state.frequency, &mut state.tsine);
     render_weird_gradient(vidoe_buffer, state.green_offset, state.blue_offset);
 }
 
@@ -175,14 +181,10 @@ fn generate_sound(buffer: &mut SoundBuffer, tone_frequency: u32, tsine: &mut f32
 
 fn render_weird_gradient(buffer: &mut VideoBuffer, green_offset: i32, blue_offset: i32) {
 
-    for (y, row) in buffer.memory.chunks_mut(buffer.pitch).enumerate() {
+    for (y, row) in buffer.memory.chunks_mut(buffer.pitch).take(buffer.width).enumerate() {
+        let green_color = (y as i32 + green_offset) as u8;
+
         for (x, pixel) in row.iter_mut().enumerate() {
-            //if we have padding we don't want to write farther out than 
-            //the width of our image
-            if x >= buffer.width {
-                break;
-            }
-            let green_color = (y as i32 + green_offset) as u8;
             let blue_color = (x as i32 + blue_offset) as u8;
             *pixel = (green_color as u32) << 8 | blue_color as u32;
         }

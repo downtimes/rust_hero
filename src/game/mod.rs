@@ -119,13 +119,12 @@ pub fn game_update_and_render(game_memory: &mut GameMemory,
         game_memory.initialized = true;
     }
     
-    let mut frequency = 256;
     for controller in input.controllers.iter() {
 
         if controller.is_analog() {
             state.blue_offset += (4.0f32 * controller.average_x.unwrap()) as i32;
 
-            frequency = (256f32 + 128.0f32 * controller.average_y.unwrap()) as u32;
+            state.frequency = (256f32 + 128.0f32 * controller.average_y.unwrap()) as u32;
         } else {
             if controller.move_left.ended_down {
                 state.blue_offset -= 1;
@@ -139,7 +138,7 @@ pub fn game_update_and_render(game_memory: &mut GameMemory,
         }
     }
 
-    generate_sound(sound_buffer, frequency, &mut state.tsine);
+    generate_sound(sound_buffer, state.frequency, &mut state.tsine);
     render_weird_gradient(vidoe_buffer, state.green_offset, state.blue_offset);
 }
 
@@ -147,6 +146,7 @@ pub fn game_update_and_render(game_memory: &mut GameMemory,
 
 
 struct GameState {
+    frequency: u32,
     green_offset: i32,
     blue_offset: i32,
     tsine: f32,
@@ -161,9 +161,11 @@ fn generate_sound(buffer: &mut SoundBuffer, tone_frequency: u32, tsine: &mut f32
     for sample in buffer.samples.chunks_mut(2) {
         let sine_value: f32 = tsine.sin();
         let value = (sine_value * volume as f32) as i16;
-        //TODO: this value gets too big for the sine function so we're left
-        //with only a few discrete sound steps after some seconds. Needs a fix.
+
         *tsine += f32::consts::PI_2 / (wave_period as f32); 
+        if *tsine > f32::consts::PI_2 {
+            *tsine -= f32::consts::PI_2;
+        }
 
         for channel in sample.iter_mut() {
             *channel = value;

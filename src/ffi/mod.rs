@@ -191,6 +191,7 @@ pub struct XINPUT_VIBRATION {
     pub wRightMotorSpeed: WORD,
 }
 
+
 #[repr(C)]
 pub struct CREATESTRUCT {
     pub lpCreateParams: *mut c_void,

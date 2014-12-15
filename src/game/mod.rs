@@ -4,9 +4,9 @@ use std::default::Default;
 use std::mem;
 
 #[cfg(target_os="windows")]
-use win32::*;
+use win32::debug;
 #[cfg(target_os="linux")]
-use linux::*;
+use linux::debug;
 
 // ============= The public interface ===============
 pub struct VideoBuffer<'a> {

@@ -1,9 +1,11 @@
 use std::ptr;
-use std::raw;
+use std::raw::Slice;
 use std::mem; 
 use std::i16;
+
+use game::{mod, VideoBuffer, SoundBuffer, Button};
+use game::{ControllerInput, Input, GameMemory};
 use ffi::*;
-use game;
 
 #[cfg(not(ndebug))]
 pub mod debug {
@@ -376,7 +378,7 @@ extern "system" fn process_messages(handle: HWND, message: UINT, wparam: WPARAM,
 fn fill_sound_output(sound_output: &mut SoundOutput, 
                      byte_to_lock: DWORD,
                      bytes_to_write: DWORD,
-                     source: &game::SoundBuffer) {
+                     source: &SoundBuffer) {
 
     let mut region1: *mut c_void = ptr::null_mut();
     let mut region2: *mut c_void = ptr::null_mut();
@@ -404,25 +406,17 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
         fn fill_region(region: *mut c_void, region_size: DWORD,
                        sound_output: &mut SoundOutput, source: &[i16]) {
                            
+            let out: &mut [i16] = unsafe { mem::transmute( 
+                                        Slice {
+                                            data: region as *const i16,
+                                            len: region_size as uint / mem::size_of::<i16>()
+                                        }) };
             debug_assert!((region_size % BYTES_PER_SAMPLE) == 0);
-            let region_sample_count = region_size/BYTES_PER_SAMPLE;
-            let mut out = region as *mut i16;
+            debug_assert!(out.len() == source.len());
 
-            let mut input = source.as_ptr();
-
-            //TODO: auf iteratorenlösung umsteigen. wird wahrscheinlich
-            //schneller sein und vllt lösen sich dann auch die Probleme?
-            for _ in range(0, region_sample_count) {
-                unsafe {
-                    *out = *input;
-                    out = out.offset(1);
-                    input = input.offset(1);
-
-                    *out = *input;
-                    out = out.offset(1);
-                    input = input.offset(1);
-                }
-                sound_output.byte_index += 4;
+            for (output, input) in out.iter_mut().zip(source.iter()) {
+                *output = *input;
+                sound_output.byte_index += 2;
             }
         }
 
@@ -457,12 +451,13 @@ fn clear_sound_output(sound_output: &mut SoundOutput) {
         fill_region(region2, region2_size);
 
         fn fill_region(region: *mut c_void, region_size: DWORD) {
-            let mut out = region as *mut u8;
-            for _ in range(0, region_size) {
-                unsafe { 
-                    *out = 0;
-                    out = out.offset(1);
-                }
+            let out: &mut [i32] = unsafe { mem::transmute( 
+                                        Slice {
+                                            data: region as *const i32,
+                                            len: (region_size / BYTES_PER_SAMPLE) as uint, 
+                                        }) };
+            for sample in out.iter_mut() {
+                *sample = 0;
             }
         }
 
@@ -581,8 +576,8 @@ fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
 }
 
 fn process_xinput(XInputGetState: XInputGetState_t,
-                  new_controllers: &mut [game::ControllerInput], 
-                  old_controllers: &[game::ControllerInput]) {
+                  new_controllers: &mut [ControllerInput], 
+                  old_controllers: &[ControllerInput]) {
 
     debug_assert!(XUSER_MAX_COUNT >= new_controllers.len() as u32);
 
@@ -776,8 +771,8 @@ fn blit_buffer_to_window(context: HDC, buffer: &Backbuffer, client_width: c_int,
 }
 
 fn process_xinput_button(xinput_button_state: WORD,
-                         old_state: &game::Button, 
-                         new_state: &mut game::Button,
+                         old_state: &Button, 
+                         new_state: &mut Button,
                          button_bit: WORD) {
 
     new_state.ended_down = (xinput_button_state & button_bit) == button_bit;
@@ -790,7 +785,7 @@ fn process_xinput_button(xinput_button_state: WORD,
 }
 
 fn process_pending_messages(window: &mut Window, 
-                            keyboard_controller: &mut game::ControllerInput) {
+                            keyboard_controller: &mut ControllerInput) {
     let mut msg = Default::default();
     //Process the Message Queue
     while unsafe {PeekMessageA(&mut msg, 0 as HWND,
@@ -856,7 +851,7 @@ fn process_pending_messages(window: &mut Window,
     }
 }
 
-fn process_keyboard_message(button: &mut game::Button, is_down: bool) {
+fn process_keyboard_message(button: &mut Button, is_down: bool) {
     debug_assert!(is_down != button.ended_down);
     button.ended_down = is_down;
     button.half_transitions += 1;
@@ -958,13 +953,16 @@ fn main() {
         panic!("DC for the Window not available!");
     }
 
-    //TODO: not safe operation because VirtualAlloc could fail!
     let mut sound_samples: &mut [i16] = unsafe { 
             //Allocation implicitly freed at the end of the execution
             let data = VirtualAlloc(ptr::null_mut(), sound_output.get_buffer_size() as SIZE_T,
                                      MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+            if data.is_null() {
+                panic!("Couldn't allocate the resources for the Sound-Buffer!");
+            }
+
             mem::transmute(
-                raw::Slice { data: data as *const i16,
+                Slice { data: data as *const i16,
                              len: sound_output.get_buffer_size() as uint / mem::size_of::<i16>()})
         };
    
@@ -977,18 +975,18 @@ fn main() {
 
     if memory.is_null() { panic!("Memory for the Game could not be obtained!"); }
 
-    let mut game_memory: game::GameMemory = 
-        game::GameMemory {
+    let mut game_memory: GameMemory = 
+        GameMemory {
             initialized: false,
             permanent: unsafe { 
-                        mem::transmute( raw::Slice { 
+                        mem::transmute( Slice { 
                                             data: memory as *const u8, 
                                             len: permanent_store_size
                                         } 
                                       ) 
                         },
             transient: unsafe { 
-                        mem::transmute( raw::Slice { 
+                        mem::transmute( Slice { 
                                             data: (memory as *const u8)
                                                    .offset(permanent_store_size as int), 
                                             len: transient_store_size
@@ -1006,8 +1004,8 @@ fn main() {
     let mut last_time_markers: [debug::SoundTimeMarker, ..GAME_REFRESH_RATE/2] = 
                                 [Default::default(), ..GAME_REFRESH_RATE/2];
 
-    let mut new_input: &mut game::Input = &mut Default::default();
-    let mut old_input: &mut game::Input = &mut Default::default();
+    let mut new_input: &mut Input = &mut Default::default();
+    let mut old_input: &mut Input = &mut Default::default();
 
     let mut audio_latency_bytes: uint;
     let mut audio_latency_seconds: f32;
@@ -1034,9 +1032,9 @@ fn main() {
                        new_input.controllers.slice_from_mut(1), 
                        old_input.controllers.slice_from(1));
 
-        let mut video_buf = game::VideoBuffer {
+        let mut video_buf = VideoBuffer {
             memory: unsafe { mem::transmute(
-                             raw::Slice { data: window.backbuffer.memory as *const u32, 
+                             Slice { data: window.backbuffer.memory as *const u32, 
                                  len: (window.backbuffer.size/BYTES_PER_PIXEL) as uint})
                            },
             width: window.backbuffer.width as uint,
@@ -1081,6 +1079,10 @@ fn main() {
             let expected_frame_boundary_byte = play_cursor + expected_bytes_to_flip;
             let audio_card_not_latent = safe_write_cursor < expected_frame_boundary_byte;
 
+            //The division with BYTES_PER_SAMPLE as well as the multiplication afterwards
+            //are for the fact that we need a multiple of 4 to be sample aligned
+            //because we calculated the expected_bytes_to_flip exactly it may
+            //not be 4byte aligned so we do the alignment here!
             let target_cursor = 
                 if audio_card_not_latent {
                     (((expected_frame_boundary_byte + expected_sound_bytes_per_frame) 
@@ -1099,7 +1101,7 @@ fn main() {
                     target_cursor - byte_to_lock
                 };
 
-            let mut sound_buf = game::SoundBuffer {
+            let mut sound_buf = SoundBuffer {
                 samples: sound_samples.slice_to_mut(bytes_to_write as uint/
                                                     mem::size_of::<i16>()),
                 samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,

@@ -118,6 +118,9 @@ pub const XINPUT_GAMEPAD_B: WORD = 0x2000;
 pub const XINPUT_GAMEPAD_X: WORD = 0x4000;
 pub const XINPUT_GAMEPAD_Y: WORD = 0x8000;
 
+pub const TRUE: BOOL = 1;
+pub const FALSE: BOOL = 0;
+
 pub const XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE: SHORT = 7849;
 
 pub const XUSER_MAX_COUNT: DWORD = 4;
@@ -369,6 +372,7 @@ extern "system" {
     pub fn ReleaseDC(hWnd: HWND, hDC : HDC) -> c_int;
     pub fn GetDC(hWnd: HWND) -> HDC;
     pub fn LoadLibraryA(lpFileName: LPCSTR) -> HMODULE;
+    pub fn FreeLibrary(hModule: HMODULE) -> BOOL;
     pub fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> *const c_void;
     pub fn GetWindowLongPtrA(hWnd: HWND, nIndex: c_int) -> pointer::LONG_PTR;
     pub fn SetWindowLongPtrA(hWnd: HWND, nIndex: c_int, 
@@ -379,6 +383,8 @@ extern "system" {
                       hTemplateFile: HANDLE) -> HANDLE;
     pub fn GetFileSizeEx(hFile: HANDLE, lpFileSize: *mut i64) -> BOOL;
     pub fn Sleep(dwMilliseconds: DWORD);
+    pub fn CopyFileA(lpExistingFileName: LPCTSTR, lpNewFileName: LPCTSTR,
+                    bFeilIfExists: BOOL) -> BOOL;
 }
 
 // gdi32

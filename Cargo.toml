@@ -2,16 +2,22 @@
 name = "rust_hero"
 version = "0.0.1"
 authors = ["Michael Auracher <michael.auracher@gmail.com>"]
-links= "gdi32"
-build= "build.rs"
+links = "gdi32, winmm"
+build = "build.rs"
+
+[lib]
+name = "game"
+crate-type = ["dylib"]
+path = "src/lib_.rs"
 
 [profile.dev]
 opt-level = 0
 debug = true
 rpath = false
+lto = false
 
 [profile.release]
 opt-level = 2
 debug = false
 rpath = false
-
+lto = true

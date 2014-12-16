@@ -3,20 +3,18 @@ use std::raw::Slice;
 use std::mem; 
 use std::i16;
 
-use game::{mod, VideoBuffer, SoundBuffer, Button};
-use game::{ControllerInput, Input, GameMemory};
+use common::{Input, GameMemory, SoundBuffer, ControllerInput, Button, VideoBuffer};
 use ffi::*;
+
+type GetSoundSamplesT = extern fn(&mut GameMemory, &mut SoundBuffer);
+type UpdateAndRenderT = extern fn(&mut GameMemory, &Input, &mut VideoBuffer); 
 
 #[cfg(not(ndebug))]
 pub mod debug {
     use ffi::*;
     use std::ptr;
     use super::util;
-
-    pub struct ReadFileResult {
-        pub size: u32,
-        pub contents: *mut c_void,
-    }
+    use common::ReadFileResult;
 
     pub struct SoundTimeMarker {
         pub flip_play_cursor: DWORD,
@@ -237,6 +235,18 @@ const BYTES_PER_SAMPLE: DWORD = 4;
 const SOUND_BYTES_PER_SECOND: DWORD = 48000 * BYTES_PER_SAMPLE;
 //TODO: see how low we can go with this value reasonably
 const SOUND_SAFETY_BYTES: DWORD = (SOUND_BYTES_PER_SECOND / GAME_REFRESH_RATE as u32) / 2;
+
+struct Game {
+    handle: HMODULE,
+    get_sound_samples: GetSoundSamplesT, 
+    update_and_render: UpdateAndRenderT,
+}
+
+//impl Game {
+//    fn is_valid(&self) -> bool {
+//        self.handle.is_not_null()
+//    }
+//}
 
 struct SoundOutput {
     byte_index: DWORD,
@@ -545,6 +555,53 @@ fn dsound_init(window: HWND, buffer_size_bytes: DWORD,
 //Stub functions if none of the XInput libraries could be loaded!
 extern "system" fn xinput_get_state_stub(_: DWORD, _: *mut XINPUT_STATE) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
 extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> DWORD { ERROR_DEVICE_NOT_CONNECTED }
+
+
+//Stub functons if none of the game Code could be loaded! 
+extern fn get_sound_samples_stub(_: &mut GameMemory, _: &mut SoundBuffer) { }
+extern fn update_and_render_stub(_: &mut GameMemory, _: &Input, _: &mut VideoBuffer) { } 
+
+
+fn load_game_functions() -> Game {
+    let game_dll_name = "game.dll".to_c_str();
+    let temp_dll_name = "game_temp.dll".to_c_str();
+
+    unsafe { CopyFileA(game_dll_name.as_ptr(), temp_dll_name.as_ptr(), FALSE); }
+
+    let mut result = Game {
+                        handle: ptr::null_mut(),
+                        get_sound_samples: get_sound_samples_stub,
+                        update_and_render: update_and_render_stub,
+                    };
+
+    result.handle = unsafe { LoadLibraryA( temp_dll_name.as_ptr() ) };
+
+    if result.handle.is_not_null() {
+        let get_sound_samples_name = "get_sound_samples".to_c_str();
+        let update_and_render_name = "update_and_render".to_c_str();
+
+        let get_sound_samples  = unsafe { GetProcAddress(result.handle, get_sound_samples_name.as_ptr() ) };
+        let update_and_render = unsafe { GetProcAddress(result.handle, update_and_render_name.as_ptr() ) };
+
+        if get_sound_samples.is_not_null() && update_and_render.is_not_null() {
+            unsafe {
+                result.get_sound_samples = mem::transmute(get_sound_samples); 
+                result.update_and_render = mem::transmute(update_and_render);
+            }
+        }
+    }
+    result
+}
+
+
+fn unload_game_functions(game: &mut Game) {
+    if game.handle.is_not_null() {
+        unsafe { FreeLibrary(game.handle); }
+        game.handle = ptr::null_mut();
+    }
+    game.get_sound_samples = get_sound_samples_stub;
+    game.update_and_render = update_and_render_stub;
+}
 
 fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
 
@@ -993,6 +1050,9 @@ fn main() {
                                         }
                                       ) 
                         },
+            platform_read_entire_file: debug::platform_read_entire_file,
+            platform_write_entire_file: debug::platform_write_entire_file,
+            platform_free_file_memory: debug::platform_free_file_memory,
         };
 
     let sleep_is_granular = TimePeriod::new();
@@ -1018,8 +1078,17 @@ fn main() {
     let mut last_counter: i64 = get_wall_clock();
     let mut flip_wall_clock: i64 = 0;
 
+    let mut load_counter: u8 = 0;
+    let mut game = load_game_functions();
+
     window.running = true;
     while window.running {
+
+        load_counter += 1;
+        if load_counter > 120 {
+            unload_game_functions(&mut game);
+            game = load_game_functions();
+        }
 
         //Keep the old button state but zero out the halftransitoncount to not mess up
         new_input.controllers[0] = old_input.controllers[0];
@@ -1042,9 +1111,9 @@ fn main() {
             pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as uint,
         };
 
-        game::update_and_render(&mut game_memory,
-                                new_input,
-                                &mut video_buf);
+        (game.update_and_render)(&mut game_memory,
+                          new_input,
+                          &mut video_buf);
 
         let from_begin_to_audio = get_seconds_elapsed(flip_wall_clock, get_wall_clock(),
                                                        counter_frequency);
@@ -1107,7 +1176,7 @@ fn main() {
                 samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,
             };
 
-            game::get_sound_samples(&mut game_memory, &mut sound_buf);
+            (game.get_sound_samples)(&mut game_memory, &mut sound_buf);
 
             fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
 

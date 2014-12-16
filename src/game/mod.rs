@@ -1,113 +1,24 @@
 use std::f32;
 use std::num::FloatMath;
-use std::default::Default;
 use std::mem;
 
-#[cfg(target_os="windows")]
-use win32::debug;
-#[cfg(target_os="linux")]
-use linux::debug;
+use common::{GameMemory, SoundBuffer, VideoBuffer, Input, ReadFileResult};
 
 // ============= The public interface ===============
-pub struct VideoBuffer<'a> {
-    //Buffer memory is assumed to be BB GG RR xx
-    pub memory: &'a mut [u32],
-    pub width: uint,
-    pub height: uint,
-    pub pitch: uint,
-}
-
-pub struct SoundBuffer<'a> {
-    //Samples memory is assumed to be two channels interleaved
-    pub samples: &'a mut [i16],
-    pub samples_per_second: u32,
-}
-
-#[deriving(Default)]
-pub struct Button {
-    pub ended_down: bool,
-    pub half_transitions: u8,
-}
-
-#[deriving(Default)]
-pub struct ControllerInput {
-    pub is_connected: bool,
-
-    pub average_x: Option<f32>,
-    pub average_y: Option<f32>,
-    
-    pub move_up: Button,
-    pub move_down: Button,
-    pub move_left: Button,
-    pub move_right: Button,
-
-    pub action_up: Button,
-    pub action_down: Button,
-    pub action_left: Button,
-    pub action_right: Button,
-
-    pub left_shoulder: Button,
-    pub right_shoulder: Button,
-    
-    pub start: Button,
-    pub back: Button,
-}
-
-impl ControllerInput {
-    pub fn zero_half_transitions(&mut self) {
-        self.move_up.half_transitions = 0;
-        self.move_down.half_transitions = 0;
-        self.move_left.half_transitions = 0;
-        self.move_right.half_transitions = 0;
-        self.action_up.half_transitions = 0;
-        self.action_down.half_transitions = 0;
-        self.action_left.half_transitions = 0;
-        self.action_right.half_transitions = 0;
-        self.left_shoulder.half_transitions = 0;
-        self.right_shoulder.half_transitions = 0;
-        self.start.half_transitions = 0;
-        self.back.half_transitions = 0;
-    }
-
-    pub fn is_analog(&self) -> bool {
-        self.average_x.is_some() && self.average_y.is_some()
-    }
-}
-
-pub struct Input {
-    //TODO: see if it fits rustaceans better if we have an Option of 
-    //ControllerInputs here?
-    //The 0 Controller is the keyboard all the others are possible joysticks
-    pub controllers: [ControllerInput, ..5],
-}
-
-impl Default for Input {
-    fn default() -> Input {
-        Input {
-            controllers: [Default::default(), ..5],
-        }
-    }
-}
-
-
-pub struct GameMemory<'a> {
-    pub initialized: bool,
-    pub permanent: &'a mut[u8], //REQUIRED to be zeroed
-    pub transient: &'a mut[u8], //REQUIRED to be zeroed
-}
-
 //Has to be very low latency!
-pub fn get_sound_samples(game_memory: &mut GameMemory,
-                              sound_buffer: &mut SoundBuffer) {
+#[no_mangle]
+pub extern fn get_sound_samples(game_memory: &mut GameMemory,
+                                sound_buffer: &mut SoundBuffer) {
                                   
     let state: &mut GameState = 
         unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
     generate_sound(sound_buffer, state.frequency, &mut state.tsine);
 }
 
-pub fn update_and_render(game_memory: &mut GameMemory,
-                              input: &Input,
-                              vidoe_buffer: &mut VideoBuffer) {
+#[no_mangle]
+pub extern fn update_and_render(game_memory: &mut GameMemory,
+                                input: &Input,
+                                video_buffer: &mut VideoBuffer) {
 
     debug_assert!(mem::size_of::<GameState>() <= game_memory.permanent.len());
 
@@ -115,11 +26,11 @@ pub fn update_and_render(game_memory: &mut GameMemory,
         unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
 
     if !game_memory.initialized {
-        let file = debug::platform_read_entire_file("test.txt");
+        let file = (game_memory.platform_read_entire_file)("test.txt");
         match file {
-            Ok(debug::ReadFileResult{ size, contents }) => {
-                debug::platform_write_entire_file("tester.txt", size, contents);
-                debug::platform_free_file_memory(contents);
+            Ok(ReadFileResult{ size, contents }) => {
+                (game_memory.platform_write_entire_file)("tester.txt", size, contents);
+                (game_memory.platform_free_file_memory)(contents);
             },
             Err(_) => println!("Error as expected"),
         }
@@ -145,7 +56,7 @@ pub fn update_and_render(game_memory: &mut GameMemory,
         }
     }
 
-    render_weird_gradient(vidoe_buffer, state.green_offset, state.blue_offset);
+    render_weird_gradient(video_buffer, state.green_offset, state.blue_offset);
 }
 
 // ======== End of the public interface =========

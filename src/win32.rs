@@ -2,6 +2,7 @@ use std::ptr;
 use std::raw::Slice;
 use std::mem; 
 use std::i16;
+use std::c_str::CString;
 
 use common::{Input, GameMemory, SoundBuffer, ControllerInput, Button, VideoBuffer};
 use ffi::*;
@@ -240,6 +241,7 @@ struct Game {
     handle: HMODULE,
     get_sound_samples: GetSoundSamplesT, 
     update_and_render: UpdateAndRenderT,
+    write_time: FILETIME,
 }
 
 //impl Game {
@@ -562,16 +564,34 @@ extern fn get_sound_samples_stub(_: &mut GameMemory, _: &mut SoundBuffer) { }
 extern fn update_and_render_stub(_: &mut GameMemory, _: &Input, _: &mut VideoBuffer) { } 
 
 
-fn load_game_functions() -> Game {
-    let game_dll_name = "game.dll".to_c_str();
-    let temp_dll_name = "game_temp.dll".to_c_str();
+fn get_last_write_time(file_name: &CString) -> Result<FILETIME, ()> {
+    let mut file_info: WIN32_FILE_ATTRIBUTE_DATA = Default::default();
+    let mut res: Result<FILETIME, ()> = Err(());
+    unsafe { 
+        if GetFileAttributesExA(file_name.as_ptr(),
+                             GET_FILEEX_INFO_LEVELS::GET_FILE_EX_INFO_STANDARD,
+                             (&mut file_info) as *mut _ as *mut c_void) != 0 {
+            res = Ok(file_info.ftLastWriteTime);
+        }
+    }
+    res 
+}
+
+fn load_game_functions(game_dll_name: &CString, temp_dll_name: &CString) -> Game {
 
     unsafe { CopyFileA(game_dll_name.as_ptr(), temp_dll_name.as_ptr(), FALSE); }
+
+    let filetime = get_last_write_time(game_dll_name)
+                                .unwrap_or(FILETIME {
+                                                dwLowDateTime: 0,
+                                                dwHighDateTime: 0,
+                                            }); 
 
     let mut result = Game {
                         handle: ptr::null_mut(),
                         get_sound_samples: get_sound_samples_stub,
                         update_and_render: update_and_render_stub,
+                        write_time: filetime, 
                     };
 
     result.handle = unsafe { LoadLibraryA( temp_dll_name.as_ptr() ) };
@@ -926,11 +946,25 @@ fn get_seconds_elapsed(start: i64, end: i64, frequency: i64) -> f32 {
     (end - start) as f32 / frequency as f32
 }
 
+fn get_exe_path() -> Path {
+    let mut buffer: [i8, ..MAX_PATH] = [0, ..MAX_PATH];
+    let name_length = unsafe { 
+        //TODO: remove all the occurances of MAX_PATH because on NTFS paths
+        //can actually be longer than this constant!
+        GetModuleFileNameA(ptr::null_mut(), buffer.as_mut_ptr(),
+                           MAX_PATH as u32)
+    };
+    let result = unsafe { String::from_raw_buf_len(buffer.as_ptr() as *const u8, name_length as uint) };
+    Path::new(result)
+}
+
 #[main]
 fn main() {
     let (XInputGetState, _) = load_xinput_functions();
     
     let module_handle = unsafe { GetModuleHandleA(ptr::null()) };
+    let exe_full_path = get_exe_path();
+    
     if module_handle.is_null() {
         panic!("Handle to our executable could not be obtained!");
     }
@@ -1059,6 +1093,11 @@ fn main() {
 
     let target_seconds_per_frame = 1.0 / GAME_REFRESH_RATE as f32;
 
+    let game_dll_path = (exe_full_path.dirname_str().unwrap().to_string() 
+                         + "/game.dll").to_c_str();
+    let temp_dll_path = (exe_full_path.dirname_str().unwrap().to_string() 
+                         + "/game_temp.dll").to_c_str();
+    
     let mut sound_is_valid = false;
     let mut last_time_marker_index: uint = 0;
     let mut last_time_markers: [debug::SoundTimeMarker, ..GAME_REFRESH_RATE/2] = 
@@ -1078,16 +1117,21 @@ fn main() {
     let mut last_counter: i64 = get_wall_clock();
     let mut flip_wall_clock: i64 = 0;
 
-    let mut load_counter: u8 = 0;
-    let mut game = load_game_functions();
+    let mut game = load_game_functions(&game_dll_path, &temp_dll_path);
 
     window.running = true;
     while window.running {
 
-        load_counter += 1;
-        if load_counter > 120 {
+        let new_write_time = get_last_write_time(&game_dll_path)
+                                              .unwrap_or(FILETIME {
+                                                            dwLowDateTime: 0,
+                                                            dwHighDateTime: 0,
+                                                        });
+        if unsafe { CompareFileTime(&game.write_time, 
+                                    &new_write_time) } != 0 { 
+                                                                    
             unload_game_functions(&mut game);
-            game = load_game_functions();
+            game = load_game_functions(&game_dll_path, &temp_dll_path);
         }
 
         //Keep the old button state but zero out the halftransitoncount to not mess up

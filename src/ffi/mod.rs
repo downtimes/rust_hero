@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 
-pub use libc::{c_int, c_uint, c_long};
+pub use libc::{c_int, c_uint, c_long, c_char};
 pub use libc::{LPCSTR, LPVOID, BOOL, SIZE_T};
 pub use libc::{QueryPerformanceCounter, QueryPerformanceFrequency};
 pub use libc::{VirtualAlloc, VirtualFree};
@@ -19,6 +19,7 @@ pub mod pointer {
     pub type LONG_PTR = c_long;
     pub type UINT_PTR = c_uint;
 }
+
 #[cfg(target_arch = "x86_64")]
 pub mod pointer {
     pub type LONG_PTR = i64;
@@ -43,6 +44,7 @@ pub type LPMSG = *mut MSG;
 pub type LPPAINTSTRUCT = *mut PAINTSTRUCT;
 pub type HDC = HANDLE;
 pub type LPRECT = *mut RECT;
+pub type LPTSTR = *mut c_char;
 pub type HGDIOBJ = HANDLE;
 pub type MMRESULT = UINT;
 pub type SHORT = i16;
@@ -170,6 +172,51 @@ impl Default for XINPUT_GAMEPAD {
             sThumbRY: 0,
         }
     }
+}
+
+#[repr(C)]
+pub struct FILETIME {
+    pub dwLowDateTime: DWORD,
+    pub dwHighDateTime: DWORD,
+}
+
+
+#[repr(C)]
+pub struct WIN32_FILE_ATTRIBUTE_DATA {
+    pub dwFileAttributes: DWORD,
+    pub ftCreateonTime: FILETIME,
+    pub ftLastAccessTime: FILETIME,
+    pub ftLastWriteTime: FILETIME,
+    pub nFileSizeHeigh: DWORD,
+    pub nFileSizeLow: DWORD,
+}
+
+impl Default for WIN32_FILE_ATTRIBUTE_DATA {
+    fn default() -> WIN32_FILE_ATTRIBUTE_DATA {
+        WIN32_FILE_ATTRIBUTE_DATA {
+            dwFileAttributes: 0,
+            ftCreateonTime: FILETIME { 
+                                dwLowDateTime: 0,
+                                dwHighDateTime: 0,
+                            },
+            ftLastAccessTime: FILETIME { 
+                                dwLowDateTime: 0,
+                                dwHighDateTime: 0,
+                            },
+            ftLastWriteTime: FILETIME { 
+                                dwLowDateTime: 0,
+                                dwHighDateTime: 0,
+                            },
+            nFileSizeHeigh: 0,
+            nFileSizeLow: 0,
+        }
+    }
+}
+
+#[repr(C)]
+pub enum GET_FILEEX_INFO_LEVELS {
+    GET_FILE_EX_INFO_STANDARD,
+    GET_FILE_EX_MAX_INFO_LEVEL,
 }
 
 #[repr(C)]
@@ -385,6 +432,13 @@ extern "system" {
     pub fn Sleep(dwMilliseconds: DWORD);
     pub fn CopyFileA(lpExistingFileName: LPCTSTR, lpNewFileName: LPCTSTR,
                     bFeilIfExists: BOOL) -> BOOL;
+    pub fn GetFileAttributesExA(lpFileName: LPCTSTR, 
+                                fInfoLevelId: GET_FILEEX_INFO_LEVELS,
+                                lpFileInformation: LPVOID) -> BOOL;
+    pub fn CompareFileTime(lpFileTime1: *const FILETIME,
+                           lpFileTime2: *const FILETIME) -> LONG;
+    pub fn GetModuleFileNameA(hModule: HMODULE, lpFilename: LPTSTR,
+                             nSize: DWORD) -> DWORD;
 }
 
 // gdi32

@@ -804,11 +804,11 @@ fn resize_dib_section(buffer: &mut Backbuffer, width: c_int, height: c_int) {
     }
 }
 
-fn blit_buffer_to_window(context: HDC, buffer: &Backbuffer, client_width: c_int,
-                 client_height: c_int) {
+fn blit_buffer_to_window(context: HDC, buffer: &Backbuffer, _client_width: c_int,
+                 _client_height: c_int) {
     unsafe {
         StretchDIBits(context,
-                 0, 0, client_width, client_height,
+                 0, 0, buffer.width, buffer.height,
                  0, 0, buffer.width, buffer.height,
                  buffer.memory as *const c_void,
                  &buffer.info,

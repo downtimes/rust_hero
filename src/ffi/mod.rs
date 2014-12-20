@@ -2,10 +2,13 @@
 #![allow(non_camel_case_types)]
 
 pub use libc::{c_int, c_uint, c_long, c_char};
-pub use libc::{LPCSTR, LPVOID, BOOL, SIZE_T};
+pub use libc::{LPCSTR, LPVOID, BOOL, SIZE_T, FILE_BEGIN, PAGE_READWRITE};
+pub use libc::{MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, TRUE, FALSE};
+pub use libc::{CREATE_ALWAYS, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL};
+pub use libc::{GENERIC_READ, GENERIC_WRITE, SECURITY_ATTRIBUTES};
 pub use libc::{QueryPerformanceCounter, QueryPerformanceFrequency};
-pub use libc::{VirtualAlloc, VirtualFree};
-pub use libc::{CloseHandle, ReadFile, WriteFile};
+pub use libc::{VirtualAlloc, VirtualFree, INVALID_HANDLE_VALUE};
+pub use libc::{CloseHandle, ReadFile, WriteFile, SetFilePointerEx, MapViewOfFile};
 pub use std::default::Default;
 
 pub use self::direct_sound::*;
@@ -66,6 +69,8 @@ pub const WM_KEYUP: UINT = 0x0101;
 pub const WM_SYSKEYDOWN: UINT = 0x0104;
 pub const WM_SYSKEYUP: UINT = 0x0105;
 
+pub const FILE_MAP_WRITE: DWORD = 0x0002;
+
 pub const GWLP_USERDATA: c_int = -21;
 
 pub const VK_LBUTTON: u8 = 0x01u8;
@@ -104,12 +109,6 @@ pub const WS_VISIBLE: DWORD = 0x10000000;
 pub const BLACKNESS: DWORD = 0x00000042;
 pub const WHITENESS: DWORD = 0x00FF0062;
 
-pub const MEM_COMMIT: DWORD = 0x00001000;
-pub const MEM_RESERVE: DWORD = 0x00002000;
-pub const MEM_RELEASE: DWORD = 0x00008000;
-
-pub const PAGE_READWRITE: DWORD = 0x00000004;
-
 pub const PM_REMOVE: DWORD = 0x00000001;
 
 pub const XINPUT_GAMEPAD_DPAD_UP: WORD = 0x0001;
@@ -125,9 +124,6 @@ pub const XINPUT_GAMEPAD_B: WORD = 0x2000;
 pub const XINPUT_GAMEPAD_X: WORD = 0x4000;
 pub const XINPUT_GAMEPAD_Y: WORD = 0x8000;
 
-pub const TRUE: BOOL = 1;
-pub const FALSE: BOOL = 0;
-
 pub const XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE: SHORT = 7849;
 
 pub const XUSER_MAX_COUNT: DWORD = 4;
@@ -135,17 +131,9 @@ pub const XUSER_MAX_COUNT: DWORD = 4;
 pub const ERROR_SUCCESS: DWORD = 0;
 pub const ERROR_DEVICE_NOT_CONNECTED: DWORD = 1167;
 
-pub const GENERIC_READ: DWORD = 0x80000000;
-pub const GENERIC_WRITE: DWORD = 0x40000000;
-
 pub const FILE_SHARE_READ: DWORD = 0x00000001;
 
-pub const FILE_ATTRIBUTE_NORMAL: DWORD = 0x80;
-
 pub const VREFRESH: c_int = 116;
-
-pub const CREATE_ALWAYS: DWORD = 2;
-pub const OPEN_EXISTING: DWORD = 3;
 
 pub const MAX_PATH: uint = 260;
 
@@ -153,8 +141,6 @@ pub const TIMERR_NOERROR: UINT = 0;
 
 #[allow(overflowing_literals)]
 pub const CW_USEDEFAULT: c_int = 0x80000000;
-
-pub const INVALID_HANDLE_VALUE: int = -1;
 
 #[repr(C)]
 pub struct XINPUT_GAMEPAD {
@@ -376,12 +362,6 @@ impl Default for BITMAPINFOHEADER {
     }
 }
 
-#[repr(C)]
-pub struct SECURITY_ATTRIBUTES {
-    pub nLenght: DWORD,
-    pub lpSecurityDescriptor: LPVOID,
-    pub bInheritHandle: bool,
-}
 
 #[repr(C)]
 pub struct RGBQUAD {
@@ -449,6 +429,12 @@ extern "system" {
     pub fn GetCursorPos(lpPoint: *mut POINT) -> BOOL;
     pub fn GetKeyState(nVirtKey: c_int) -> SHORT;
     pub fn ScreenToClient(hWnd: HWND, lpPoint: *mut POINT) -> BOOL;
+    pub fn CreateFileMappingA(hFile: HANDLE, lpAttributes: *mut SECURITY_ATTRIBUTES,
+                             flProtect: DWORD, dwMaximumSizeHigh: DWORD,
+                             dwMaximumSizeLow: DWORD, lpName: LPCTSTR) -> HANDLE;
+    pub fn RtlCopyMemory(Destination: LPVOID, Source: *const c_void,
+                      Length: SIZE_T);
+
 }
 
 // gdi32

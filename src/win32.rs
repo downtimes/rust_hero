@@ -59,7 +59,7 @@ pub mod debug {
                                  ptr::null_mut(), OPEN_EXISTING, 
                                  FILE_ATTRIBUTE_NORMAL, ptr::null_mut()) };
 
-        if handle != INVALID_HANDLE_VALUE as *mut c_void {
+        if handle != INVALID_HANDLE_VALUE {
             let mut file_size: i64 = 0;
             if unsafe { GetFileSizeEx(handle, &mut file_size) } != 0 {
                 let memory: *mut c_void = 
@@ -108,7 +108,7 @@ pub mod debug {
                                  ptr::null_mut(), CREATE_ALWAYS, 
                                  FILE_ATTRIBUTE_NORMAL, ptr::null_mut()) };
 
-        if handle != INVALID_HANDLE_VALUE as *mut c_void {
+        if handle != INVALID_HANDLE_VALUE {
             let mut bytes_written = 0;
             if unsafe { WriteFile(handle, memory, size, 
                                   &mut bytes_written, ptr::null_mut()) } != 0 {
@@ -118,81 +118,6 @@ pub mod debug {
             unsafe { CloseHandle(handle); }
         }
         result
-    }
-
-    unsafe fn draw_vertical(buffer: &mut super::Backbuffer,
-                            x: i32, top: i32, bottom: i32, color: u32) {
-        let mut pixel = buffer.memory as *mut u8;
-        pixel = pixel.offset((x * super::BYTES_PER_PIXEL + top * buffer.pitch) as int);
-        for _ in range(top, bottom) {
-            let out = pixel as *mut u32;
-            *out = color;
-            pixel = pixel.offset(buffer.pitch as int);
-        }
-    }
-
-    fn draw_sound_buffer_marker(c: f32, sound_size: DWORD, cursor: DWORD, 
-                                buffer: &mut super::Backbuffer,
-                                pad_x: i32, 
-                                top: i32, bottom: i32, color: u32) {
-        assert!(cursor < sound_size);
-        let x: i32 = pad_x + (c * cursor as f32) as i32;
-        unsafe { draw_vertical(buffer, x, top, bottom, color); }
-    }
-
-    pub fn sound_sync_display(video_backbuffer: &mut super::Backbuffer, 
-                              last_time_markers: &[SoundTimeMarker],
-                              current_marker: uint,
-                              sound_output: &super::SoundOutput) {
-
-        let pad_x: i32 = 16;
-        let pad_y: i32 = 16;
-        let line_height = 64;
-        let sound_size: DWORD = sound_output.get_buffer_size();
-
-        let c = (video_backbuffer.width - 2 * pad_x) as f32 / 
-                        sound_size as f32;
-
-        for (index, marker) in last_time_markers.iter().enumerate() {
-
-            let play_color = 0xFFFFFFFF;
-            let write_color = 0xFFFF0000;
-            let expected_color = 0xFFFFFF00;
-
-            let mut bottom = pad_y + line_height;
-            let mut top = pad_y;
-            if index == current_marker {
-                let byte_loc_plus_count = (marker.output_location + marker.output_byte_count)
-                                            % sound_size;
-                let expected_pos = marker.expected_frame_byte % sound_size;
-
-                bottom += line_height + pad_y; 
-                top += line_height + pad_y;
-                let firsttop = top;
-                draw_sound_buffer_marker(c, sound_size, marker.output_play_cursor,
-                                         video_backbuffer, pad_x, top, bottom, play_color);
-                draw_sound_buffer_marker(c, sound_size, marker.output_write_cursor,
-                                         video_backbuffer, pad_x, top, bottom, write_color);
-                bottom += line_height + pad_y; 
-                top += line_height + pad_y;
-
-                draw_sound_buffer_marker(c, sound_size, marker.output_location,
-                                         video_backbuffer, pad_x, top, bottom, play_color);
-                draw_sound_buffer_marker(c, sound_size, byte_loc_plus_count,
-                                         video_backbuffer, pad_x, top, bottom, write_color);
-                bottom += line_height + pad_y; 
-                top += line_height + pad_y;
-
-                draw_sound_buffer_marker(c, sound_size, expected_pos,
-                                         video_backbuffer, pad_x, firsttop, bottom, expected_color);
-
-            }
-
-            draw_sound_buffer_marker(c, sound_size, marker.flip_play_cursor,
-                                     video_backbuffer, pad_x, top, bottom, play_color);
-            draw_sound_buffer_marker(c, sound_size, marker.flip_write_cursor,
-                                     video_backbuffer, pad_x, top, bottom, write_color);
-        }
     }
 }
 
@@ -263,6 +188,33 @@ impl SoundOutput {
                         (self.sound_buffer, &mut dsbcaps); }
         
         dsbcaps.dwBufferBytes
+    }
+}
+
+#[deriving(PartialEq, Eq)]
+enum ReplayState {
+    Recording,
+    Replaying,
+    Nothing,
+}
+
+struct Replay {
+    input_path: CString,
+    input_file_handle: HANDLE,
+    game_address: *mut c_void,
+    memory: *mut c_void,
+    memory_size: uint,
+    state: ReplayState,
+}
+
+
+impl Replay {
+    fn is_recording(&self) -> bool {
+        self.state == ReplayState::Recording
+    }
+
+    fn is_replaying(&self) -> bool {
+        self.state == ReplayState::Replaying
     }
 }
 
@@ -831,7 +783,8 @@ fn process_xinput_button(xinput_button_state: WORD,
 }
 
 fn process_pending_messages(window: &mut Window, 
-                            keyboard_controller: &mut ControllerInput) {
+                            keyboard_controller: &mut ControllerInput,
+                            replay: &mut Replay) {
     let mut msg = Default::default();
     //Process the Message Queue
     while unsafe {PeekMessageA(&mut msg, 0 as HWND,
@@ -884,6 +837,22 @@ fn process_pending_messages(window: &mut Window,
                                 window.running = false; 
                             }
                         },
+
+                        b'L' => {
+                            if is_down {
+                                if replay.is_recording() {
+                                    println!("start replay")
+                                    stop_recording(replay);
+                                    start_replay(replay);
+                                } else if replay.is_replaying() {
+                                    println!("stop replay")
+                                    stop_replay(replay);
+                                } else {
+                                    println!("start recording")
+                                    start_recording(replay);
+                                }
+                            }
+                        }
                         _ => (),
                     }
                 }
@@ -895,6 +864,42 @@ fn process_pending_messages(window: &mut Window,
             },
         }
     }
+}
+
+fn stop_recording(replay: &mut Replay) {
+    unsafe { CloseHandle(replay.input_file_handle); }
+    replay.state = ReplayState::Nothing;
+}
+
+fn start_replay(replay: &mut Replay) {
+    replay.input_file_handle = unsafe {
+        CreateFileA(replay.input_path.as_ptr(),
+                    GENERIC_READ,
+                    FILE_SHARE_READ, ptr::null_mut(),
+                    OPEN_EXISTING, 0,
+                    ptr::null_mut())
+    };
+    unsafe { RtlCopyMemory(replay.game_address, replay.memory as *const c_void,
+                        replay.memory_size as SIZE_T); }
+    replay.state = ReplayState::Replaying;
+}
+
+fn stop_replay(replay: &mut Replay) {
+    unsafe { CloseHandle(replay.input_file_handle); }
+    replay.state = ReplayState::Nothing;
+}
+
+fn start_recording(replay: &mut Replay) {
+    replay.input_file_handle = unsafe {
+        CreateFileA(replay.input_path.as_ptr(),
+                    GENERIC_WRITE,
+                    0, ptr::null_mut(),
+                    CREATE_ALWAYS, 0,
+                    ptr::null_mut())
+    };
+    unsafe { RtlCopyMemory(replay.memory, replay.game_address as *const c_void,
+                        replay.memory_size as SIZE_T); }
+    replay.state = ReplayState::Recording;
 }
 
 fn process_keyboard_message(button: &mut Button, is_down: bool) {
@@ -912,7 +917,6 @@ fn process_mouse_input(window: &Window, input: &mut Input) {
         ScreenToClient(window.handle, &mut cursor_point); 
     }
    input.mouse_x = cursor_point.x as i32; 
-   println!("{}, {}", cursor_point.x, cursor_point.y);
    input.mouse_y = cursor_point.y as i32;
 
    process_keyboard_message(&mut input.mouse_l, 
@@ -950,12 +954,87 @@ fn get_exe_path() -> Path {
     Path::new(result)
 }
 
+fn initialize_replay(exe_dirname: &String, file_size: uint, 
+                     game_address: *mut c_void) -> Result<Replay,()> {
+    let mut result: Result<Replay,()> = Err(());
+
+    let mmap_name = (*exe_dirname + "/mmap.rhm").to_c_str();
+    let input_name = (*exe_dirname + "/input.rhi").to_c_str();
+    let file_handle = unsafe { CreateFileA(mmap_name.as_ptr(),
+                                           GENERIC_READ | GENERIC_WRITE,
+                                           0, ptr::null_mut(),
+                                           CREATE_ALWAYS, 0,
+                                           ptr::null_mut()) };
+
+    if file_handle != INVALID_HANDLE_VALUE {
+        let file_size_hi = (file_size >> 32) as DWORD;
+        let file_size_lo = (file_size & 0xFFFFFFFF) as DWORD;
+        let mapping_handle = unsafe { CreateFileMappingA(file_handle,
+                                                        ptr::null_mut(),
+                                                        PAGE_READWRITE,
+                                                        file_size_hi, file_size_lo,
+                                                        ptr::null()) };
+
+        if mapping_handle.is_not_null() {
+            let address = unsafe { MapViewOfFile(mapping_handle,
+                                                 FILE_MAP_WRITE,
+                                                 0, 0, 0) };
+
+            if address.is_not_null() {
+                result = Ok(Replay {
+                    input_path: input_name,
+                    input_file_handle: ptr::null_mut(),
+                    game_address: game_address,
+                    memory: address,
+                    memory_size: file_size,
+                    state: ReplayState::Nothing,
+                });
+            } else {
+                //TODO: Diagnostic that no replay is possible
+            }
+        } else {
+            //TODO: Diagnostic that no replay is possible
+        }
+    } else {
+        //TODO: Diagnostic that no replay is possible
+    }
+    result
+}
+
+fn log_input(replay: &Replay, input: &mut Input) {
+    unsafe { 
+        let mut ignored: DWORD = 0;
+        WriteFile(replay.input_file_handle,
+                  input as *mut _ as *mut c_void,
+                  mem::size_of::<Input>() as DWORD,
+                  &mut ignored, ptr::null_mut());
+    }
+}
+
+fn override_input(replay: &mut Replay, input: &mut Input) {
+    unsafe {
+        if replay.input_file_handle.is_not_null() {
+            let mut bytes_read: DWORD = 0;
+            ReadFile(replay.input_file_handle,
+                     input as *mut _ as *mut c_void,
+                     mem::size_of::<Input>() as DWORD,
+                     &mut bytes_read, ptr::null_mut());
+            if bytes_read == 0 {
+                //use recursion here to loop
+                stop_replay(replay);
+                start_replay(replay);
+                override_input(replay, input);
+            }
+        }
+    }
+}
+
 #[main]
 fn main() {
     let (XInputGetState, _) = load_xinput_functions();
     
     let module_handle = unsafe { GetModuleHandleA(ptr::null()) };
-    let exe_full_path = get_exe_path();
+    let exe_dirname = get_exe_path().dirname_str().unwrap().to_string();
     
     if module_handle.is_null() {
         panic!("Handle to our executable could not be obtained!");
@@ -1062,9 +1141,10 @@ fn main() {
    
     let base_address = if cfg!(ndebug) { 0 } else { util::tera_bytes(2) };
     let permanent_store_size = util::mega_bytes(64);
-    let transient_store_size = util::giga_bytes(4);
+    let transient_store_size = util::giga_bytes(1);
+    let total_size = permanent_store_size + transient_store_size;
     let memory = unsafe { VirtualAlloc(base_address as LPVOID, 
-                                       (permanent_store_size + transient_store_size) as SIZE_T,
+                                       total_size as SIZE_T,
                                        MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE) };
 
     if memory.is_null() { panic!("Memory for the Game could not be obtained!"); }
@@ -1092,12 +1172,13 @@ fn main() {
             platform_free_file_memory: debug::platform_free_file_memory,
         };
 
+    let mut replay = initialize_replay(&exe_dirname, total_size,
+                                       memory).ok().expect("Error with replay");
+
     window.timer_fine_resolution = unsafe { timeBeginPeriod(1) == TIMERR_NOERROR };
 
-    let game_dll_path = (exe_full_path.dirname_str().unwrap().to_string() 
-                         + "/game.dll").to_c_str();
-    let temp_dll_path = (exe_full_path.dirname_str().unwrap().to_string() 
-                         + "/game_temp.dll").to_c_str();
+    let game_dll_path = (exe_dirname + "/game.dll").to_c_str();
+    let temp_dll_path = (exe_dirname + "/game_temp.dll").to_c_str();
 
     let thread_context = ThreadContext;
     
@@ -1109,13 +1190,10 @@ fn main() {
     let mut new_input: &mut Input = &mut Default::default();
     let mut old_input: &mut Input = &mut Default::default();
 
-    let mut audio_latency_bytes: uint;
-    let mut audio_latency_seconds: f32;
-
     let mut counter_frequency: i64 = 0;
     unsafe { QueryPerformanceFrequency(&mut counter_frequency); }
 
-    let mut last_cycles = intrinsics::__rdtsc();
+//    let mut last_cycles = intrinsics::__rdtsc();
 
     let mut last_counter: i64 = get_wall_clock();
     let mut flip_wall_clock: i64 = 0;
@@ -1141,7 +1219,8 @@ fn main() {
         new_input.controllers[0] = old_input.controllers[0];
         new_input.controllers[0].is_connected = true;
         new_input.controllers[0].zero_half_transitions();
-        process_pending_messages(&mut window, &mut new_input.controllers[0]);
+        process_pending_messages(&mut window, &mut new_input.controllers[0],
+                                 &mut replay);
 
         process_mouse_input(&window, new_input);
 
@@ -1159,6 +1238,14 @@ fn main() {
             height: window.backbuffer.height as uint,
             pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as uint,
         };
+
+        if replay.is_recording() {
+            log_input(&replay, new_input);
+        }
+
+        if replay.is_replaying() {
+            override_input(&mut replay, new_input);
+        }
 
         (game.update_and_render)(&thread_context,
                                  &mut game_memory,
@@ -1232,28 +1319,6 @@ fn main() {
 
             fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
 
-            if cfg!(not(ndebug)) {
-                last_time_markers[last_time_marker_index].output_write_cursor = write_cursor;
-                last_time_markers[last_time_marker_index].expected_frame_byte = expected_frame_boundary_byte;
-                last_time_markers[last_time_marker_index].output_play_cursor = play_cursor;
-                last_time_markers[last_time_marker_index].output_location = byte_to_lock;
-                last_time_markers[last_time_marker_index].output_byte_count = bytes_to_write;
-                let unwraped_write_cursor = 
-                    if write_cursor < play_cursor {
-                        write_cursor + sound_output.get_buffer_size()
-                    } else {
-                        write_cursor
-                    };
-
-                audio_latency_bytes = (unwraped_write_cursor - play_cursor) as uint;
-                audio_latency_seconds = audio_latency_bytes as f32 /
-                                            SOUND_BYTES_PER_SECOND as f32;
-
-                println!("BTL:{} BTW:{} - PC:{} WC:{} Delta:{} ({}s)",
-                         byte_to_lock,
-                         bytes_to_write, play_cursor, write_cursor,
-                         audio_latency_bytes, audio_latency_seconds);
-            }
         } else {
             sound_is_valid = false;
         }
@@ -1279,17 +1344,6 @@ fn main() {
         }
 
         let end_counter = get_wall_clock();
-
-        if cfg!(not(ndebug)) {
-            let current_marker = 
-                if last_time_marker_index == 0 {
-                    last_time_markers.len() - 1
-                } else {
-                    last_time_marker_index - 1
-                };
-            debug::sound_sync_display(&mut window.backbuffer, &last_time_markers,
-                                      current_marker, &sound_output);
-        }
 
         let (width, height) = get_client_dimensions(window.handle).unwrap();
 
@@ -1321,20 +1375,19 @@ fn main() {
             }
         }
 
-        let ms_per_frame = 1000.0 * get_seconds_elapsed(last_counter,
-                                                        end_counter,
-                                                        counter_frequency);
-        let fps: f32 = 1000.0 / ms_per_frame;
-        let display_cicles = intrinsics::__rdtsc();
-        let mc_per_second = (display_cicles - last_cycles) as f32/ (1000.0 * 1000.0);
-
-        println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
-
+//        let ms_per_frame = 1000.0 * get_seconds_elapsed(last_counter,
+//                                                        end_counter,
+//                                                        counter_frequency);
+//        let fps: f32 = 1000.0 / ms_per_frame;
+//        let display_cicles = intrinsics::__rdtsc();
+//        let mc_per_second = (display_cicles - last_cycles) as f32/ (1000.0 * 1000.0);
+//
+//        println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
 
         mem::swap(new_input, old_input);
 
         last_counter = end_counter;
-        last_cycles = intrinsics::__rdtsc();
+//        last_cycles = intrinsics::__rdtsc();
     }
     }
 }

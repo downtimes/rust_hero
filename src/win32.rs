@@ -281,38 +281,9 @@ struct Window {
     handle: HWND,
     running: bool,
     pause: bool,
+    timer_fine_resolution: bool,
     backbuffer: Backbuffer,
 }
-
-
-//Struct to do RAII with timeBeginPeriod and timeEndPeriod on win32
-struct TimePeriod(bool);
-
-impl TimePeriod {
-    pub fn new() -> TimePeriod {
-        TimePeriod( 
-            unsafe{ timeBeginPeriod(1) == TIMERR_NOERROR }
-        )
-    }
-
-    pub fn was_set(&self) -> bool {
-        let &TimePeriod(res) = self;
-        res
-    }
-}
-
-impl Drop for TimePeriod {
-    fn drop(&mut self) {
-        //Reset the Sheduler resolution back to normal
-        //if it was successfully set
-        let &TimePeriod(successful) = self;
-        if successful {
-            unsafe { timeEndPeriod(1); }
-        }
-    }
-}
-
-
 
 impl Window {
     fn process_messages(&mut self, message: UINT, 
@@ -973,6 +944,7 @@ fn main() {
                         handle: ptr::null_mut(),
                         running: false,
                         pause: false,
+                        timer_fine_resolution: false,
                         backbuffer: Backbuffer {
                             info: Default::default(), 
                             memory: ptr::null_mut(),
@@ -1089,7 +1061,7 @@ fn main() {
             platform_free_file_memory: debug::platform_free_file_memory,
         };
 
-    let sleep_is_granular = TimePeriod::new();
+    window.timer_fine_resolution = unsafe { timeBeginPeriod(1) == TIMERR_NOERROR };
 
     let target_seconds_per_frame = 1.0 / GAME_REFRESH_RATE as f32;
 
@@ -1255,7 +1227,7 @@ fn main() {
                                                                counter_frequency);
         if seconds_elapsed_for_work < target_seconds_per_frame {
             while seconds_elapsed_for_work < target_seconds_per_frame {
-                if sleep_is_granular.was_set() {
+                if window.timer_fine_resolution {
                     let sleep_ms = (1000.0 * (target_seconds_per_frame 
                                               - seconds_elapsed_for_work)) as DWORD;
                     if sleep_ms > 0 {

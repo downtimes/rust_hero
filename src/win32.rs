@@ -5,17 +5,15 @@ use std::i16;
 use std::c_str::CString;
 
 use common::{Input, GameMemory, SoundBuffer, ControllerInput, Button, VideoBuffer};
+use common::{ThreadContext, GetSoundSamplesT, UpdateAndRenderT};
 use ffi::*;
-
-type GetSoundSamplesT = extern fn(&mut GameMemory, &mut SoundBuffer);
-type UpdateAndRenderT = extern fn(&mut GameMemory, &Input, &mut VideoBuffer); 
 
 #[cfg(not(ndebug))]
 pub mod debug {
     use ffi::*;
     use std::ptr;
     use super::util;
-    use common::ReadFileResult;
+    use common::{ReadFileResult, ThreadContext};
 
     pub struct SoundTimeMarker {
         pub flip_play_cursor: DWORD,
@@ -50,7 +48,7 @@ pub mod debug {
 
     //TODO: make generic over the thing we want to load?
     //or just return a byteslice?
-    pub fn platform_read_entire_file(filename: &str) -> Result<ReadFileResult, ()> {
+    pub fn platform_read_entire_file(context: &ThreadContext, filename: &str) -> Result<ReadFileResult, ()> {
         debug_assert!(filename.len() <= MAX_PATH);
 
         let mut result: Result<ReadFileResult, ()> = Err(());
@@ -80,7 +78,7 @@ pub mod debug {
                                         contents: memory,
                                       });
                     } else {
-                        platform_free_file_memory(memory);
+                        platform_free_file_memory(context, memory);
                     }
                 }
             }
@@ -90,13 +88,15 @@ pub mod debug {
         result
     }
     
-    pub fn platform_free_file_memory(memory: *mut c_void) {
+    pub fn platform_free_file_memory(_context: &ThreadContext, 
+                                     memory: *mut c_void) {
         if memory.is_not_null() {
             unsafe { VirtualFree(memory, 0, MEM_RELEASE); }
         }
     }
 
-    pub fn platform_write_entire_file(filename: &str, size: DWORD,
+    pub fn platform_write_entire_file(_context: &ThreadContext,
+                                      filename: &str, size: DWORD,
                                       memory: *mut c_void) -> bool {
         debug_assert!(filename.len() <= MAX_PATH);
 
@@ -529,8 +529,8 @@ extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> 
 
 
 //Stub functons if none of the game Code could be loaded! 
-extern fn get_sound_samples_stub(_: &mut GameMemory, _: &mut SoundBuffer) { }
-extern fn update_and_render_stub(_: &mut GameMemory, _: &Input, _: &mut VideoBuffer) { } 
+extern fn get_sound_samples_stub(_: &ThreadContext, _: &mut GameMemory, _: &mut SoundBuffer) { }
+extern fn update_and_render_stub(_: &ThreadContext, _: &mut GameMemory, _: &Input, _: &mut VideoBuffer) { } 
 
 
 fn get_last_write_time(file_name: &CString) -> Result<FILETIME, ()> {
@@ -898,11 +898,34 @@ fn process_pending_messages(window: &mut Window,
 }
 
 fn process_keyboard_message(button: &mut Button, is_down: bool) {
-    debug_assert!(is_down != button.ended_down);
-    button.ended_down = is_down;
-    button.half_transitions += 1;
+    if is_down != button.ended_down {
+        button.ended_down = is_down;
+        button.half_transitions += 1;
+    }
 }
 
+//TODO: clean the input handleing for the Mouse up before shipping
+fn process_mouse_input(window: &Window, input: &mut Input) {
+    let mut cursor_point = POINT { x: 0, y: 0 };
+    unsafe { 
+        GetCursorPos(&mut cursor_point); 
+        ScreenToClient(window.handle, &mut cursor_point); 
+    }
+   input.mouse_x = cursor_point.x as i32; 
+   println!("{}, {}", cursor_point.x, cursor_point.y);
+   input.mouse_y = cursor_point.y as i32;
+
+   process_keyboard_message(&mut input.mouse_l, 
+                            unsafe { (GetKeyState(VK_LBUTTON as i32) & (1 << 15)) != 0 });
+   process_keyboard_message(&mut input.mouse_r, 
+                            unsafe { (GetKeyState(VK_RBUTTON as i32) & (1 << 15)) != 0 });
+   process_keyboard_message(&mut input.mouse_m, 
+                            unsafe { (GetKeyState(VK_MBUTTON as i32) & (1 << 15)) != 0 });
+   process_keyboard_message(&mut input.mouse_x1, 
+                            unsafe { (GetKeyState(VK_XBUTTON1 as i32) & (1 << 15)) != 0 });
+   process_keyboard_message(&mut input.mouse_x2, 
+                            unsafe { (GetKeyState(VK_XBUTTON2 as i32) & (1 << 15)) != 0 });
+}
 
 fn get_wall_clock() -> i64 {
     let mut res: i64 = 0;
@@ -1075,6 +1098,8 @@ fn main() {
                          + "/game.dll").to_c_str();
     let temp_dll_path = (exe_full_path.dirname_str().unwrap().to_string() 
                          + "/game_temp.dll").to_c_str();
+
+    let thread_context = ThreadContext;
     
     let mut sound_is_valid = false;
     let mut last_time_marker_index: uint = 0;
@@ -1118,6 +1143,8 @@ fn main() {
         new_input.controllers[0].zero_half_transitions();
         process_pending_messages(&mut window, &mut new_input.controllers[0]);
 
+        process_mouse_input(&window, new_input);
+
         if !window.pause {
         process_xinput(XInputGetState,
                        new_input.controllers.slice_from_mut(1), 
@@ -1133,9 +1160,10 @@ fn main() {
             pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as uint,
         };
 
-        (game.update_and_render)(&mut game_memory,
-                          new_input,
-                          &mut video_buf);
+        (game.update_and_render)(&thread_context,
+                                 &mut game_memory,
+                                 new_input,
+                                 &mut video_buf);
 
         let from_begin_to_audio = get_seconds_elapsed(flip_wall_clock, get_wall_clock(),
                                                        counter_frequency);
@@ -1198,7 +1226,9 @@ fn main() {
                 samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,
             };
 
-            (game.get_sound_samples)(&mut game_memory, &mut sound_buf);
+            (game.get_sound_samples)(&thread_context,
+                                     &mut game_memory,
+                                     &mut sound_buf);
 
             fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
 

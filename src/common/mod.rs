@@ -1,9 +1,12 @@
 use libc::{c_void, DWORD};
 use std::default::Default;
 
-type PlatformReadEntireFileT = fn(&str) -> Result<ReadFileResult, ()>;
-type PlatformFreeFileMemoryT = fn(*mut c_void);
-type PlatformWriteEntireFileT = fn(&str, DWORD, *mut c_void) -> bool;
+type PlatformReadEntireFileT = fn(&ThreadContext, &str) -> Result<ReadFileResult, ()>;
+type PlatformFreeFileMemoryT = fn(&ThreadContext, *mut c_void);
+type PlatformWriteEntireFileT = fn(&ThreadContext, &str, DWORD, *mut c_void) -> bool;
+
+pub type GetSoundSamplesT = extern fn(&ThreadContext, &mut GameMemory, &mut SoundBuffer);
+pub type UpdateAndRenderT = extern fn(&ThreadContext, &mut GameMemory, &Input, &mut VideoBuffer); 
 
 pub struct ReadFileResult {
     pub size: u32,
@@ -79,7 +82,19 @@ impl ControllerInput {
     }
 }
 
+pub struct ThreadContext;
+
 pub struct Input {
+    pub mouse_x: i32,
+    pub mouse_y: i32,
+    pub mouse_z: i32,
+
+    pub mouse_l: Button,
+    pub mouse_r: Button,
+    pub mouse_m: Button,
+    pub mouse_x1: Button,
+    pub mouse_x2: Button,
+
     //TODO: see if it fits rustaceans better if we have an Option of 
     //ControllerInputs here?
     //The 0 Controller is the keyboard all the others are possible joysticks
@@ -89,6 +104,15 @@ pub struct Input {
 impl Default for Input {
     fn default() -> Input {
         Input {
+            mouse_x: 0,
+            mouse_y: 0,
+            mouse_z: 0,
+
+            mouse_l: Default::default(),
+            mouse_r: Default::default(),
+            mouse_m: Default::default(),
+            mouse_x1: Default::default(),
+            mouse_x2: Default::default(),
             controllers: [Default::default(), ..5],
         }
     }

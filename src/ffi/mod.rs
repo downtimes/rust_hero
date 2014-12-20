@@ -446,6 +446,9 @@ extern "system" {
                            lpFileTime2: *const FILETIME) -> LONG;
     pub fn GetModuleFileNameA(hModule: HMODULE, lpFilename: LPTSTR,
                              nSize: DWORD) -> DWORD;
+    pub fn GetCursorPos(lpPoint: *mut POINT) -> BOOL;
+    pub fn GetKeyState(nVirtKey: c_int) -> SHORT;
+    pub fn ScreenToClient(hWnd: HWND, lpPoint: *mut POINT) -> BOOL;
 }
 
 // gdi32

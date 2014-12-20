@@ -225,9 +225,7 @@ mod util {
 
 //Graphics System constants
 const BYTES_PER_PIXEL: c_int = 4;
-//TODO: get the actual refresh rate from windows reliably
-const MONITOR_REFRESH_RATE: uint = 60;
-const GAME_REFRESH_RATE: uint = MONITOR_REFRESH_RATE / 2;
+const DEFAULT_MONITOR_REFRESH_RATE: uint = 60;
 
 //Sound System constants
 const CHANNELS: WORD = 2;
@@ -235,7 +233,6 @@ const BITS_PER_CHANNEL: WORD = 16;
 const BYTES_PER_SAMPLE: DWORD = 4;
 const SOUND_BYTES_PER_SECOND: DWORD = 48000 * BYTES_PER_SAMPLE;
 //TODO: see how low we can go with this value reasonably
-const SOUND_SAFETY_BYTES: DWORD = (SOUND_BYTES_PER_SECOND / GAME_REFRESH_RATE as u32) / 2;
 
 struct Game {
     handle: HMODULE,
@@ -252,6 +249,7 @@ struct Game {
 
 struct SoundOutput {
     byte_index: DWORD,
+    safety_bytes: DWORD,
     sound_buffer: *mut IDirectSoundBuffer,
 }
 
@@ -958,7 +956,7 @@ fn main() {
     resize_dib_section(&mut window.backbuffer, 1280, 720); 
 
     let class_str = "HandmadeHeroWindowClass".to_c_str();
-    let window_class = WNDCLASS{style: CS_OWNDC|CS_HREDRAW|CS_VREDRAW, 
+    let window_class = WNDCLASS{style: CS_HREDRAW|CS_VREDRAW, 
                                 lpfnWndProc: process_messages,
                                 cbClsExtra: 0 as c_int,
                                 cbWndExtra: 0 as c_int,
@@ -987,9 +985,23 @@ fn main() {
         panic!("Window could not be created!");
     }
 
-    //Needed for Sound System test
+    let monitor_refresh_rate: uint = unsafe { 
+        let dc = GetDC(window.handle);
+        let refresh_rate = GetDeviceCaps(dc, VREFRESH); 
+        if refresh_rate > 1 {
+            refresh_rate as uint
+        } else {
+            DEFAULT_MONITOR_REFRESH_RATE
+        }
+    };
+
+    let game_refresh_rate = monitor_refresh_rate / 2;
+    let target_seconds_per_frame = 1.0 / game_refresh_rate as f32;
+
+
     let mut sound_output = SoundOutput {
         byte_index: 0,
+        safety_bytes: (SOUND_BYTES_PER_SECOND / game_refresh_rate as u32) / 2,
         //TODO: Handle all the cases when there was no DirectSound and unwrap fails!
         sound_buffer: dsound_init(window.handle, SOUND_BYTES_PER_SECOND,
                                   SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE).unwrap(),
@@ -1011,10 +1023,6 @@ fn main() {
 //        }
 //    }
 
-    let context = unsafe { GetDC(window.handle) };
-    if context.is_null() {
-        panic!("DC for the Window not available!");
-    }
 
     let mut sound_samples: &mut [i16] = unsafe { 
             //Allocation implicitly freed at the end of the execution
@@ -1063,8 +1071,6 @@ fn main() {
 
     window.timer_fine_resolution = unsafe { timeBeginPeriod(1) == TIMERR_NOERROR };
 
-    let target_seconds_per_frame = 1.0 / GAME_REFRESH_RATE as f32;
-
     let game_dll_path = (exe_full_path.dirname_str().unwrap().to_string() 
                          + "/game.dll").to_c_str();
     let temp_dll_path = (exe_full_path.dirname_str().unwrap().to_string() 
@@ -1072,8 +1078,8 @@ fn main() {
     
     let mut sound_is_valid = false;
     let mut last_time_marker_index: uint = 0;
-    let mut last_time_markers: [debug::SoundTimeMarker, ..GAME_REFRESH_RATE/2] = 
-                                [Default::default(), ..GAME_REFRESH_RATE/2];
+    let mut last_time_markers: [debug::SoundTimeMarker, ..15] = 
+                                [Default::default(), ..15];
 
     let mut new_input: &mut Input = &mut Default::default();
     let mut old_input: &mut Input = &mut Default::default();
@@ -1151,13 +1157,13 @@ fn main() {
 
             let safe_write_cursor = 
                 if write_cursor < play_cursor {
-                    write_cursor + SOUND_SAFETY_BYTES + sound_buffer_size
+                    write_cursor + sound_output.safety_bytes + sound_buffer_size
                 } else {
-                    write_cursor + SOUND_SAFETY_BYTES
+                    write_cursor + sound_output.safety_bytes
                 };
             debug_assert!(safe_write_cursor >= play_cursor);
 
-            let expected_sound_bytes_per_frame = SOUND_BYTES_PER_SECOND / GAME_REFRESH_RATE as u32;
+            let expected_sound_bytes_per_frame = SOUND_BYTES_PER_SECOND / game_refresh_rate as u32;
             let seconds_to_flip = target_seconds_per_frame - from_begin_to_audio;
             let expected_bytes_to_flip = (expected_sound_bytes_per_frame as f32 * 
                                         (seconds_to_flip / target_seconds_per_frame)) as DWORD;
@@ -1174,7 +1180,7 @@ fn main() {
                         / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE)
                     % sound_buffer_size
                 } else {
-                    (((write_cursor + expected_sound_bytes_per_frame + SOUND_SAFETY_BYTES) 
+                    (((write_cursor + expected_sound_bytes_per_frame + sound_output.safety_bytes) 
                         / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE)
                      % sound_buffer_size
                 };
@@ -1256,7 +1262,15 @@ fn main() {
         }
 
         let (width, height) = get_client_dimensions(window.handle).unwrap();
-        blit_buffer_to_window(context, &window.backbuffer, width, height);
+
+        {
+            let context = unsafe { GetDC(window.handle) };
+            if context.is_null() {
+                panic!("DC for the Window not available!");
+            }
+            blit_buffer_to_window(context, &window.backbuffer, width, height);
+            unsafe { ReleaseDC(window.handle, context); }
+        }
 
         flip_wall_clock = get_wall_clock();
 

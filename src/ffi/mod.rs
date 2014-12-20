@@ -68,6 +68,11 @@ pub const WM_SYSKEYUP: UINT = 0x0105;
 
 pub const GWLP_USERDATA: c_int = -21;
 
+pub const VK_LBUTTON: u8 = 0x01u8;
+pub const VK_RBUTTON: u8 = 0x02u8;
+pub const VK_MBUTTON: u8 = 0x04u8;
+pub const VK_XBUTTON1: u8 = 0x05u8;
+pub const VK_XBUTTON2: u8 = 0x06u8;
 pub const VK_ESCAPE: u8 = 0x1Bu8;
 pub const VK_SPACE: u8 = 0x20u8;
 pub const VK_LEFT: u8 = 0x25u8;
@@ -136,6 +141,8 @@ pub const GENERIC_WRITE: DWORD = 0x40000000;
 pub const FILE_SHARE_READ: DWORD = 0x00000001;
 
 pub const FILE_ATTRIBUTE_NORMAL: DWORD = 0x80;
+
+pub const VREFRESH: c_int = 116;
 
 pub const CREATE_ALWAYS: DWORD = 2;
 pub const OPEN_EXISTING: DWORD = 3;
@@ -457,6 +464,7 @@ extern "system" {
                         dwRop: DWORD) -> c_int;
     pub fn DeleteObject(hObject: HGDIOBJ) -> BOOL;
     pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
+    pub fn GetDeviceCaps(hdc: HDC, nIndex: c_int) -> c_int;
 }
 
 

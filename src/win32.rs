@@ -216,6 +216,42 @@ impl Replay {
     fn is_replaying(&self) -> bool {
         self.state == ReplayState::Replaying
     }
+
+    fn stop_recording(&mut self) {
+        unsafe { CloseHandle(self.input_file_handle); }
+        self.state = ReplayState::Nothing;
+    }
+
+    fn start_replay(&mut self) {
+        self.input_file_handle = unsafe {
+            CreateFileA(self.input_path.as_ptr(),
+                        GENERIC_READ,
+                        FILE_SHARE_READ, ptr::null_mut(),
+                        OPEN_EXISTING, 0,
+                        ptr::null_mut())
+        };
+        unsafe { RtlCopyMemory(self.game_address, self.memory as *const c_void,
+                            self.memory_size as SIZE_T); }
+        self.state = ReplayState::Replaying;
+    }
+
+    fn stop_replay(&mut self) {
+        unsafe { CloseHandle(self.input_file_handle); }
+        self.state = ReplayState::Nothing;
+    }
+
+    fn start_recording(&mut self) {
+        self.input_file_handle = unsafe {
+            CreateFileA(self.input_path.as_ptr(),
+                        GENERIC_WRITE,
+                        0, ptr::null_mut(),
+                        CREATE_ALWAYS, 0,
+                        ptr::null_mut())
+        };
+        unsafe { RtlCopyMemory(self.memory, self.game_address as *const c_void,
+                            self.memory_size as SIZE_T); }
+        self.state = ReplayState::Recording;
+    }
 }
 
 struct Backbuffer {
@@ -841,15 +877,12 @@ fn process_pending_messages(window: &mut Window,
                         b'L' => {
                             if is_down {
                                 if replay.is_recording() {
-                                    println!("start replay")
-                                    stop_recording(replay);
-                                    start_replay(replay);
+                                    replay.stop_recording();
+                                    replay.start_replay();
                                 } else if replay.is_replaying() {
-                                    println!("stop replay")
-                                    stop_replay(replay);
+                                    replay.stop_replay();
                                 } else {
-                                    println!("start recording")
-                                    start_recording(replay);
+                                    replay.start_recording()
                                 }
                             }
                         }
@@ -866,43 +899,11 @@ fn process_pending_messages(window: &mut Window,
     }
 }
 
-fn stop_recording(replay: &mut Replay) {
-    unsafe { CloseHandle(replay.input_file_handle); }
-    replay.state = ReplayState::Nothing;
-}
-
-fn start_replay(replay: &mut Replay) {
-    replay.input_file_handle = unsafe {
-        CreateFileA(replay.input_path.as_ptr(),
-                    GENERIC_READ,
-                    FILE_SHARE_READ, ptr::null_mut(),
-                    OPEN_EXISTING, 0,
-                    ptr::null_mut())
-    };
-    unsafe { RtlCopyMemory(replay.game_address, replay.memory as *const c_void,
-                        replay.memory_size as SIZE_T); }
-    replay.state = ReplayState::Replaying;
-}
-
-fn stop_replay(replay: &mut Replay) {
-    unsafe { CloseHandle(replay.input_file_handle); }
-    replay.state = ReplayState::Nothing;
-}
-
-fn start_recording(replay: &mut Replay) {
-    replay.input_file_handle = unsafe {
-        CreateFileA(replay.input_path.as_ptr(),
-                    GENERIC_WRITE,
-                    0, ptr::null_mut(),
-                    CREATE_ALWAYS, 0,
-                    ptr::null_mut())
-    };
-    unsafe { RtlCopyMemory(replay.memory, replay.game_address as *const c_void,
-                        replay.memory_size as SIZE_T); }
-    replay.state = ReplayState::Recording;
-}
 
 fn process_keyboard_message(button: &mut Button, is_down: bool) {
+    //TODO: with the replay mechanic combined with this code the key can
+    //remain stuck if one transition happens during the recording and the
+    //other one happens during playback and gets disrecarded therefore!
     if is_down != button.ended_down {
         button.ended_down = is_down;
         button.half_transitions += 1;
@@ -1006,7 +1007,7 @@ fn log_input(replay: &Replay, input: &mut Input) {
         let mut ignored: DWORD = 0;
         WriteFile(replay.input_file_handle,
                   input as *mut _ as *mut c_void,
-                  mem::size_of::<Input>() as DWORD,
+                  mem::size_of_val(input) as DWORD,
                   &mut ignored, ptr::null_mut());
     }
 }
@@ -1017,12 +1018,12 @@ fn override_input(replay: &mut Replay, input: &mut Input) {
             let mut bytes_read: DWORD = 0;
             ReadFile(replay.input_file_handle,
                      input as *mut _ as *mut c_void,
-                     mem::size_of::<Input>() as DWORD,
+                     mem::size_of_val(input) as DWORD,
                      &mut bytes_read, ptr::null_mut());
             if bytes_read == 0 {
                 //use recursion here to loop
-                stop_replay(replay);
-                start_replay(replay);
+                replay.stop_replay();
+                replay.start_replay();
                 override_input(replay, input);
             }
         }

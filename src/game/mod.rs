@@ -64,7 +64,12 @@ pub extern fn update_and_render(context: &ThreadContext,
         }
 
         if controller.action_down.ended_down {
-            state.green_offset += 1;
+            state.tjump = 4.0;
+        }
+        
+        if state.tjump > 0.0 {
+            state.tjump -= 0.033f32;
+            state.player_y += (10.0 * (0.5 * f32::consts::PI * state.tjump).sin()) as i32;
         }
     }
 
@@ -101,6 +106,7 @@ struct GameState {
 
     player_x: i32,
     player_y: i32,
+    tjump: f32,
 }
 
 
@@ -139,7 +145,7 @@ fn render_weird_gradient(buffer: &mut VideoBuffer, green_offset: i32, blue_offse
 
         for (x, pixel) in row.iter_mut().enumerate() {
             let blue_color = (x as i32 + blue_offset) as u8;
-            *pixel = (green_color as u32) << 8 | blue_color as u32;
+            *pixel = (green_color as u32) << 16 | blue_color as u32;
         }
     }
 }

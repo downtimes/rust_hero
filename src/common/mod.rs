@@ -1,9 +1,9 @@
-use libc::{c_void, DWORD};
+use libc::{c_void};
 use std::default::Default;
 
 type PlatformReadEntireFileT = fn(&ThreadContext, &str) -> Result<ReadFileResult, ()>;
 type PlatformFreeFileMemoryT = fn(&ThreadContext, *mut c_void);
-type PlatformWriteEntireFileT = fn(&ThreadContext, &str, DWORD, *mut c_void) -> bool;
+type PlatformWriteEntireFileT = fn(&ThreadContext, &str, u32, *mut c_void) -> bool;
 
 pub type GetSoundSamplesT = extern fn(&ThreadContext, &mut GameMemory, &mut SoundBuffer);
 pub type UpdateAndRenderT = extern fn(&ThreadContext, &mut GameMemory, &Input, &mut VideoBuffer); 

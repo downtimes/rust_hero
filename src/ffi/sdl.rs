@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 
-pub use libc::{c_int, c_char};
+pub use libc::{c_int, c_char, c_void};
 use std::default::Default;
 
 pub const SDL_INIT_TIMER: u32 = 0x00000001;
@@ -12,8 +12,14 @@ pub const SDL_INIT_EVENTS: u32 = 0x000004000;
 
 pub const SDL_WINDOWPOS_UNDEFINED: c_int = 0x1FFF0000;
 
-pub const SDL_WINDOWEVENT_EXPOSED: u8 = 4;
-pub const SDL_WINDOWEVENT_RESIZED: u8 = 6;
+pub const SDL_WINDOWEVENT_EXPOSED: u8 = 3;
+pub const SDL_WINDOWEVENT_RESIZED: u8 = 5;
+pub const SDL_WINDOWEVENT_SIZE_CHANGED: u8 = 6;
+
+pub const SDL_PIXELFORMAT_ARGB8888: u32 = 0x16462004;
+pub const SDL_PIXELFORMAT_BGRA8888: u32 = 0x16862004;
+
+pub const SDL_TEXTUREACCESS_STREAMING: c_int = 1;
 
 pub const SDL_WINDOW_RESIZABLE: u32 = 0x00000020;
 
@@ -23,6 +29,8 @@ pub const SDL_WINDOWEVENT: u32 = 512;
 pub struct SDL_Window;
 
 pub struct SDL_Renderer;
+
+pub struct SDL_Texture;
 
 #[repr(C)]
 pub struct SDL_WindowEvent {
@@ -44,6 +52,14 @@ pub struct SDL_Quit {
 }
 
 #[repr(C)]
+pub struct SDL_Rect {
+	pub x: c_int,
+	pub y: c_int,
+	pub w: c_int,
+	pub h: c_int,
+}
+
+#[repr(C)]
 pub struct SDL_Event {
     pub data: [u8, ..56],
 }
@@ -57,12 +73,12 @@ impl Default for SDL_Event {
 }
 
 impl SDL_Event {
-    pub fn _type(&self) -> *const u32 {
-        self.data.as_ptr() as *const _
+    pub fn _type(&self) -> u32 {
+        unsafe { *(self.data.as_ptr() as *const _) }
     }
 
-    pub fn window_event(&self) -> *const SDL_WindowEvent {
-        self.data.as_ptr() as *const _
+    pub fn window_event(&self) -> SDL_WindowEvent {
+        unsafe { *(self.data.as_ptr() as *const _) }
     }
 }
 
@@ -83,4 +99,17 @@ extern "C" {
                                 -> *mut SDL_Renderer;
     pub fn SDL_RenderClear(renderer: *mut SDL_Renderer) -> c_int;
     pub fn SDL_RenderPresent(renderer: *mut SDL_Renderer);
+    pub fn SDL_CreateTexture(renderer: *mut SDL_Renderer,
+                             format: u32, access: c_int,
+                             w: c_int, h: c_int) -> *mut SDL_Texture;
+    pub fn SDL_GetWindowSize(window: *mut SDL_Window,
+                             w: *mut c_int,
+                             h: *mut c_int);
+    pub fn SDL_UpdateTexture(texture: *mut SDL_Texture, rect: *const SDL_Rect,
+                             pixels: *const c_void, pitch: c_int) -> c_int;
+    pub fn SDL_RenderCopy(renderer: *mut SDL_Renderer,
+                          texture: *mut SDL_Texture,
+                          srcrect: *const SDL_Rect,
+                          dstrect: *const SDL_Rect) -> c_int;
+    pub fn SDL_DestroyTexture(texture: *mut SDL_Texture);
 }

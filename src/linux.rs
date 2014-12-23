@@ -1,15 +1,15 @@
 use ffi::sdl::*;
-use libc::{size_t, off_t};
+use libc::{size_t};
 use libc::{mmap, munmap, MAP_PRIVATE, MAP_FAILED, MAP_ANON};
 use libc::{PROT_READ, PROT_WRITE};
 use std::default::Default;
 use std::ptr;
 
-static mut is_white: bool = false;
+const MAX_CONTROLLERS: c_int = 4;
 
 const BYTES_PER_PIXEL: u32 = 4;
-const SCREEN_WIDTH: u32 = 640;
-const SCREEN_HEIGHT: u32 = 480;
+const WINDOW_WIDTH: i32 = 640;
+const WINDOW_HEIGHT: i32 = 480;
 
 pub struct BackBuffer {
     pixels: *mut c_void,
@@ -54,20 +54,18 @@ fn update_window(renderer: *mut SDL_Renderer,
 }
 
 fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer) -> bool {
-    let mut result = false;
+    let mut keep_running = true;
 
     let event_type = event._type();
 
     match event_type {
-        SDL_QUIT => result = true,
+        SDL_QUIT => keep_running = false,
         SDL_WINDOWEVENT => {
             let window_event = event.window_event();
             let renderer =
                 get_renderer_from_window_id(window_event.windowID);
             match window_event.event {
                 SDL_WINDOWEVENT_SIZE_CHANGED => {
-                    resize_texture(renderer, buffer, window_event.data1,
-                                   window_event.data2);
                 },
 
                 SDL_WINDOWEVENT_EXPOSED => {
@@ -76,6 +74,28 @@ fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer) -> bool {
                 _ => (),
             }
         },
+
+        SDL_KEYDOWN
+        | SDL_KEYUP => {
+            let keyboard_event = event.keyboard_event();
+            let code = keyboard_event.keysym.sym;
+            let is_down = keyboard_event.state == SDL_PRESSED;
+            let was_down =
+                if (keyboard_event.state != SDL_PRESSED)
+                    || (keyboard_event.repeat != 0) {
+                    true
+                } else {
+                    false
+                };
+
+            if was_down != is_down {
+                match code {
+                    SDLK_w => println!("w"),
+                    _ => (),
+                }
+            }
+        },
+
         _ => (),
     }
     fn get_renderer_from_window_id(window_id: u32) -> *mut SDL_Renderer {
@@ -85,12 +105,12 @@ fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer) -> bool {
         }
     }
 
-    result
+    keep_running
 }
 
 #[main]
 fn main() {
-    if unsafe { SDL_Init(SDL_INIT_VIDEO) != 0 } {
+    if unsafe { SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0 } {
         panic!("SDL initialisation failed!");
     }
 
@@ -99,7 +119,7 @@ fn main() {
         unsafe { SDL_CreateWindow(window_title.as_ptr(),
                                   SDL_WINDOWPOS_UNDEFINED,
                                   SDL_WINDOWPOS_UNDEFINED,
-                                  SCREEN_WIDTH, SCREEN_HEIGHT,
+                                  WINDOW_WIDTH, WINDOW_HEIGHT,
                                   SDL_WINDOW_RESIZABLE) };
     if window.is_not_null() {
         let renderer: *mut SDL_Renderer =
@@ -111,12 +131,87 @@ fn main() {
                            texture: ptr::null_mut(),
                            texture_width: 0,
                         };
-        
-        loop {
+        resize_texture(renderer, &mut buffer, WINDOW_WIDTH, WINDOW_HEIGHT);
+
+        let mut controllers =
+            [ptr::null_mut::<SDL_GameController>(),
+                                            ..MAX_CONTROLLERS as uint];
+
+        let mut controller_num = 0;
+        for controller_idx in range(0, unsafe { SDL_NumJoysticks() }) {
+            if controller_num >= MAX_CONTROLLERS {
+               break;
+            }
+            if unsafe { SDL_IsGameController(controller_idx) }
+                        == SDL_bool::SDL_TRUE {
+                controllers[controller_num as uint] =
+                    unsafe { SDL_GameControllerOpen(controller_num) };
+                controller_num += 1;
+            }
+
+        }
+
+        let mut running = true;
+        while running {
             let mut event: SDL_Event = Default::default();
-            unsafe { SDL_WaitEvent(&mut event); }
-            if handle_event(&event, &mut buffer) {
-                break;
+            while unsafe { SDL_PollEvent(&mut event) } != 0 {
+                running = handle_event(&event, &mut buffer);
+            }
+
+            for controller_idx in range(0, controller_num as uint) {
+                if unsafe { SDL_GameControllerGetAttached(
+                                                controllers[controller_idx]) }
+                            == SDL_bool::SDL_TRUE {
+
+                    let controller = controllers[controller_idx];
+                    let _up = unsafe {
+                        SDL_GameControllerGetButton(
+                            controller,
+                            SDL_CONTROLLER_BUTTON_DPAD_UP) == 1
+                    };
+
+                    let _down = unsafe {
+                        SDL_GameControllerGetButton(
+                            controller,
+                            SDL_CONTROLLER_BUTTON_DPAD_DOWN) == 1
+                    };
+                    let _left = unsafe {
+                        SDL_GameControllerGetButton(
+                            controller,
+                            SDL_CONTROLLER_BUTTON_DPAD_LEFT) == 1
+                    };
+                    let _right = unsafe {
+                        SDL_GameControllerGetButton(
+                            controller,
+                            SDL_CONTROLLER_BUTTON_DPAD_RIGHT) == 1
+                    };
+
+
+                    let _stick_x = unsafe {
+                        SDL_GameControllerGetAxis(
+                            controller,
+                            SDL_CONTROLLER_AXIS_LEFTX) == 1
+                    };
+                    let _stick_y = unsafe {
+                        SDL_GameControllerGetAxis(
+                            controller,
+                            SDL_CONTROLLER_AXIS_LEFTY) == 1
+                    };
+                } else {
+                    //The controller was plugged out so remove him from the
+                    //controllers list
+                    //If it is plugged in again query the SDL_ControllerEvent
+                    //with the corresponding eventID
+                }
+            }
+
+
+            update_window(renderer, &mut buffer);
+        }
+
+        for controller_idx in range(0, controller_num) {
+            unsafe {
+                SDL_GameControllerClose(controllers[controller_idx as uint]);
             }
         }
     } else {

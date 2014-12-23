@@ -4,6 +4,8 @@
 pub use libc::{c_int, c_char, c_void};
 use std::default::Default;
 
+pub type SDL_Keycode = i32;
+
 pub const SDL_INIT_TIMER: u32 = 0x00000001;
 pub const SDL_INIT_AUDIO: u32 = 0x00000010;
 pub const SDL_INIT_VIDEO: u32 = 0x00000020;
@@ -23,13 +25,47 @@ pub const SDL_TEXTUREACCESS_STREAMING: c_int = 1;
 
 pub const SDL_WINDOW_RESIZABLE: u32 = 0x00000020;
 
-pub const SDL_QUIT: u32 = 256;
-pub const SDL_WINDOWEVENT: u32 = 512;
+pub const SDL_QUIT: u32 = 0x100;
+pub const SDL_WINDOWEVENT: u32 = 0x200;
+pub const SDL_KEYDOWN: u32 = 0x300;
+pub const SDL_KEYUP: u32 = 0x301;
 
+pub const SDL_PRESSED: u8 = 1;
+
+
+pub const SDLK_w: i32 = 'w' as i32;
+pub const SDLK_a: i32 = 'a' as i32;
+pub const SDLK_s: i32 = 's' as i32;
+pub const SDLK_d: i32 = 'd' as i32;
+pub const SDLK_e: i32 = 'e' as i32;
+pub const SDLK_p: i32 = 'p' as i32;
+pub const SDLK_q: i32 = 'q' as i32;
+pub const SDLK_l: i32 = 'l' as i32;
+pub const SDLK_ESCAPE: i32 = 27;
+pub const SDLK_SPACE: i32 = ' ' as i32;
+pub const SDLK_F4: i32 = (1 << 30) | 61;
+pub const SDLK_RIGHT: i32 = (1 << 30) | 79;
+pub const SDLK_LEFT: i32 = (1 << 30) | 80;
+pub const SDLK_DOWN: i32 = (1 << 30) | 81;
+pub const SDLK_UP: i32 = (1 << 30) | 82;
+
+#[repr(C)]
 pub struct SDL_Window;
 
+#[repr(C)]
+#[deriving(PartialEq, Eq)]
+pub enum SDL_bool {
+	SDL_FALSE,
+	SDL_TRUE,
+}
+
+#[repr(C)]
 pub struct SDL_Renderer;
 
+#[repr(C)]
+pub struct SDL_GameController;
+
+#[repr(C)]
 pub struct SDL_Texture;
 
 #[repr(C)]
@@ -43,6 +79,66 @@ pub struct SDL_WindowEvent {
     pub padding3: u8,
     pub data1: i32,
     pub data2: i32,
+}
+
+#[repr(C)]
+pub enum SDL_GameControllerAxis {
+	SDL_CONTROLLER_AXIS_INVALID = -1,
+	SDL_CONTROLLER_AXIS_LEFTX,
+	SDL_CONTROLLER_AXIS_LEFTY,
+	SDL_CONTROLLER_AXIS_RIGHTX,
+	SDL_CONTROLLER_AXIS_RIGHTY,
+	SDL_CONTROLLER_AXIS_TRIGGERLEFT,
+	SDL_CONTROLLER_AXIS_TRIGGERRIGHT,
+	SDL_CONTROLLER_AXIS_MAX,
+}
+
+#[repr(C)]
+pub enum SDL_GameControllerButton {
+	SDL_CONTROLLER_BUTTON_INVALID = -1,
+	SDL_CONTROLLER_BUTTON_A,
+	SDL_CONTROLLER_BUTTON_B,
+	SDL_CONTROLLER_BUTTON_X,
+	SDL_CONTROLLER_BUTTON_Y,
+	SDL_CONTROLLER_BUTTON_BACK,
+	SDL_CONTROLLER_BUTTON_GUIDE,
+	SDL_CONTROLLER_BUTTON_START,
+	SDL_CONTROLLER_BUTTON_LEFTSTICK,
+	SDL_CONTROLLER_BUTTON_RIGHTSTICK,
+	SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
+	SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+	SDL_CONTROLLER_BUTTON_DPAD_UP,
+	SDL_CONTROLLER_BUTTON_DPAD_DOWN,
+	SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+	SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
+	SDL_CONTROLLER_BUTTON_MAX,
+}
+
+#[repr(C)]
+pub enum SDL_Scancode {
+	SDL_SCANCODE_UNKNOWN = 0,
+	SDL_SCANCODE_MAX = 512,
+}
+
+
+#[repr(C)]
+pub struct SDL_Keysym {
+	pub scancode: SDL_Scancode,
+	pub sym: SDL_Keycode,
+	pub _mod: u16,
+	pub unused: u32,
+}
+
+#[repr(C)]
+pub struct SDL_KeyboardEvent {
+	pub _type: u32,
+	pub timestamp: u32,
+	pub windowID: u32,
+	pub state: u8,
+	pub repeat: u8,
+	pub padding2: u8,
+	pub padding3: u8,
+	pub keysym: SDL_Keysym,
 }
 
 #[repr(C)]
@@ -80,6 +176,10 @@ impl SDL_Event {
     pub fn window_event(&self) -> SDL_WindowEvent {
         unsafe { *(self.data.as_ptr() as *const _) }
     }
+
+	pub fn keyboard_event(&self) -> SDL_KeyboardEvent {
+        unsafe { *(self.data.as_ptr() as *const _) }
+	}
 }
 
 extern "C" {
@@ -89,6 +189,7 @@ extern "C" {
                             y: c_int, w: c_int, h: c_int,
                             flags: u32) -> *mut SDL_Window;
     pub fn SDL_WaitEvent(event: *mut SDL_Event) -> c_int;
+	pub fn SDL_PollEvent(event: *mut SDL_Event) -> c_int;
     pub fn SDL_CreateRenderer(window: *mut SDL_Window,
                               index: c_int, flags: u32) -> *mut SDL_Renderer;
     pub fn SDL_SetRenderDrawColor(renderer: *mut SDL_Renderer,
@@ -112,4 +213,17 @@ extern "C" {
                           srcrect: *const SDL_Rect,
                           dstrect: *const SDL_Rect) -> c_int;
     pub fn SDL_DestroyTexture(texture: *mut SDL_Texture);
+	pub fn SDL_NumJoysticks() -> c_int;
+	pub fn SDL_IsGameController(joystick_index: c_int) -> SDL_bool;
+	pub fn SDL_GameControllerOpen(joystick_index: c_int)
+		-> *mut SDL_GameController;
+	pub fn SDL_GameControllerClose(game_controller: *mut SDL_GameController);
+	pub fn SDL_GameControllerGetAttached(
+			game_controller: *mut SDL_GameController) -> SDL_bool;
+	pub fn SDL_GameControllerGetButton(
+			game_controller: *mut SDL_GameController,
+			button: SDL_GameControllerButton) -> u8;
+	pub fn SDL_GameControllerGetAxis(
+			game_controller: *mut SDL_GameController,
+			axis: SDL_GameControllerAxis) -> i16;
 }

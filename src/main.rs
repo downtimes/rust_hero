@@ -11,5 +11,9 @@ mod ffi;
 mod win32;
 
 #[cfg(target_os="linux")]
+mod ffi {
+    pub mod sdl;
+}
+#[cfg(target_os="linux")]
 mod linux;
 

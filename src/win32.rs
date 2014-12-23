@@ -1072,7 +1072,7 @@ fn main() {
 
     unsafe { RegisterClassA(&window_class); }
 
-    let window_title = "Handmade Hero".to_c_str();
+    let window_title = "Rust Hero".to_c_str();
 
     window.handle = unsafe {
         CreateWindowExA(0 as DWORD, window_class.lpszClassName, 

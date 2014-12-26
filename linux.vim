@@ -18,8 +18,6 @@ nnoremap k gk
 nnoremap n nzz
 nnoremap <S-Space> O
 nnoremap <silent> <Plug>NetrwBrowseX :call netrw#NetrwBrowseX(expand("<cfile>"),0)
-nnoremap <Down> ddp
-nnoremap <Up> ddkP
 inoremap  :updatei
 nnoremap ö :!cargo run
 nnoremap ösv :source $MYVIMRC:split:q
@@ -46,6 +44,7 @@ set autoindent
 set autowrite
 set background=dark
 set backspace=indent,eol,start
+set expandtab
 set fileencodings=ucs-bom,utf-8,default,latin1
 set helplang=de
 set hidden
@@ -77,15 +76,16 @@ endif
 set shortmess=aoO
 badd +6 build.sh
 badd +11 \[Vundle]\ Installer
-badd +5 ~/.vimrc
+badd +124 ~/.vimrc
 badd +8 build.bat
 badd +2 src/main.rs
-badd +11 src/common/mod.rs
-badd +19 src/linux.rs
+badd +152 src/common/mod.rs
+badd +210 src/linux.rs
 badd +1 src/ffi/mod.rs
 badd +4 src/ffi/linux.rs
-badd +93 src/ffi/sdl.rs
-badd +0 src/win32.rs
+badd +97 src/ffi/sdl.rs
+badd +1 src/win32.rs
+badd +36 src/game/mod.rs
 argglobal
 silent! argdel *
 set stal=2
@@ -103,11 +103,11 @@ set nosplitbelow
 set nosplitright
 wincmd t
 set winheight=1 winwidth=1
-exe 'vert 1resize ' . ((&columns * 74 + 75) / 150)
-exe '2resize ' . ((&lines * 25 + 19) / 39)
-exe 'vert 2resize ' . ((&columns * 75 + 75) / 150)
-exe '3resize ' . ((&lines * 10 + 19) / 39)
-exe 'vert 3resize ' . ((&columns * 75 + 75) / 150)
+exe 'vert 1resize ' . ((&columns * 83 + 84) / 168)
+exe '2resize ' . ((&lines * 27 + 21) / 42)
+exe 'vert 2resize ' . ((&columns * 84 + 84) / 168)
+exe '3resize ' . ((&lines * 11 + 21) / 42)
+exe 'vert 3resize ' . ((&columns * 84 + 84) / 168)
 argglobal
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
@@ -225,12 +225,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 13 - ((12 * winheight(0) + 18) / 36)
+let s:l = 210 - ((18 * winheight(0) + 19) / 39)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-13
-normal! 05|
+210
+normal! 0
 wincmd w
 argglobal
 edit src/ffi/sdl.rs
@@ -275,7 +275,7 @@ setlocal dictionary=
 setlocal nodiff
 setlocal equalprg=
 setlocal errorformat=
-setlocal noexpandtab
+setlocal expandtab
 if &filetype != 'rust'
 setlocal filetype=rust
 endif
@@ -350,12 +350,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 93 - ((9 * winheight(0) + 12) / 25)
+let s:l = 248 - ((26 * winheight(0) + 13) / 27)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-93
-normal! 030|
+248
+normal! 0
 wincmd w
 argglobal
 enew
@@ -467,12 +467,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 wincmd w
-2wincmd w
-exe 'vert 1resize ' . ((&columns * 74 + 75) / 150)
-exe '2resize ' . ((&lines * 25 + 19) / 39)
-exe 'vert 2resize ' . ((&columns * 75 + 75) / 150)
-exe '3resize ' . ((&lines * 10 + 19) / 39)
-exe 'vert 3resize ' . ((&columns * 75 + 75) / 150)
+exe 'vert 1resize ' . ((&columns * 83 + 84) / 168)
+exe '2resize ' . ((&lines * 27 + 21) / 42)
+exe 'vert 2resize ' . ((&columns * 84 + 84) / 168)
+exe '3resize ' . ((&lines * 11 + 21) / 42)
+exe 'vert 3resize ' . ((&columns * 84 + 84) / 168)
 tabedit src/win32.rs
 set splitbelow splitright
 set nosplitbelow
@@ -596,13 +595,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 1075 - ((18 * winheight(0) + 19) / 38)
+let s:l = 336 - ((7 * winheight(0) + 19) / 39)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-1075
-normal! 029|
-2wincmd w
+336
+normal! 022|
 tabnext 1
 set stal=1
 if exists('s:wipebuf')

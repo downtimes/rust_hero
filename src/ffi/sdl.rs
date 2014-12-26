@@ -5,6 +5,10 @@ pub use libc::{c_int, c_char, c_void};
 use std::default::Default;
 
 pub type SDL_Keycode = i32;
+pub type SDL_AudioFormat = u16;
+pub type SDLAudioCallbackT = extern "C" fn(*mut c_void, *mut u8, c_int);
+
+pub const AUDIO_S16LSB: u16 = 0x8010;
 
 pub const SDL_INIT_TIMER: u32 = 0x00000001;
 pub const SDL_INIT_AUDIO: u32 = 0x00000010;
@@ -79,6 +83,19 @@ pub struct SDL_WindowEvent {
     pub padding3: u8,
     pub data1: i32,
     pub data2: i32,
+}
+
+#[repr(C)]
+pub struct SDL_AudioSpec {
+	pub freq: c_int,
+	pub format: SDL_AudioFormat,
+	pub channels: u8,
+	pub silence: u8,
+	pub samples: u16,
+	pub padding: u16,
+	pub size: u32,
+	pub callback: SDLAudioCallbackT,
+	pub userdata: *mut c_void,
 }
 
 #[repr(C)]
@@ -213,17 +230,19 @@ extern "C" {
                           srcrect: *const SDL_Rect,
                           dstrect: *const SDL_Rect) -> c_int;
     pub fn SDL_DestroyTexture(texture: *mut SDL_Texture);
-	pub fn SDL_NumJoysticks() -> c_int;
-	pub fn SDL_IsGameController(joystick_index: c_int) -> SDL_bool;
-	pub fn SDL_GameControllerOpen(joystick_index: c_int)
-		-> *mut SDL_GameController;
-	pub fn SDL_GameControllerClose(game_controller: *mut SDL_GameController);
-	pub fn SDL_GameControllerGetAttached(
-			game_controller: *mut SDL_GameController) -> SDL_bool;
-	pub fn SDL_GameControllerGetButton(
-			game_controller: *mut SDL_GameController,
-			button: SDL_GameControllerButton) -> u8;
-	pub fn SDL_GameControllerGetAxis(
-			game_controller: *mut SDL_GameController,
-			axis: SDL_GameControllerAxis) -> i16;
+    pub fn SDL_NumJoysticks() -> c_int;
+    pub fn SDL_IsGameController(joystick_index: c_int) -> SDL_bool;
+    pub fn SDL_GameControllerOpen(joystick_index: c_int)
+        -> *mut SDL_GameController;
+    pub fn SDL_GameControllerClose(game_controller: *mut SDL_GameController);
+    pub fn SDL_GameControllerGetAttached(
+        game_controller: *mut SDL_GameController) -> SDL_bool;
+    pub fn SDL_GameControllerGetButton(
+        game_controller: *mut SDL_GameController,
+        button: SDL_GameControllerButton) -> u8;
+    pub fn SDL_GameControllerGetAxis(
+        game_controller: *mut SDL_GameController,
+        axis: SDL_GameControllerAxis) -> i16;
+    pub fn SDL_OpenAudio(desired: *mut SDL_AudioSpec,
+                         obtained: *mut SDL_AudioSpec) -> c_int;
 }

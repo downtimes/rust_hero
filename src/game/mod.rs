@@ -33,7 +33,7 @@ pub extern fn update_and_render(context: &ThreadContext,
         match file {
             Ok(ReadFileResult{ size, contents }) => {
                 (game_memory.platform_write_entire_file)(context, "tester.txt", size, contents);
-                (game_memory.platform_free_file_memory)(context, contents);
+                (game_memory.platform_free_file_memory)(context, contents, size);
             },
             Err(_) => panic!("File was not found!"),
         }

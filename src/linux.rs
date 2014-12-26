@@ -1,9 +1,141 @@
-use ffi::sdl::*;
 use libc::{size_t};
 use libc::{mmap, munmap, MAP_PRIVATE, MAP_FAILED, MAP_ANON};
 use libc::{PROT_READ, PROT_WRITE};
 use std::default::Default;
 use std::ptr;
+
+use ffi::sdl::*;
+
+mod debug {
+
+    use libc::{c_void, open, close, mmap, munmap, O_RDONLY, O_CREAT};
+    use libc::{MAP_ANON, MAP_PRIVATE, MAP_FAILED, stat, write, read, fstat};
+    use libc::{PROT_READ, PROT_WRITE, S_IRUSR, S_IWUSR};
+    use libc::{O_WRONLY, mode_t};
+    use std::ptr;
+    use std::default::Default;
+
+    use common::{ThreadContext, ReadFileResult};
+    use common::util;
+
+    const S_IRGRP: mode_t = 32;
+    const S_IROTH: mode_t = 4;
+
+    fn get_stat_struct() -> stat {
+        stat {
+            st_dev: 0,
+            st_ino: 0,
+            st_nlink: 0,
+            st_mode: 0,
+            st_uid: 0,
+            st_gid: 0,
+            __pad0: 0,
+            st_rdev: 0,
+            st_size: 0,
+            st_blksize: 0,
+            st_blocks: 0,
+            st_atime: 0,
+            st_atime_nsec: 0,
+            st_mtime: 0,
+            st_mtime_nsec: 0,
+            st_ctime: 0,
+            st_ctime_nsec: 0,
+            __unused: [0, ..3],
+        }
+    }
+
+    pub fn platform_read_entire_file(context: &ThreadContext,
+                                     filename: &str) -> Result<ReadFileResult, ()> {
+
+        let mut result: Result<ReadFileResult, ()> = Err(());
+        let name = filename.to_c_str();
+        let handle =
+            unsafe { open(name.as_ptr(), O_RDONLY, 0) };
+
+        if handle != -1 {
+            let mut file_stat: stat = get_stat_struct();
+            if unsafe { fstat(handle, &mut file_stat) != -1 } {
+                let size = util::safe_truncate_u64(file_stat.st_size as u64);
+                let memory: *mut c_void =
+                    unsafe { mmap(ptr::null_mut(),
+                                  size as u64, PROT_READ,
+                                  MAP_PRIVATE | MAP_ANON, -1, 0)  };
+
+                if memory.is_not_null() {
+                    let mut bytes_to_read = size;
+                    let mut next_write_byte: *mut u8 = memory as *mut u8;
+
+                    while bytes_to_read > 0 {
+                        let bytes_read = unsafe { read(handle,
+                                                       next_write_byte as *mut c_void,
+                                                       bytes_to_read as u64) };
+                        if bytes_read == -1 {
+                            break;
+                        }
+                        bytes_to_read -= bytes_read as u32;
+                        next_write_byte = unsafe { next_write_byte
+                                                    .offset(bytes_read as int) };
+                    }
+
+                    if bytes_to_read == 0 {
+                        result = Ok(ReadFileResult {
+                                        size: size,
+                                        contents: memory,
+                                      });
+                    } else {
+                        platform_free_file_memory(context, memory, size);
+                    }
+                }
+            }
+            unsafe { close(handle); }
+        }
+
+        result
+    }
+
+    pub fn platform_free_file_memory(_context: &ThreadContext,
+                                     memory: *mut c_void,
+                                     size: u32) {
+        if memory.is_not_null() {
+            unsafe { munmap(memory, size as u64); }
+        }
+    }
+
+    pub fn platform_write_entire_file(_context: &ThreadContext,
+                                      filename: &str, size: u32,
+                                      memory: *mut c_void) -> bool {
+        let mut result = false;
+        let name = filename.to_c_str();
+        let handle =
+            unsafe { open(name.as_ptr(), O_WRONLY | O_CREAT,
+                          S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) };
+
+        if handle != -1 {
+            let mut bytes_to_write = size;
+            let mut byte_to_write: *mut u8 = memory as *mut u8;
+
+            while bytes_to_write > 0 {
+                let bytes_written = unsafe { write(handle,
+                                                   byte_to_write as *const c_void,
+                                                   bytes_to_write as u64) };
+                if bytes_written == -1 {
+                    break;
+                }
+                bytes_to_write -= bytes_written as u32;
+                byte_to_write = unsafe { byte_to_write
+                                            .offset(bytes_written as int) };
+            }
+
+            if bytes_to_write == 0 {
+                result = true;
+            }
+
+            unsafe { close(handle); }
+        }
+        result
+    }
+
+}
 
 const MAX_CONTROLLERS: c_int = 4;
 
@@ -11,11 +143,85 @@ const BYTES_PER_PIXEL: u32 = 4;
 const WINDOW_WIDTH: i32 = 640;
 const WINDOW_HEIGHT: i32 = 480;
 
-pub struct BackBuffer {
+struct BackBuffer {
     pixels: *mut c_void,
     size: size_t,
     texture: *mut SDL_Texture,
     texture_width: i32,
+}
+
+struct SdlAudioRingBuffer {
+    size: c_int,
+    write_cursor: c_int,
+    play_cursor: c_int,
+    data: *mut u8,
+}
+
+extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8,
+                             length: c_int) {
+    let mut ring_buffer = unsafe { *(user_data as *mut SdlAudioRingBuffer) };
+
+    let mut region_size = length;
+    let mut region2_size = 0;
+
+    if ring_buffer.play_cursor + length > ring_buffer.size {
+        region_size = ring_buffer.size - ring_buffer.play_cursor;
+        region2_size = length - region_size;
+    }
+
+    copy_contents(audio_data,
+                  unsafe { ring_buffer.data
+                            .offset(ring_buffer.play_cursor as int) },
+                  region_size);
+    copy_contents(unsafe { audio_data.offset(region_size as int) },
+                  ring_buffer.data, region2_size);
+
+    fn copy_contents(out: *mut u8, src: *mut u8, size: c_int) {
+        let mut out = out;
+        let mut src = src;
+        for _ in range(0, size) {
+            unsafe {
+                *out = *src;
+                out = out.offset(1);
+                src = src.offset(1);
+            }
+        }
+    }
+
+    ring_buffer.play_cursor = (ring_buffer.play_cursor + length) % ring_buffer.size;
+    ring_buffer.write_cursor = (ring_buffer.write_cursor + length) % ring_buffer.size;
+}
+
+fn init_audio(samples_per_second: i32, buffer_size: i32,
+              ring_buffer: &mut SdlAudioRingBuffer) {
+    let mut audio_settings = SDL_AudioSpec {
+        freq: samples_per_second,
+        format: AUDIO_S16LSB,
+        channels: 2,
+        silence: 0,
+        samples: 512,
+        padding: 0,
+        size: 0,
+        callback: audio_callback,
+        userdata: ring_buffer as *mut _ as *mut c_void,
+    };
+
+    ring_buffer.size = buffer_size;
+    ring_buffer.data = unsafe { mmap(ptr::null_mut(), buffer_size as u64,
+                                     PROT_READ | PROT_WRITE,
+                                     MAP_PRIVATE | MAP_ANON, -1, 0) as *mut u8};
+    ring_buffer.play_cursor = 0;
+    ring_buffer.write_cursor = 0;
+
+    if ring_buffer.data.is_null() {
+        panic!("Audio buffer could not be optained!");
+    }
+
+    unsafe { SDL_OpenAudio(&mut audio_settings, ptr::null_mut()); }
+
+    if audio_settings.format != AUDIO_S16LSB {
+        panic!("Audio buffer format can not be used!");
+    }
 }
 
 fn resize_texture(renderer: *mut SDL_Renderer, buffer: &mut BackBuffer,

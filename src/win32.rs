@@ -3,6 +3,7 @@ use std::raw::Slice;
 use std::mem; 
 use std::i16;
 use std::c_str::CString;
+use common::util;
 
 use common::{Input, GameMemory, SoundBuffer, ControllerInput, Button, VideoBuffer};
 use common::{ThreadContext, GetSoundSamplesT, UpdateAndRenderT};
@@ -10,10 +11,11 @@ use ffi::*;
 
 #[cfg(not(ndebug))]
 pub mod debug {
-    use ffi::*;
     use std::ptr;
-    use super::util;
+
+    use ffi::*;
     use common::{ReadFileResult, ThreadContext};
+    use common::util;
 
     pub struct SoundTimeMarker {
         pub flip_play_cursor: DWORD,
@@ -89,7 +91,8 @@ pub mod debug {
     }
     
     pub fn platform_free_file_memory(_context: &ThreadContext, 
-                                     memory: *mut c_void) {
+                                     memory: *mut c_void,
+                                     size: u32) {
         if memory.is_not_null() {
             unsafe { VirtualFree(memory, 0, MEM_RELEASE); }
         }
@@ -119,33 +122,6 @@ pub mod debug {
         }
         result
     }
-}
-
-//TODO: this part should be moved to a platform independant file
-mod util {
-    use std::u32;
-
-    pub fn safe_truncate_u64(value: u64) -> u32 {
-        debug_assert!(value <= u32::MAX as u64);
-        value as u32
-    }
-
-    pub fn kilo_bytes(b: uint) -> uint {
-        b * 1024
-    }
-
-    pub fn mega_bytes(mb: uint) -> uint {
-        kilo_bytes(mb) * 1024
-    }
-
-    pub fn giga_bytes(gb: uint) -> uint {
-        mega_bytes(gb) * 1024
-    }
-
-    pub fn tera_bytes(tb: uint) -> uint {
-        giga_bytes(tb) * 1024
-    }
-
 }
 
 //Graphics System constants
@@ -1331,7 +1307,7 @@ fn main() {
             while seconds_elapsed_for_work < target_seconds_per_frame {
                 if window.timer_fine_resolution {
                     let sleep_ms = (1000.0 * (target_seconds_per_frame 
-                                              - seconds_elapsed_for_work)) as DWORD;
+                                              - seconds_elapsed_for_work) - 1) as DWORD;
                     if sleep_ms > 0 {
                         unsafe { Sleep(sleep_ms); }
                     }

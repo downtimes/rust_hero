@@ -1,12 +1,39 @@
 use libc::{c_void};
 use std::default::Default;
 
+#[allow(dead_code)]
+pub mod util {
+    use std::u32;
+
+    pub fn safe_truncate_u64(value: u64) -> u32 {
+        debug_assert!(value <= u32::MAX as u64);
+        value as u32
+    }
+
+    pub fn kilo_bytes(b: uint) -> uint {
+        b * 1024
+    }
+
+    pub fn mega_bytes(mb: uint) -> uint {
+        kilo_bytes(mb) * 1024
+    }
+
+    pub fn giga_bytes(gb: uint) -> uint {
+        mega_bytes(gb) * 1024
+    }
+
+    pub fn tera_bytes(tb: uint) -> uint {
+        giga_bytes(tb) * 1024
+    }
+
+}
+
 type PlatformReadEntireFileT = fn(&ThreadContext, &str) -> Result<ReadFileResult, ()>;
-type PlatformFreeFileMemoryT = fn(&ThreadContext, *mut c_void);
+type PlatformFreeFileMemoryT = fn(&ThreadContext, *mut c_void, u32);
 type PlatformWriteEntireFileT = fn(&ThreadContext, &str, u32, *mut c_void) -> bool;
 
 pub type GetSoundSamplesT = extern fn(&ThreadContext, &mut GameMemory, &mut SoundBuffer);
-pub type UpdateAndRenderT = extern fn(&ThreadContext, &mut GameMemory, &Input, &mut VideoBuffer); 
+pub type UpdateAndRenderT = extern fn(&ThreadContext, &mut GameMemory, &Input, &mut VideoBuffer);
 
 pub struct ReadFileResult {
     pub size: u32,
@@ -39,7 +66,7 @@ pub struct ControllerInput {
 
     pub average_x: Option<f32>,
     pub average_y: Option<f32>,
-    
+
     pub move_up: Button,
     pub move_down: Button,
     pub move_left: Button,
@@ -52,7 +79,7 @@ pub struct ControllerInput {
 
     pub left_shoulder: Button,
     pub right_shoulder: Button,
-    
+
     pub start: Button,
     pub back: Button,
 }
@@ -95,7 +122,7 @@ pub struct Input {
     pub mouse_x1: Button,
     pub mouse_x2: Button,
 
-    //TODO: see if it fits rustaceans better if we have an Option of 
+    //TODO: see if it fits rustaceans better if we have an Option of
     //ControllerInputs here?
     //The 0 Controller is the keyboard all the others are possible joysticks
     pub controllers: [ControllerInput, ..5],
@@ -122,7 +149,7 @@ pub struct GameMemory<'a> {
     pub initialized: bool,
     pub permanent: &'a mut[u8], //REQUIRED to be zeroed
     pub transient: &'a mut[u8], //REQUIRED to be zeroed
-    pub platform_read_entire_file: PlatformReadEntireFileT, 
+    pub platform_read_entire_file: PlatformReadEntireFileT,
     pub platform_write_entire_file: PlatformWriteEntireFileT,
     pub platform_free_file_memory: PlatformFreeFileMemoryT,
 }

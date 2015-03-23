@@ -3,9 +3,12 @@ use libc::{mmap, munmap, MAP_PRIVATE, MAP_FAILED, MAP_ANON};
 use libc::{PROT_READ, PROT_WRITE};
 use std::default::Default;
 use std::ptr;
+use std::ffi::CString;
 
 use ffi::sdl::*;
 
+#[allow(unused_imports)]
+#[allow(dead_code)]
 mod debug {
 
     use libc::{c_void, open, close, mmap, munmap, O_RDONLY, O_CREAT};
@@ -14,6 +17,7 @@ mod debug {
     use libc::{O_WRONLY, mode_t};
     use std::ptr;
     use std::default::Default;
+    use std::ffi::CString;
 
     use common::{ThreadContext, ReadFileResult};
     use common::util;
@@ -40,7 +44,7 @@ mod debug {
             st_mtime_nsec: 0,
             st_ctime: 0,
             st_ctime_nsec: 0,
-            __unused: [0, ..3],
+            __unused: [0; 3],
         }
     }
 
@@ -48,7 +52,7 @@ mod debug {
                                      filename: &str) -> Result<ReadFileResult, ()> {
 
         let mut result: Result<ReadFileResult, ()> = Err(());
-        let name = filename.to_c_str();
+        let name = CString::new(filename).unwrap();
         let handle =
             unsafe { open(name.as_ptr(), O_RDONLY, 0) };
 
@@ -61,7 +65,7 @@ mod debug {
                                   size as u64, PROT_READ,
                                   MAP_PRIVATE | MAP_ANON, -1, 0)  };
 
-                if memory.is_not_null() {
+                if !memory.is_null() {
                     let mut bytes_to_read = size;
                     let mut next_write_byte: *mut u8 = memory as *mut u8;
 
@@ -74,7 +78,7 @@ mod debug {
                         }
                         bytes_to_read -= bytes_read as u32;
                         next_write_byte = unsafe { next_write_byte
-                                                    .offset(bytes_read as int) };
+                                                    .offset(bytes_read as isize) };
                     }
 
                     if bytes_to_read == 0 {
@@ -96,7 +100,7 @@ mod debug {
     pub fn platform_free_file_memory(_context: &ThreadContext,
                                      memory: *mut c_void,
                                      size: u32) {
-        if memory.is_not_null() {
+        if !memory.is_null() {
             unsafe { munmap(memory, size as u64); }
         }
     }
@@ -105,7 +109,7 @@ mod debug {
                                       filename: &str, size: u32,
                                       memory: *mut c_void) -> bool {
         let mut result = false;
-        let name = filename.to_c_str();
+        let name = CString::new(filename).unwrap();
         let handle =
             unsafe { open(name.as_ptr(), O_WRONLY | O_CREAT,
                           S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) };
@@ -123,7 +127,7 @@ mod debug {
                 }
                 bytes_to_write -= bytes_written as u32;
                 byte_to_write = unsafe { byte_to_write
-                                            .offset(bytes_written as int) };
+                                            .offset(bytes_written as isize) };
             }
 
             if bytes_to_write == 0 {
@@ -150,6 +154,8 @@ struct BackBuffer {
     texture_width: i32,
 }
 
+#[derive(Copy)]
+#[allow(dead_code)]
 struct SdlAudioRingBuffer {
     size: c_int,
     write_cursor: c_int,
@@ -157,6 +163,7 @@ struct SdlAudioRingBuffer {
     data: *mut u8,
 }
 
+#[allow(dead_code)]
 extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8,
                              length: c_int) {
     let mut ring_buffer = unsafe { *(user_data as *mut SdlAudioRingBuffer) };
@@ -171,15 +178,15 @@ extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8,
 
     copy_contents(audio_data,
                   unsafe { ring_buffer.data
-                            .offset(ring_buffer.play_cursor as int) },
+                            .offset(ring_buffer.play_cursor as isize) },
                   region_size);
-    copy_contents(unsafe { audio_data.offset(region_size as int) },
+    copy_contents(unsafe { audio_data.offset(region_size as isize) },
                   ring_buffer.data, region2_size);
 
     fn copy_contents(out: *mut u8, src: *mut u8, size: c_int) {
         let mut out = out;
         let mut src = src;
-        for _ in range(0, size) {
+        for _ in 0..size {
             unsafe {
                 *out = *src;
                 out = out.offset(1);
@@ -192,6 +199,7 @@ extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8,
     ring_buffer.write_cursor = (ring_buffer.write_cursor + length) % ring_buffer.size;
 }
 
+#[allow(dead_code)]
 fn init_audio(samples_per_second: i32, buffer_size: i32,
               ring_buffer: &mut SdlAudioRingBuffer) {
     let mut audio_settings = SDL_AudioSpec {
@@ -226,11 +234,11 @@ fn init_audio(samples_per_second: i32, buffer_size: i32,
 
 fn resize_texture(renderer: *mut SDL_Renderer, buffer: &mut BackBuffer,
                   width: i32, height: i32) {
-    if buffer.pixels.is_not_null() {
+    if !buffer.pixels.is_null() {
         unsafe { munmap(buffer.pixels, buffer.size); }
         buffer.pixels = ptr::null_mut();
     }
-    if buffer.texture.is_not_null() {
+    if !buffer.texture.is_null() {
         unsafe { SDL_DestroyTexture(buffer.texture); }
         buffer.texture = ptr::null_mut();
     }
@@ -320,14 +328,14 @@ fn main() {
         panic!("SDL initialisation failed!");
     }
 
-    let window_title = "Rust Hero".to_c_str();
+    let window_title = CString::new("Rust Hero").unwrap();
     let window: *mut SDL_Window =
         unsafe { SDL_CreateWindow(window_title.as_ptr(),
                                   SDL_WINDOWPOS_UNDEFINED,
                                   SDL_WINDOWPOS_UNDEFINED,
                                   WINDOW_WIDTH, WINDOW_HEIGHT,
                                   SDL_WINDOW_RESIZABLE) };
-    if window.is_not_null() {
+    if !window.is_null() {
         let renderer: *mut SDL_Renderer =
             unsafe { SDL_CreateRenderer(window, -1, 0) };
 
@@ -340,17 +348,16 @@ fn main() {
         resize_texture(renderer, &mut buffer, WINDOW_WIDTH, WINDOW_HEIGHT);
 
         let mut controllers =
-            [ptr::null_mut::<SDL_GameController>(),
-                                            ..MAX_CONTROLLERS as uint];
+            [ptr::null_mut::<SDL_GameController>(); MAX_CONTROLLERS as usize];
 
         let mut controller_num = 0;
-        for controller_idx in range(0, unsafe { SDL_NumJoysticks() }) {
+        for controller_idx in 0..unsafe { SDL_NumJoysticks() } {
             if controller_num >= MAX_CONTROLLERS {
                break;
             }
             if unsafe { SDL_IsGameController(controller_idx) }
                         == SDL_bool::SDL_TRUE {
-                controllers[controller_num as uint] =
+                controllers[controller_num as usize] =
                     unsafe { SDL_GameControllerOpen(controller_num) };
                 controller_num += 1;
             }
@@ -364,7 +371,7 @@ fn main() {
                 running = handle_event(&event, &mut buffer);
             }
 
-            for controller_idx in range(0, controller_num as uint) {
+            for controller_idx in 0..controller_num as usize {
                 if unsafe { SDL_GameControllerGetAttached(
                                                 controllers[controller_idx]) }
                             == SDL_bool::SDL_TRUE {
@@ -373,35 +380,35 @@ fn main() {
                     let _up = unsafe {
                         SDL_GameControllerGetButton(
                             controller,
-                            SDL_CONTROLLER_BUTTON_DPAD_UP) == 1
+                            SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_DPAD_UP) == 1
                     };
 
                     let _down = unsafe {
                         SDL_GameControllerGetButton(
                             controller,
-                            SDL_CONTROLLER_BUTTON_DPAD_DOWN) == 1
+                            SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_DPAD_DOWN) == 1
                     };
                     let _left = unsafe {
                         SDL_GameControllerGetButton(
                             controller,
-                            SDL_CONTROLLER_BUTTON_DPAD_LEFT) == 1
+                            SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_DPAD_LEFT) == 1
                     };
                     let _right = unsafe {
                         SDL_GameControllerGetButton(
                             controller,
-                            SDL_CONTROLLER_BUTTON_DPAD_RIGHT) == 1
+                            SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_DPAD_RIGHT) == 1
                     };
 
 
                     let _stick_x = unsafe {
                         SDL_GameControllerGetAxis(
                             controller,
-                            SDL_CONTROLLER_AXIS_LEFTX) == 1
+                            SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_LEFTX) == 1
                     };
                     let _stick_y = unsafe {
                         SDL_GameControllerGetAxis(
                             controller,
-                            SDL_CONTROLLER_AXIS_LEFTY) == 1
+                            SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_LEFTY) == 1
                     };
                 } else {
                     //The controller was plugged out so remove him from the
@@ -415,9 +422,9 @@ fn main() {
             update_window(renderer, &mut buffer);
         }
 
-        for controller_idx in range(0, controller_num) {
+        for controller_idx in 0..controller_num {
             unsafe {
-                SDL_GameControllerClose(controllers[controller_idx as uint]);
+                SDL_GameControllerClose(controllers[controller_idx as usize]);
             }
         }
     } else {

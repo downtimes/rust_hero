@@ -1,11 +1,11 @@
 use std::f32;
-use std::num::FloatMath;
+use std::num::Float;
 use std::mem;
 
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input, ReadFileResult};
 use common::{ThreadContext};
 
-// ============= The public interface ===============
+// ============= The public sizeerface ===============
 //Has to be very low latency!
 #[no_mangle]
 pub extern fn get_sound_samples(_context: &ThreadContext,
@@ -76,8 +76,8 @@ pub extern fn update_and_render(context: &ThreadContext,
     render_weird_gradient(video_buffer, state.green_offset, state.blue_offset);
 
     let white = 0xFFFFFFFFu32;
-    draw_10_quad(video_buffer, state.player_x as uint, state.player_y as uint, white);
-    draw_10_quad(video_buffer, input.mouse_x as uint, input.mouse_y as uint, white);
+    draw_10_quad(video_buffer, state.player_x as usize, state.player_y as usize, white);
+    draw_10_quad(video_buffer, input.mouse_x as usize, input.mouse_y as usize, white);
     if input.mouse_l.ended_down {
         draw_10_quad(video_buffer, 10, 10, white);
     }
@@ -95,7 +95,7 @@ pub extern fn update_and_render(context: &ThreadContext,
     }
 }
 
-// ======== End of the public interface =========
+// ======== End of the public sizeerface =========
 
 
 struct GameState {
@@ -130,7 +130,7 @@ fn generate_sound(buffer: &mut SoundBuffer, tone_frequency: u32, tsine: &mut f32
     }
 }
 
-fn draw_10_quad(buffer: &mut VideoBuffer, x: uint, y: uint, color: u32) {
+fn draw_10_quad(buffer: &mut VideoBuffer, x: usize, y: usize, color: u32) {
     for row in buffer.memory.chunks_mut(buffer.pitch).skip(y).take(10) {
         for pixel in row.iter_mut().skip(x).take(10) {
            *pixel = color; 

@@ -1,36 +1,36 @@
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 
-pub use libc::{c_int, c_uint, c_long, c_char};
+pub use libc::{c_size, c_usize, c_long, c_char};
 pub use libc::{LPCSTR, LPVOID, BOOL, SIZE_T, FILE_BEGIN, PAGE_READWRITE};
 pub use libc::{MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, TRUE, FALSE};
 pub use libc::{CREATE_ALWAYS, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL};
 pub use libc::{GENERIC_READ, GENERIC_WRITE, SECURITY_ATTRIBUTES};
 pub use libc::{QueryPerformanceCounter, QueryPerformanceFrequency};
 pub use libc::{VirtualAlloc, VirtualFree, INVALID_HANDLE_VALUE};
-pub use libc::{CloseHandle, ReadFile, WriteFile, SetFilePointerEx, MapViewOfFile};
+pub use libc::{CloseHandle, ReadFile, WriteFile, SetFilePosizeerEx, MapViewOfFile};
 pub use std::default::Default;
 
 pub use self::direct_sound::*;
-pub use self::pointer::{LONG_PTR, UINT_PTR};
+pub use self::posizeer::{LONG_PTR, usize_PTR};
 
 pub mod direct_sound;
 
 #[cfg(target_arch = "x86")]
-pub mod pointer {
-    use libc::{c_long, c_uint};
+pub mod posizeer {
+    use libc::{c_long, c_usize};
     pub type LONG_PTR = c_long;
-    pub type UINT_PTR = c_uint;
+    pub type usize_PTR = c_usize;
 }
 
 #[cfg(target_arch = "x86_64")]
-pub mod pointer {
+pub mod posizeer {
     pub type LONG_PTR = i64;
-    pub type UINT_PTR = u64;
+    pub type usize_PTR = u64;
 }
 
 
-pub type UINT = c_uint;
+pub type usize = c_usize;
 pub type HINSTANCE = HANDLE;
 pub type HBITMAP = HANDLE;
 pub type HMODULE = HINSTANCE;
@@ -39,39 +39,39 @@ pub type HCURSOR = HANDLE;
 pub type HBRUSH = HANDLE;
 pub type HMENU = HANDLE;
 pub type LPCTSTR = LPCSTR;
-pub type LPARAM = pointer::LONG_PTR;
-pub type LRESULT = pointer::LONG_PTR;
-pub type WPARAM = pointer::UINT_PTR;
+pub type LPARAM = posizeer::LONG_PTR;
+pub type LRESULT = posizeer::LONG_PTR;
+pub type WPARAM = posizeer::usize_PTR;
 pub type ATOM = WORD;
 pub type LPMSG = *mut MSG;
-pub type LPPAINTSTRUCT = *mut PAINTSTRUCT;
+pub type LPPAsizeSTRUCT = *mut PAsizeSTRUCT;
 pub type HDC = HANDLE;
 pub type LPRECT = *mut RECT;
 pub type LPTSTR = *mut c_char;
 pub type HGDIOBJ = HANDLE;
-pub type MMRESULT = UINT;
+pub type MMRESULT = usize;
 pub type SHORT = i16;
 
-type WNDPROC = extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT;
+type WNDPROC = extern "system" fn(HWND, usize, WPARAM, LPARAM) -> LRESULT;
 pub type XInputGetState_t = extern "system" fn(DWORD, *mut XINPUT_STATE) -> DWORD;
 pub type XInputSetState_t = extern "system" fn(DWORD, *mut XINPUT_VIBRATION) -> DWORD;
 
 
-pub const WM_CREATE: UINT = 0x0001;
-pub const WM_CLOSE: UINT = 0x0010;
-pub const WM_SIZE: UINT = 0x0005;
-pub const WM_DESTROY: UINT = 0x0002;
-pub const WM_PAINT: UINT = 0x000F;
-pub const WM_ACTIVATEAPP: UINT = 0x001C;
-pub const WM_QUIT: UINT = 0x0012;
-pub const WM_KEYDOWN: UINT = 0x0100;
-pub const WM_KEYUP: UINT = 0x0101;
-pub const WM_SYSKEYDOWN: UINT = 0x0104;
-pub const WM_SYSKEYUP: UINT = 0x0105;
+pub const WM_CREATE: usize = 0x0001;
+pub const WM_CLOSE: usize = 0x0010;
+pub const WM_SIZE: usize = 0x0005;
+pub const WM_DESTROY: usize = 0x0002;
+pub const WM_PAsize: usize = 0x000F;
+pub const WM_ACTIVATEAPP: usize = 0x001C;
+pub const WM_QUIT: usize = 0x0012;
+pub const WM_KEYDOWN: usize = 0x0100;
+pub const WM_KEYUP: usize = 0x0101;
+pub const WM_SYSKEYDOWN: usize = 0x0104;
+pub const WM_SYSKEYUP: usize = 0x0105;
 
 pub const FILE_MAP_WRITE: DWORD = 0x0002;
 
-pub const GWLP_USERDATA: c_int = -21;
+pub const GWLP_USERDATA: c_size = -21;
 
 pub const VK_LBUTTON: u8 = 0x01u8;
 pub const VK_RBUTTON: u8 = 0x02u8;
@@ -86,11 +86,11 @@ pub const VK_RIGHT: u8 = 0x27u8;
 pub const VK_DOWN: u8 = 0x28u8;
 pub const VK_F4: u8 = 0x73u8;
 
-pub const CS_OWNDC: UINT = 0x0020;
-pub const CS_HREDRAW: UINT = 0x0002;
-pub const CS_VREDRAW: UINT = 0x0001;
+pub const CS_OWNDC: usize = 0x0020;
+pub const CS_HREDRAW: usize = 0x0002;
+pub const CS_VREDRAW: usize = 0x0001;
 
-pub const DIB_RGB_COLORS: UINT = 0;
+pub const DIB_RGB_COLORS: usize = 0;
 
 pub const BI_RGB: DWORD = 0;
 
@@ -133,14 +133,14 @@ pub const ERROR_DEVICE_NOT_CONNECTED: DWORD = 1167;
 
 pub const FILE_SHARE_READ: DWORD = 0x00000001;
 
-pub const VREFRESH: c_int = 116;
+pub const VREFRESH: c_size = 116;
 
-pub const MAX_PATH: uint = 260;
+pub const MAX_PATH: usize = 260;
 
-pub const TIMERR_NOERROR: UINT = 0;
+pub const TIMERR_NOERROR: usize = 0;
 
 #[allow(overflowing_literals)]
-pub const CW_USEDEFAULT: c_int = 0x80000000;
+pub const CW_USEDEFAULT: c_size = 0x80000000;
 
 #[repr(C)]
 pub struct XINPUT_GAMEPAD {
@@ -241,10 +241,10 @@ pub struct CREATESTRUCT {
     pub hInstance: HINSTANCE,
     pub hMenu: HMENU,
     pub hwndParent: HWND,
-    pub cy: c_int,
-    pub cx: c_int,
-    pub y: c_int,
-    pub x: c_int,
+    pub cy: c_size,
+    pub cx: c_size,
+    pub y: c_size,
+    pub x: c_size,
     pub style: LONG,
     pub lpszName: LPCTSTR,
     pub lpszClass: LPCTSTR,
@@ -253,10 +253,10 @@ pub struct CREATESTRUCT {
 
 #[repr(C)]
 pub struct WNDCLASS {
-    pub style: UINT,
+    pub style: usize,
     pub lpfnWndProc: WNDPROC,
-    pub cbClsExtra: c_int,
-    pub cbWndExtra: c_int,
+    pub cbClsExtra: c_size,
+    pub cbWndExtra: c_size,
     pub hInstance: HINSTANCE,
     pub hIcon: HICON,
     pub hCursor: HCURSOR,
@@ -266,7 +266,7 @@ pub struct WNDCLASS {
 }
 
 #[repr(C)]
-pub struct POINT {
+pub struct POsize {
     pub x: LONG,
     pub y: LONG,
 }
@@ -274,42 +274,42 @@ pub struct POINT {
 #[repr(C)]
 pub struct MSG {
     pub hwnd: HWND,
-    pub message: UINT,
+    pub message: usize,
     pub wparam: WPARAM,
     pub lparam: LPARAM,
     pub time: DWORD,
-    pub point: POINT,
+    pub posize: POsize,
 }
 
 impl Default for MSG{
     fn default() -> MSG {
         MSG{hwnd: 0 as HWND,
-            message: 0 as UINT,
+            message: 0 as usize,
             wparam: 0 as WPARAM,
             lparam: 0 as LPARAM,
             time: 0 as DWORD,
-            point: POINT{x: 0, y: 0}}
+            posize: POsize{x: 0, y: 0}}
     }
 }
 
 #[repr(C)]
-pub struct PAINTSTRUCT {
+pub struct PAsizeSTRUCT {
     pub hdc: HDC,
     pub fErase: BOOL,
-    pub rcPaint: RECT,
+    pub rcPasize: RECT,
     pub fRestore: BOOL,
     pub fIncUpdate: BOOL,
-    pub rgbReserved: [BYTE, ..32],
+    pub rgbReserved: [BYTE; ..32],
 }
 
-impl Default for PAINTSTRUCT {
-    fn default() -> PAINTSTRUCT {
-        PAINTSTRUCT{hdc: 0 as HDC,
+impl Default for PAsizeSTRUCT {
+    fn default() -> PAsizeSTRUCT {
+        PAsizeSTRUCT{hdc: 0 as HDC,
                     fErase: 0 as BOOL,
-                    rcPaint: Default::default(),
+                    rcPasize: Default::default(),
                     fRestore: 0 as BOOL,
                     fIncUpdate: 0 as BOOL,
-                    rgbReserved: [0 as BYTE, ..32]}
+                    rgbReserved: [0 as BYTE; ..32]}
     }
 }
 
@@ -389,28 +389,28 @@ impl Default for BITMAPINFO {
 //user32 and kernel32
 extern "system" {
     pub fn GetModuleHandleA(lpModuleName: LPCTSTR) -> HMODULE;
-    pub fn DefWindowProcA(window: HWND, message: UINT, 
+    pub fn DefWindowProcA(window: HWND, message: usize, 
                          wparam: WPARAM, lparam: LPARAM) -> LRESULT;
     pub fn RegisterClassA(class: *const WNDCLASS) -> ATOM;
     pub fn CreateWindowExA(exStyle: DWORD, className: LPCTSTR, windowName : LPCTSTR,
-                          style: DWORD, x: c_int, y: c_int, width: c_int,
-                          height: c_int, parent: HWND, menu: HMENU,
+                          style: DWORD, x: c_size, y: c_size, width: c_size,
+                          height: c_size, parent: HWND, menu: HMENU,
                           instance: HINSTANCE, param: LPVOID) -> HWND;
-    pub fn GetMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: UINT,
-                       msgFilterMax: UINT) -> BOOL;
-    pub fn PeekMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: UINT,
-                        msgFIlterMax: UINT, removeMsg: UINT) -> BOOL;
+    pub fn GetMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: usize,
+                       msgFilterMax: usize) -> BOOL;
+    pub fn PeekMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: usize,
+                        msgFIlterMax: usize, removeMsg: usize) -> BOOL;
     pub fn TranslateMessage(msg: *const MSG) -> BOOL;
     pub fn DispatchMessageA(msg: *const MSG) -> LRESULT;
     pub fn GetClientRect(hwnd: HWND, lpRect: LPRECT) -> BOOL;
-    pub fn ReleaseDC(hWnd: HWND, hDC : HDC) -> c_int;
+    pub fn ReleaseDC(hWnd: HWND, hDC : HDC) -> c_size;
     pub fn GetDC(hWnd: HWND) -> HDC;
     pub fn LoadLibraryA(lpFileName: LPCSTR) -> HMODULE;
     pub fn FreeLibrary(hModule: HMODULE) -> BOOL;
     pub fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> *const c_void;
-    pub fn GetWindowLongPtrA(hWnd: HWND, nIndex: c_int) -> pointer::LONG_PTR;
-    pub fn SetWindowLongPtrA(hWnd: HWND, nIndex: c_int, 
-                             dwNewLong: pointer::LONG_PTR) -> pointer::LONG_PTR;
+    pub fn GetWindowLongPtrA(hWnd: HWND, nIndex: c_size) -> posizeer::LONG_PTR;
+    pub fn SetWindowLongPtrA(hWnd: HWND, nIndex: c_size, 
+                             dwNewLong: posizeer::LONG_PTR) -> posizeer::LONG_PTR;
     pub fn CreateFileA(lpFileName: LPCTSTR, dwDesiredAccess: DWORD,
                       dwShareMode: DWORD, lpSecurityAttributes: *mut SECURITY_ATTRIBUTES,
                       dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD,
@@ -426,9 +426,9 @@ extern "system" {
                            lpFileTime2: *const FILETIME) -> LONG;
     pub fn GetModuleFileNameA(hModule: HMODULE, lpFilename: LPTSTR,
                              nSize: DWORD) -> DWORD;
-    pub fn GetCursorPos(lpPoint: *mut POINT) -> BOOL;
-    pub fn GetKeyState(nVirtKey: c_int) -> SHORT;
-    pub fn ScreenToClient(hWnd: HWND, lpPoint: *mut POINT) -> BOOL;
+    pub fn GetCursorPos(lpPosize: *mut POsize) -> BOOL;
+    pub fn GetKeyState(nVirtKey: c_size) -> SHORT;
+    pub fn ScreenToClient(hWnd: HWND, lpPosize: *mut POsize) -> BOOL;
     pub fn CreateFileMappingA(hFile: HANDLE, lpAttributes: *mut SECURITY_ATTRIBUTES,
                              flProtect: DWORD, dwMaximumSizeHigh: DWORD,
                              dwMaximumSizeLow: DWORD, lpName: LPCTSTR) -> HANDLE;
@@ -439,32 +439,32 @@ extern "system" {
 
 // gdi32
 extern "system" {
-    pub fn BeginPaint(hwnd: HWND, lpPaint: LPPAINTSTRUCT) -> HDC;
-    pub fn EndPaint(hwnd: HWND, lpPaint: *const PAINTSTRUCT) -> BOOL;
-    pub fn PatBlt(hdc: HDC, nXLeft: c_int, nYLeft: c_int, nWidth: c_int, nHeight: c_int,
+    pub fn BeginPasize(hwnd: HWND, lpPasize: LPPAsizeSTRUCT) -> HDC;
+    pub fn EndPasize(hwnd: HWND, lpPasize: *const PAsizeSTRUCT) -> BOOL;
+    pub fn PatBlt(hdc: HDC, nXLeft: c_size, nYLeft: c_size, nWidth: c_size, nHeight: c_size,
                   dwRop: DWORD) -> BOOL;
-    pub fn CreateDIBSection(hdc: HDC, pbmi: *const BITMAPINFO, iUsage: UINT,
+    pub fn CreateDIBSection(hdc: HDC, pbmi: *const BITMAPINFO, iUsage: usize,
                             pvBits: *mut *mut c_void, hSection: HANDLE,
                             dwOffset: DWORD) -> HBITMAP;
-    pub fn StretchDIBits(hdc: HDC, XDest: c_int, YDEst: c_int, nDestWidth: c_int,
-                        nDestHeight: c_int, XSrc: c_int, YSrc: c_int, nSrcWidth: c_int,
-                        nSrcHeight: c_int, lpBits: *const c_void,
-                        lpBitsInfo: *const BITMAPINFO, iUsage: UINT,
-                        dwRop: DWORD) -> c_int;
+    pub fn StretchDIBits(hdc: HDC, XDest: c_size, YDEst: c_size, nDestWidth: c_size,
+                        nDestHeight: c_size, XSrc: c_size, YSrc: c_size, nSrcWidth: c_size,
+                        nSrcHeight: c_size, lpBits: *const c_void,
+                        lpBitsInfo: *const BITMAPINFO, iUsage: usize,
+                        dwRop: DWORD) -> c_size;
     pub fn DeleteObject(hObject: HGDIOBJ) -> BOOL;
     pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
-    pub fn GetDeviceCaps(hdc: HDC, nIndex: c_int) -> c_int;
+    pub fn GetDeviceCaps(hdc: HDC, nIndex: c_size) -> c_size;
 }
 
 
 // Winmm
 extern "system" {
-    pub fn timeBeginPeriod(uPeriod: UINT) -> MMRESULT;
-    pub fn timeEndPeriod(uPeriod: UINT) -> MMRESULT;
+    pub fn timeBeginPeriod(uPeriod: usize) -> MMRESULT;
+    pub fn timeEndPeriod(uPeriod: usize) -> MMRESULT;
 }
 
 #[inline(always)]
-pub mod intrinsics {
+pub mod sizerinsics {
     pub fn __rdtsc() -> u64 {
         let lower: u32;
         let higher: u32;

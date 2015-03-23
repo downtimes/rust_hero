@@ -10,57 +10,60 @@ pub mod util {
         value as u32
     }
 
-    pub fn kilo_bytes(b: uint) -> uint {
+    pub fn kilo_bytes(b: usize) -> usize {
         b * 1024
     }
 
-    pub fn mega_bytes(mb: uint) -> uint {
+    pub fn mega_bytes(mb: usize) -> usize {
         kilo_bytes(mb) * 1024
     }
 
-    pub fn giga_bytes(gb: uint) -> uint {
+    pub fn giga_bytes(gb: usize) -> usize {
         mega_bytes(gb) * 1024
     }
 
-    pub fn tera_bytes(tb: uint) -> uint {
+    pub fn tera_bytes(tb: usize) -> usize {
         giga_bytes(tb) * 1024
     }
 
 }
 
-type PlatformReadEntireFileT = fn(&ThreadContext, &str) -> Result<ReadFileResult, ()>;
-type PlatformFreeFileMemoryT = fn(&ThreadContext, *mut c_void, u32);
-type PlatformWriteEntireFileT = fn(&ThreadContext, &str, u32, *mut c_void) -> bool;
+pub type PlatformReadEntireFileT = fn(&ThreadContext, &str) -> Result<ReadFileResult, ()>;
+pub type PlatformFreeFileMemoryT = fn(&ThreadContext, *mut c_void, u32);
+pub type PlatformWriteEntireFileT = fn(&ThreadContext, &str, u32, *mut c_void) -> bool;
 
 pub type GetSoundSamplesT = extern fn(&ThreadContext, &mut GameMemory, &mut SoundBuffer);
 pub type UpdateAndRenderT = extern fn(&ThreadContext, &mut GameMemory, &Input, &mut VideoBuffer);
 
+#[allow(dead_code)]
 pub struct ReadFileResult {
     pub size: u32,
     pub contents: *mut c_void,
 }
 
+#[allow(dead_code)]
 pub struct VideoBuffer<'a> {
     //Buffer memory is assumed to be BB GG RR xx
     pub memory: &'a mut [u32],
-    pub width: uint,
-    pub height: uint,
-    pub pitch: uint,
+    pub width: usize,
+    pub height: usize,
+    pub pitch: usize,
 }
 
+#[allow(dead_code)]
 pub struct SoundBuffer<'a> {
-    //Samples memory is assumed to be two channels interleaved
+    //Samples memory is assumed to be two channels sizeerleaved
     pub samples: &'a mut [i16],
     pub samples_per_second: u32,
 }
 
-#[deriving(Default)]
+#[derive(Default, Copy)]
 pub struct Button {
     pub ended_down: bool,
     pub half_transitions: u8,
 }
 
-#[deriving(Default)]
+#[derive(Default, Copy)]
 pub struct ControllerInput {
     pub is_connected: bool,
 
@@ -109,6 +112,7 @@ impl ControllerInput {
     }
 }
 
+#[allow(dead_code)]
 pub struct ThreadContext;
 
 pub struct Input {
@@ -125,7 +129,7 @@ pub struct Input {
     //TODO: see if it fits rustaceans better if we have an Option of
     //ControllerInputs here?
     //The 0 Controller is the keyboard all the others are possible joysticks
-    pub controllers: [ControllerInput, ..5],
+    pub controllers: [ControllerInput; 5],
 }
 
 impl Default for Input {
@@ -140,11 +144,12 @@ impl Default for Input {
             mouse_m: Default::default(),
             mouse_x1: Default::default(),
             mouse_x2: Default::default(),
-            controllers: [Default::default(), ..5],
+            controllers: [Default::default(); 5],
         }
     }
 }
 
+#[allow(dead_code)]
 pub struct GameMemory<'a> {
     pub initialized: bool,
     pub permanent: &'a mut[u8], //REQUIRED to be zeroed

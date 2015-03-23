@@ -126,7 +126,7 @@ pub mod debug {
 
 //Graphics System constants
 const BYTES_PER_PIXEL: c_int = 4;
-const DEFAULT_MONITOR_REFRESH_RATE: uint = 60;
+const DEFAULT_MONITOR_REFRESH_RATE: usize = 60;
 
 //Sound System constants
 const CHANNELS: WORD = 2;
@@ -179,7 +179,7 @@ struct Replay {
     input_file_handle: HANDLE,
     game_address: *mut c_void,
     memory: *mut c_void,
-    memory_size: uint,
+    memory_size: usize,
     state: ReplayState,
 }
 
@@ -248,7 +248,7 @@ struct Window {
 }
 
 impl Window {
-    fn process_messages(&mut self, message: UINT, 
+    fn process_messages(&mut self, message: usize, 
                         wparam: WPARAM, lparam: LPARAM) -> LRESULT {
 
         let mut res: LRESULT = 0;
@@ -263,18 +263,18 @@ impl Window {
             | WM_KEYUP => debug_assert!(false, "There sould be no key-messages in\
                                                 the windows message callback!"),
 
-            WM_PAINT => { 
-                let mut paint = Default::default(); 
+            WM_PAsize => { 
+                let mut pasize = Default::default(); 
 
-                let context = unsafe { BeginPaint(self.handle, &mut paint) };
+                let context = unsafe { BeginPasize(self.handle, &mut pasize) };
                 if context.is_null() {
-                    panic!("BeginPaint failed!");
+                    panic!("BeginPasize failed!");
                 }
 
                 let (width, height) = get_client_dimensions(self.handle).unwrap();
                 unsafe { 
                     blit_buffer_to_window(context, &self.backbuffer, width, height);
-                    EndPaint(self.handle, &paint);
+                    EndPasize(self.handle, &pasize);
                 }
             },
 
@@ -287,7 +287,7 @@ impl Window {
     }
 }
 
-extern "system" fn process_messages(handle: HWND, message: UINT, wparam: WPARAM, 
+extern "system" fn process_messages(handle: HWND, message: usize, wparam: WPARAM, 
                                     lparam: LPARAM) -> LRESULT {
     let mut res: LRESULT = 0;
 
@@ -344,7 +344,7 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
         debug_assert!(bytes_to_write == region1_size + region2_size);
 
         let (samples_1, samples_2) = 
-            source.samples.split_at(region1_size as uint / mem::size_of::<i16>());
+            source.samples.split_at(region1_size as usize / mem::size_of::<i16>());
         fill_region(region1, region1_size, sound_output, samples_1);
         fill_region(region2, region2_size, sound_output, samples_2);
 
@@ -354,7 +354,7 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
             let out: &mut [i16] = unsafe { mem::transmute( 
                                         Slice {
                                             data: region as *const i16,
-                                            len: region_size as uint / mem::size_of::<i16>()
+                                            len: region_size as usize / mem::size_of::<i16>()
                                         }) };
             debug_assert!((region_size % BYTES_PER_SAMPLE) == 0);
             debug_assert!(out.len() == source.len());
@@ -399,7 +399,7 @@ fn clear_sound_output(sound_output: &mut SoundOutput) {
             let out: &mut [i32] = unsafe { mem::transmute( 
                                         Slice {
                                             data: region as *const i32,
-                                            len: (region_size / BYTES_PER_SAMPLE) as uint, 
+                                            len: (region_size / BYTES_PER_SAMPLE) as usize, 
                                         }) };
             for sample in out.iter_mut() {
                 *sample = 0;
@@ -731,7 +731,7 @@ fn resize_dib_section(buffer: &mut Backbuffer, width: c_int, height: c_int) {
     if buffer.memory.is_not_null() {
        unsafe { 
            if VirtualFree(buffer.memory, 0 as SIZE_T , MEM_RELEASE) == 0 {
-               panic!("VirtualFree ran into an error");
+               panic!("VirtualFree ran sizeo an error");
            }
        }
     }
@@ -800,7 +800,7 @@ fn process_pending_messages(window: &mut Window,
     let mut msg = Default::default();
     //Process the Message Queue
     while unsafe {PeekMessageA(&mut msg, 0 as HWND,
-                       0 as UINT, 0 as UINT, PM_REMOVE) } != 0 {
+                       0 as usize, 0 as usize, PM_REMOVE) } != 0 {
         match msg.message {
             WM_QUIT => window.running = false,
 
@@ -888,13 +888,13 @@ fn process_keyboard_message(button: &mut Button, is_down: bool) {
 
 //TODO: clean the input handleing for the Mouse up before shipping
 fn process_mouse_input(window: &Window, input: &mut Input) {
-    let mut cursor_point = POINT { x: 0, y: 0 };
+    let mut cursor_posize = POsize { x: 0, y: 0 };
     unsafe { 
-        GetCursorPos(&mut cursor_point); 
-        ScreenToClient(window.handle, &mut cursor_point); 
+        GetCursorPos(&mut cursor_posize); 
+        ScreenToClient(window.handle, &mut cursor_posize); 
     }
-   input.mouse_x = cursor_point.x as i32; 
-   input.mouse_y = cursor_point.y as i32;
+   input.mouse_x = cursor_posize.x as i32; 
+   input.mouse_y = cursor_posize.y as i32;
 
    process_keyboard_message(&mut input.mouse_l, 
                             unsafe { (GetKeyState(VK_LBUTTON as i32) & (1 << 15)) != 0 });
@@ -920,18 +920,18 @@ fn get_seconds_elapsed(start: i64, end: i64, frequency: i64) -> f32 {
 }
 
 fn get_exe_path() -> Path {
-    let mut buffer: [i8, ..MAX_PATH] = [0, ..MAX_PATH];
+    let mut buffer: [i8; ..MAX_PATH] = [0, ..MAX_PATH];
     let name_length = unsafe { 
         //TODO: remove all the occurances of MAX_PATH because on NTFS paths
         //can actually be longer than this constant!
         GetModuleFileNameA(ptr::null_mut(), buffer.as_mut_ptr(),
                            MAX_PATH as u32)
     };
-    let result = unsafe { String::from_raw_buf_len(buffer.as_ptr() as *const u8, name_length as uint) };
+    let result = unsafe { String::from_raw_buf_len(buffer.as_ptr() as *const u8, name_length as usize) };
     Path::new(result)
 }
 
-fn initialize_replay(exe_dirname: &String, file_size: uint, 
+fn initialize_replay(exe_dirname: &String, file_size: usize, 
                      game_address: *mut c_void) -> Result<Replay,()> {
     let mut result: Result<Replay,()> = Err(());
 
@@ -1064,11 +1064,11 @@ fn main() {
         panic!("Window could not be created!");
     }
 
-    let monitor_refresh_rate: uint = unsafe { 
+    let monitor_refresh_rate: usize = unsafe { 
         let dc = GetDC(window.handle);
         let refresh_rate = GetDeviceCaps(dc, VREFRESH); 
         if refresh_rate > 1 {
-            refresh_rate as uint
+            refresh_rate as usize
         } else {
             DEFAULT_MONITOR_REFRESH_RATE
         }
@@ -1098,7 +1098,7 @@ fn main() {
 //                     (sound_output.sound_buffer, 
 //                      &mut play_cursor,
 //                      &mut write_cursor) == DS_OK } {
-//            println!("PC:{} WC:{}", play_cursor, write_cursor);
+//            prsizeln!("PC:{} WC:{}", play_cursor, write_cursor);
 //        }
 //    }
 
@@ -1113,7 +1113,7 @@ fn main() {
 
             mem::transmute(
                 Slice { data: data as *const i16,
-                             len: sound_output.get_buffer_size() as uint / mem::size_of::<i16>()})
+                             len: sound_output.get_buffer_size() as usize / mem::size_of::<i16>()})
         };
    
     let base_address = if cfg!(ndebug) { 0 } else { util::tera_bytes(2) };
@@ -1139,7 +1139,7 @@ fn main() {
             transient: unsafe { 
                         mem::transmute( Slice { 
                                             data: (memory as *const u8)
-                                                   .offset(permanent_store_size as int), 
+                                                   .offset(permanent_store_size as size), 
                                             len: transient_store_size
                                         }
                                       ) 
@@ -1160,8 +1160,8 @@ fn main() {
     let thread_context = ThreadContext;
     
     let mut sound_is_valid = false;
-    let mut last_time_marker_index: uint = 0;
-    let mut last_time_markers: [debug::SoundTimeMarker, ..15] = 
+    let mut last_time_marker_index: usize = 0;
+    let mut last_time_markers: [debug::SoundTimeMarker; ..15] =
                                 [Default::default(), ..15];
 
     let mut new_input: &mut Input = &mut Default::default();
@@ -1170,7 +1170,7 @@ fn main() {
     let mut counter_frequency: i64 = 0;
     unsafe { QueryPerformanceFrequency(&mut counter_frequency); }
 
-//    let mut last_cycles = intrinsics::__rdtsc();
+//    let mut last_cycles = sizerinsics::__rdtsc();
 
     let mut last_counter: i64 = get_wall_clock();
     let mut flip_wall_clock: i64 = 0;
@@ -1185,8 +1185,8 @@ fn main() {
                                                             dwLowDateTime: 0,
                                                             dwHighDateTime: 0,
                                                         });
-        if unsafe { CompareFileTime(&game.write_time, 
-                                    &new_write_time) } != 0 { 
+        if unsafe { CompareFileTime(&game.write_time,
+                                    &new_write_time) } != 0 {
                                                                     
             unload_game_functions(&mut game);
             game = load_game_functions(&game_dll_path, &temp_dll_path);
@@ -1209,11 +1209,11 @@ fn main() {
         let mut video_buf = VideoBuffer {
             memory: unsafe { mem::transmute(
                              Slice { data: window.backbuffer.memory as *const u32, 
-                                 len: (window.backbuffer.size/BYTES_PER_PIXEL) as uint})
+                                 len: (window.backbuffer.size/BYTES_PER_PIXEL) as usize})
                            },
-            width: window.backbuffer.width as uint,
-            height: window.backbuffer.height as uint,
-            pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as uint,
+            width: window.backbuffer.width as usize,
+            height: window.backbuffer.height as usize,
+            pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as usize,
         };
 
         if replay.is_recording() {
@@ -1285,7 +1285,7 @@ fn main() {
                 };
 
             let mut sound_buf = SoundBuffer {
-                samples: sound_samples.slice_to_mut(bytes_to_write as uint/
+                samples: sound_samples.slice_to_mut(bytes_to_write as usize/
                                                     mem::size_of::<i16>()),
                 samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,
             };
@@ -1356,15 +1356,15 @@ fn main() {
 //                                                        end_counter,
 //                                                        counter_frequency);
 //        let fps: f32 = 1000.0 / ms_per_frame;
-//        let display_cicles = intrinsics::__rdtsc();
+//        let display_cicles = sizerinsics::__rdtsc();
 //        let mc_per_second = (display_cicles - last_cycles) as f32/ (1000.0 * 1000.0);
 //
-//        println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
+//        prsizeln!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
 
         mem::swap(new_input, old_input);
 
         last_counter = end_counter;
-//        last_cycles = intrinsics::__rdtsc();
+//        last_cycles = sizerinsics::__rdtsc();
     }
     }
 }

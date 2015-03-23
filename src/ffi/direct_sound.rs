@@ -28,13 +28,13 @@ pub fn SUCCEEDED(hr: HRESULT) -> bool {
 
 #[repr(C)]
 pub struct IDirectSoundVtbl {
-    //IUnknown interface Functions which we don't use so we just use c_void
-    //pointers instead of the actual function signature
-    pub QueryInterface: *const c_void,
+    //IUnknown sizeerface Functions which we don't use so we just use c_void
+    //posizeers instead of the actual function signature
+    pub Querysizeerface: *const c_void,
     pub AddRef: *const c_void,
     pub Release: *const c_void,
 
-    //Functions from this interface we only implement the once we actually use
+    //Functions from this sizeerface we only implement the once we actually use
     pub CreateSoundBuffer: extern "system" fn(this: *mut IDirectSound, 
                                               ds_buffer_desc: *const DSBUFFERDESC,
                                               ds_buffer: *mut *mut IDirectSoundBuffer,
@@ -98,14 +98,14 @@ pub struct IDirectSound {
 
 #[repr(C)]
 pub struct IDirectSoundBufferVtbl {
-    //IUnknown interface Functions which we don't use so we just use c_void
-    //pointers instead of the actual function signature
-    pub QueryInterface: *const c_void,
+    //IUnknown sizeerface Functions which we don't use so we just use c_void
+    //posizeers instead of the actual function signature
+    pub Querysizeerface: *const c_void,
     pub AddRef: *const c_void,
     pub Release: *const c_void,
 
 
-    //Functions from this interface we only implement the once we actually use
+    //Functions from this sizeerface we only implement the once we actually use
     pub GetCaps: extern "system" fn(this: *mut IDirectSoundBuffer,
                                     pDSBufferCaps: *mut DSBCAPS) -> HRESULT,
     pub GetCurrentPosition: extern "system" fn(this: *mut IDirectSoundBuffer, pdwCurrentPlayCursor: *mut DWORD,
@@ -143,7 +143,7 @@ pub struct IDirectSoundBuffer {
 
 #[repr(C)]
 pub struct IUnknown {
-    //VTable Pointer which we don't use so we just say c_void pointer instead
+    //VTable Posizeer which we don't use so we just say c_void posizeer instead
     //of actual struct
     pub vtable: *const c_void,
 }
@@ -153,7 +153,7 @@ pub struct GUID {
     pub Data1: DWORD,
     pub Data2: WORD,
     pub Data3: WORD,
-    pub Data4: [BYTE, ..8],
+    pub Data4: [BYTE; ..8],
 }
 
 impl Default for GUID {
@@ -162,7 +162,7 @@ impl Default for GUID {
             Data1: 0 as DWORD,
             Data2: 0 as WORD,
             Data3: 0 as WORD,
-            Data4: [0 as BYTE, ..8],
+            Data4: [0 as BYTE; ..8],
         }
     }
 }

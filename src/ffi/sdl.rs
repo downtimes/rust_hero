@@ -57,7 +57,7 @@ pub const SDLK_UP: i32 = (1 << 30) | 82;
 pub struct SDL_Window;
 
 #[repr(C)]
-#[deriving(PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub enum SDL_bool {
 	SDL_FALSE,
 	SDL_TRUE,
@@ -73,6 +73,7 @@ pub struct SDL_GameController;
 pub struct SDL_Texture;
 
 #[repr(C)]
+#[derive(Copy)]
 pub struct SDL_WindowEvent {
     pub _type: u32,
     pub timestamp: u32,
@@ -132,6 +133,7 @@ pub enum SDL_GameControllerButton {
 }
 
 #[repr(C)]
+#[derive(Copy)]
 pub enum SDL_Scancode {
 	SDL_SCANCODE_UNKNOWN = 0,
 	SDL_SCANCODE_MAX = 512,
@@ -139,6 +141,7 @@ pub enum SDL_Scancode {
 
 
 #[repr(C)]
+#[derive(Copy)]
 pub struct SDL_Keysym {
 	pub scancode: SDL_Scancode,
 	pub sym: SDL_Keycode,
@@ -147,6 +150,7 @@ pub struct SDL_Keysym {
 }
 
 #[repr(C)]
+#[derive(Copy)]
 pub struct SDL_KeyboardEvent {
 	pub _type: u32,
 	pub timestamp: u32,
@@ -174,13 +178,13 @@ pub struct SDL_Rect {
 
 #[repr(C)]
 pub struct SDL_Event {
-    pub data: [u8, ..56],
+    pub data: [u8; 56],
 }
 
 impl Default for SDL_Event {
     fn default() -> SDL_Event {
         SDL_Event {
-            data: [0, ..56],
+            data: [0; 56],
         }
     }
 }

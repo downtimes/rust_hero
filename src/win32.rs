@@ -1,8 +1,9 @@
 use std::ptr;
+use std::path::PathBuf;
 use std::raw::Slice;
 use std::mem; 
 use std::i16;
-use std::c_str::CString;
+use std::ffi::CString;
 
 use common::util;
 use common::{Input, GameMemory, SoundBuffer, ControllerInput, Button, VideoBuffer};
@@ -12,11 +13,13 @@ use ffi::*;
 #[cfg(not(ndebug))]
 pub mod debug {
     use std::ptr;
+    use std::ffi::CString;
 
     use ffi::*;
     use common::{ReadFileResult, ThreadContext};
     use common::util;
 
+    #[derive(Copy)]
     pub struct SoundTimeMarker {
         pub flip_play_cursor: DWORD,
         pub flip_write_cursor: DWORD,
@@ -54,7 +57,7 @@ pub mod debug {
         debug_assert!(filename.len() <= MAX_PATH);
 
         let mut result: Result<ReadFileResult, ()> = Err(());
-        let name = filename.to_c_str();
+        let name = CString::new(filename).unwrap();
         let handle =
             unsafe { CreateFileA(name.as_ptr(), 
                                  GENERIC_READ, FILE_SHARE_READ,
@@ -68,7 +71,7 @@ pub mod debug {
                     unsafe { VirtualAlloc(ptr::null_mut(), file_size as SIZE_T,
                                           MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE) };
 
-                if memory.is_not_null() {
+                if !memory.is_null() {
                 let size = util::safe_truncate_u64(file_size as u64);
                     let mut bytes_read = 0;
                     if (unsafe { ReadFile(handle, memory, size, 
@@ -80,7 +83,7 @@ pub mod debug {
                                         contents: memory,
                                       });
                     } else {
-                        platform_free_file_memory(context, memory);
+                        platform_free_file_memory(context, memory, size);
                     }
                 }
             }
@@ -92,8 +95,8 @@ pub mod debug {
     
     pub fn platform_free_file_memory(_context: &ThreadContext, 
                                      memory: *mut c_void,
-                                     size: u32) {
-        if memory.is_not_null() {
+                                     _size: u32) {
+        if !memory.is_null() {
             unsafe { VirtualFree(memory, 0, MEM_RELEASE); }
         }
     }
@@ -104,7 +107,7 @@ pub mod debug {
         debug_assert!(filename.len() <= MAX_PATH);
 
         let mut result = false;
-        let name = filename.to_c_str();
+        let name = CString::new(filename).unwrap();
         let handle =
             unsafe { CreateFileA(name.as_ptr(), 
                                  GENERIC_WRITE, 0,
@@ -167,7 +170,7 @@ impl SoundOutput {
     }
 }
 
-#[deriving(PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 enum ReplayState {
     Recording,
     Replaying,
@@ -248,7 +251,7 @@ struct Window {
 }
 
 impl Window {
-    fn process_messages(&mut self, message: usize, 
+    fn process_messages(&mut self, message: c_uint, 
                         wparam: WPARAM, lparam: LPARAM) -> LRESULT {
 
         let mut res: LRESULT = 0;
@@ -266,15 +269,15 @@ impl Window {
             WM_PAsize => { 
                 let mut pasize = Default::default(); 
 
-                let context = unsafe { BeginPasize(self.handle, &mut pasize) };
+                let context = unsafe { BeginPaint(self.handle, &mut pasize) };
                 if context.is_null() {
-                    panic!("BeginPasize failed!");
+                    panic!("BeginPaint failed!");
                 }
 
                 let (width, height) = get_client_dimensions(self.handle).unwrap();
                 unsafe { 
                     blit_buffer_to_window(context, &self.backbuffer, width, height);
-                    EndPasize(self.handle, &pasize);
+                    EndPaint(self.handle, &pasize);
                 }
             },
 
@@ -287,7 +290,7 @@ impl Window {
     }
 }
 
-extern "system" fn process_messages(handle: HWND, message: usize, wparam: WPARAM, 
+extern "system" fn process_messages(handle: HWND, message: c_uint, wparam: WPARAM, 
                                     lparam: LPARAM) -> LRESULT {
     let mut res: LRESULT = 0;
 
@@ -306,7 +309,7 @@ extern "system" fn process_messages(handle: HWND, message: usize, wparam: WPARAM
         _ => {
             unsafe {
                 let window = GetWindowLongPtrA(handle, GWLP_USERDATA) as *mut Window;
-                if window.is_not_null() {
+                if !window.is_null() {
                     res = (*window).process_messages(message, wparam, lparam);
                 //During construction when there is still no struct registered we need to 
                 //handle all the cases with the default behavior
@@ -416,11 +419,11 @@ fn clear_sound_output(sound_output: &mut SoundOutput) {
 
 fn dsound_init(window: HWND, buffer_size_bytes: DWORD, 
                samples_per_second: DWORD) -> Result<*mut IDirectSoundBuffer, ()> {
-    let library_name = "dsound.dll".to_c_str();
+    let library_name = CString::new("dsound.dll").unwrap();
     let library = unsafe { LoadLibraryA(library_name.as_ptr()) };
 
-    if library.is_not_null() {
-        let create_name = "DirectSoundCreate".to_c_str();
+    if !library.is_null() {
+        let create_name = CString::new("DirectSoundCreate").unwrap();
         let ds_create = unsafe { GetProcAddress(library, create_name.as_ptr()) };
         if ds_create.is_null() { return Err(()); }
 
@@ -529,14 +532,14 @@ fn load_game_functions(game_dll_name: &CString, temp_dll_name: &CString) -> Game
 
     result.handle = unsafe { LoadLibraryA( temp_dll_name.as_ptr() ) };
 
-    if result.handle.is_not_null() {
-        let get_sound_samples_name = "get_sound_samples".to_c_str();
-        let update_and_render_name = "update_and_render".to_c_str();
+    if !result.handle.is_null() {
+        let get_sound_samples_name = CString::new("get_sound_samples").unwrap();
+        let update_and_render_name = CString::new("update_and_render").unwrap();
 
         let get_sound_samples  = unsafe { GetProcAddress(result.handle, get_sound_samples_name.as_ptr() ) };
         let update_and_render = unsafe { GetProcAddress(result.handle, update_and_render_name.as_ptr() ) };
 
-        if get_sound_samples.is_not_null() && update_and_render.is_not_null() {
+        if !get_sound_samples.is_null() && !update_and_render.is_null() {
             unsafe {
                 result.get_sound_samples = mem::transmute(get_sound_samples); 
                 result.update_and_render = mem::transmute(update_and_render);
@@ -548,7 +551,7 @@ fn load_game_functions(game_dll_name: &CString, temp_dll_name: &CString) -> Game
 
 
 fn unload_game_functions(game: &mut Game) {
-    if game.handle.is_not_null() {
+    if !game.handle.is_null() {
         unsafe { FreeLibrary(game.handle); }
         game.handle = ptr::null_mut();
     }
@@ -558,9 +561,9 @@ fn unload_game_functions(game: &mut Game) {
 
 fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
 
-    let xlib_first_name = "xinput1_4.dll".to_c_str();
-    let xlib_second_name = "xinput1_3.dll".to_c_str();
-    let xlib_third_name = "xinput9_1_0.dll".to_c_str();
+    let xlib_first_name = CString::new("xinput1_4.dll").unwrap();
+    let xlib_second_name = CString::new("xinput1_3.dll").unwrap();
+    let xlib_third_name = CString::new("xinput9_1_0.dll").unwrap();
 
     let mut module = unsafe { LoadLibraryA( xlib_first_name.as_ptr() ) };
     
@@ -571,9 +574,9 @@ fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
         module = unsafe { LoadLibraryA( xlib_third_name.as_ptr() ) };
     }
 
-    if module.is_not_null() {
-        let get_state_name = "XInputGetState".to_c_str();
-        let set_state_name = "XInputSetState".to_c_str();
+    if !module.is_null() {
+        let get_state_name = CString::new("XInputGetState").unwrap();
+        let set_state_name = CString::new("XInputSetState").unwrap();
 
         let xinput_get_state = unsafe { GetProcAddress(module, get_state_name.as_ptr() ) };
         let xinput_set_state = unsafe { GetProcAddress(module, set_state_name.as_ptr() ) };
@@ -728,7 +731,7 @@ fn get_client_dimensions(window: HWND) -> Result<(c_int, c_int), &'static str> {
 
 
 fn resize_dib_section(buffer: &mut Backbuffer, width: c_int, height: c_int) {
-    if buffer.memory.is_not_null() {
+    if !buffer.memory.is_null() {
        unsafe { 
            if VirtualFree(buffer.memory, 0 as SIZE_T , MEM_RELEASE) == 0 {
                panic!("VirtualFree ran sizeo an error");
@@ -800,7 +803,7 @@ fn process_pending_messages(window: &mut Window,
     let mut msg = Default::default();
     //Process the Message Queue
     while unsafe {PeekMessageA(&mut msg, 0 as HWND,
-                       0 as usize, 0 as usize, PM_REMOVE) } != 0 {
+                       0 as c_uint, 0 as c_uint, PM_REMOVE as c_uint) } != 0 {
         match msg.message {
             WM_QUIT => window.running = false,
 
@@ -888,7 +891,7 @@ fn process_keyboard_message(button: &mut Button, is_down: bool) {
 
 //TODO: clean the input handleing for the Mouse up before shipping
 fn process_mouse_input(window: &Window, input: &mut Input) {
-    let mut cursor_posize = POsize { x: 0, y: 0 };
+    let mut cursor_posize = POINT { x: 0, y: 0 };
     unsafe { 
         GetCursorPos(&mut cursor_posize); 
         ScreenToClient(window.handle, &mut cursor_posize); 
@@ -919,24 +922,33 @@ fn get_seconds_elapsed(start: i64, end: i64, frequency: i64) -> f32 {
     (end - start) as f32 / frequency as f32
 }
 
-fn get_exe_path() -> Path {
-    let mut buffer: [i8; ..MAX_PATH] = [0, ..MAX_PATH];
+fn get_exe_path() -> PathBuf {
+    let mut buffer: [i8; MAX_PATH] = [0; MAX_PATH];
     let name_length = unsafe { 
         //TODO: remove all the occurances of MAX_PATH because on NTFS paths
         //can actually be longer than this constant!
         GetModuleFileNameA(ptr::null_mut(), buffer.as_mut_ptr(),
                            MAX_PATH as u32)
     };
-    let result = unsafe { String::from_raw_buf_len(buffer.as_ptr() as *const u8, name_length as usize) };
-    Path::new(result)
+    let result = unsafe { String::from_raw_parts(buffer.as_ptr() as *mut u8, 
+                                                 name_length as usize,
+                                                 name_length as usize) };
+
+    PathBuf::new(result).clone()
 }
 
-fn initialize_replay(exe_dirname: &String, file_size: usize, 
+fn initialize_replay(exe_dirname: &PathBuf, file_size: usize, 
                      game_address: *mut c_void) -> Result<Replay,()> {
     let mut result: Result<Replay,()> = Err(());
 
-    let mmap_name = (*exe_dirname + "/mmap.rhm").to_c_str();
-    let input_name = (*exe_dirname + "/input.rhi").to_c_str();
+    let mut mmap_path = exe_dirname.clone();
+    mmap_path.push("mmap.rhm");
+
+    let mut input_path = exe_dirname.clone();
+    input_path.push("mmap.rhm");
+
+    let mmap_name = CString::new(mmap_path.to_str().unwrap()).unwrap();
+    let input_name = CString::new(input_path.to_str().unwrap()).unwrap();
     let file_handle = unsafe { CreateFileA(mmap_name.as_ptr(),
                                            GENERIC_READ | GENERIC_WRITE,
                                            0, ptr::null_mut(),
@@ -952,12 +964,12 @@ fn initialize_replay(exe_dirname: &String, file_size: usize,
                                                         file_size_hi, file_size_lo,
                                                         ptr::null()) };
 
-        if mapping_handle.is_not_null() {
+        if !mapping_handle.is_null() {
             let address = unsafe { MapViewOfFile(mapping_handle,
                                                  FILE_MAP_WRITE,
                                                  0, 0, 0) };
 
-            if address.is_not_null() {
+            if !address.is_null() {
                 result = Ok(Replay {
                     input_path: input_name,
                     input_file_handle: ptr::null_mut(),
@@ -990,7 +1002,7 @@ fn log_input(replay: &Replay, input: &mut Input) {
 
 fn override_input(replay: &mut Replay, input: &mut Input) {
     unsafe {
-        if replay.input_file_handle.is_not_null() {
+        if !replay.input_file_handle.is_null() {
             let mut bytes_read: DWORD = 0;
             ReadFile(replay.input_file_handle,
                      input as *mut _ as *mut c_void,
@@ -1011,7 +1023,9 @@ fn main() {
     let (XInputGetState, _) = load_xinput_functions();
     
     let module_handle = unsafe { GetModuleHandleA(ptr::null()) };
-    let exe_dirname = get_exe_path().dirname_str().unwrap().to_string();
+    let mut exe_dirname = get_exe_path();
+    exe_dirname.pop();
+
     
     if module_handle.is_null() {
         panic!("Handle to our executable could not be obtained!");
@@ -1034,7 +1048,7 @@ fn main() {
 
     resize_dib_section(&mut window.backbuffer, 1280, 720); 
 
-    let class_str = "HandmadeHeroWindowClass".to_c_str();
+    let class_str = CString::new("HandmadeHeroWindowClass");
     let window_class = WNDCLASS{style: CS_HREDRAW|CS_VREDRAW, 
                                 lpfnWndProc: process_messages,
                                 cbClsExtra: 0 as c_int,
@@ -1044,11 +1058,12 @@ fn main() {
                                 hCursor: 0 as HCURSOR,
                                 hbrBackground: 0 as HBRUSH,
                                 lpszMenuName: 0 as LPCTSTR,
-                                lpszClassName: class_str.as_ptr()};
+                                lpszClassName: class_str.unwrap().as_ptr()};
 
     unsafe { RegisterClassA(&window_class); }
 
-    let window_title = "Rust Hero".to_c_str();
+    let window_title = CString::new("Rust Hero").unwrap();
+
 
     window.handle = unsafe {
         CreateWindowExA(0 as DWORD, window_class.lpszClassName, 
@@ -1139,7 +1154,7 @@ fn main() {
             transient: unsafe { 
                         mem::transmute( Slice { 
                                             data: (memory as *const u8)
-                                                   .offset(permanent_store_size as size), 
+                                                   .offset(permanent_store_size as isize), 
                                             len: transient_store_size
                                         }
                                       ) 
@@ -1154,15 +1169,21 @@ fn main() {
 
     window.timer_fine_resolution = unsafe { timeBeginPeriod(1) == TIMERR_NOERROR };
 
-    let game_dll_path = (exe_dirname + "/game.dll").to_c_str();
-    let temp_dll_path = (exe_dirname + "/game_temp.dll").to_c_str();
+    let mut game_dll_path = exe_dirname.clone();
+    game_dll_path.push("game.dll");
+
+    let mut temp_dll_path = exe_dirname.clone();
+    temp_dll_path.push("game_temp.dll");
+
+    let game_dll_string = CString::new(game_dll_path.to_str().unwrap()).unwrap();
+    let temp_dll_string = CString::new(temp_dll_path.to_str().unwrap()).unwrap();
 
     let thread_context = ThreadContext;
     
     let mut sound_is_valid = false;
     let mut last_time_marker_index: usize = 0;
-    let mut last_time_markers: [debug::SoundTimeMarker; ..15] =
-                                [Default::default(), ..15];
+    let mut last_time_markers: [debug::SoundTimeMarker; 15] =
+                                [Default::default(); 15];
 
     let mut new_input: &mut Input = &mut Default::default();
     let mut old_input: &mut Input = &mut Default::default();
@@ -1175,12 +1196,12 @@ fn main() {
     let mut last_counter: i64 = get_wall_clock();
     let mut flip_wall_clock: i64 = 0;
 
-    let mut game = load_game_functions(&game_dll_path, &temp_dll_path);
+    let mut game = load_game_functions(&game_dll_string, &temp_dll_string);
 
     window.running = true;
     while window.running {
 
-        let new_write_time = get_last_write_time(&game_dll_path)
+        let new_write_time = get_last_write_time(&game_dll_string)
                                               .unwrap_or(FILETIME {
                                                             dwLowDateTime: 0,
                                                             dwHighDateTime: 0,
@@ -1189,7 +1210,7 @@ fn main() {
                                     &new_write_time) } != 0 {
                                                                     
             unload_game_functions(&mut game);
-            game = load_game_functions(&game_dll_path, &temp_dll_path);
+            game = load_game_functions(&game_dll_string, &temp_dll_string);
         }
 
         //Keep the old button state but zero out the halftransitoncount to not mess up
@@ -1203,8 +1224,8 @@ fn main() {
 
         if !window.pause {
         process_xinput(XInputGetState,
-                       new_input.controllers.slice_from_mut(1), 
-                       old_input.controllers.slice_from(1));
+                       &mut new_input.controllers[1..], 
+                       &old_input.controllers[1..]);
 
         let mut video_buf = VideoBuffer {
             memory: unsafe { mem::transmute(
@@ -1285,8 +1306,8 @@ fn main() {
                 };
 
             let mut sound_buf = SoundBuffer {
-                samples: sound_samples.slice_to_mut(bytes_to_write as usize/
-                                                    mem::size_of::<i16>()),
+                samples: &mut sound_samples[..bytes_to_write as usize/
+                                                    mem::size_of::<i16>()],
                 samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,
             };
 
@@ -1307,7 +1328,7 @@ fn main() {
             while seconds_elapsed_for_work < target_seconds_per_frame {
                 if window.timer_fine_resolution {
                     let sleep_ms = (1000.0 * (target_seconds_per_frame 
-                                              - seconds_elapsed_for_work) - 1) as DWORD;
+                                              - seconds_elapsed_for_work) - 1.0f32) as DWORD;
                     if sleep_ms > 0 {
                         unsafe { Sleep(sleep_ms); }
                     }

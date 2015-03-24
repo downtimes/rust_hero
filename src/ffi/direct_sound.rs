@@ -153,7 +153,7 @@ pub struct GUID {
     pub Data1: DWORD,
     pub Data2: WORD,
     pub Data3: WORD,
-    pub Data4: [BYTE; ..8],
+    pub Data4: [BYTE; 8],
 }
 
 impl Default for GUID {
@@ -162,7 +162,7 @@ impl Default for GUID {
             Data1: 0 as DWORD,
             Data2: 0 as WORD,
             Data3: 0 as WORD,
-            Data4: [0 as BYTE; ..8],
+            Data4: [0 as BYTE; 8],
         }
     }
 }

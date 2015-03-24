@@ -3,8 +3,8 @@ use std::raw::Slice;
 use std::mem; 
 use std::i16;
 use std::c_str::CString;
-use common::util;
 
+use common::util;
 use common::{Input, GameMemory, SoundBuffer, ControllerInput, Button, VideoBuffer};
 use common::{ThreadContext, GetSoundSamplesT, UpdateAndRenderT};
 use ffi::*;

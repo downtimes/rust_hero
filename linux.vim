@@ -12,14 +12,17 @@ nnoremap / /\v
 nnoremap H 0
 nnoremap L $
 nnoremap N Nzz
+vmap [% [%m'gv``
+vmap ]% ]%m'gv``
+vmap a% [%v]%
+vmap gx <Plug>NetrwBrowseXVis
 nmap gx <Plug>NetrwBrowseX
 nnoremap j gj
 nnoremap k gk
 nnoremap n nzz
-nnoremap <S-Space> O
-nnoremap <silent> <Plug>NetrwBrowseX :call netrw#NetrwBrowseX(expand("<cfile>"),0)
+vnoremap <silent> <Plug>NetrwBrowseXVis :call netrw#BrowseXVis()
+nnoremap <silent> <Plug>NetrwBrowseX :call netrw#BrowseX(expand((exists("g:netrw_gx")? g:netrw_gx : '<cfile>')),netrw#CheckIfRemote())
 inoremap  :updatei
-nnoremap ö :!cargo run
 nnoremap ösv :source $MYVIMRC:split:q
 nnoremap öev :rightbelow vsplit $MYVIMRC
 nnoremap öW :match none
@@ -44,7 +47,6 @@ set autoindent
 set autowrite
 set background=dark
 set backspace=indent,eol,start
-set expandtab
 set fileencodings=ucs-bom,utf-8,default,latin1
 set helplang=de
 set hidden
@@ -54,8 +56,9 @@ set incsearch
 set laststatus=2
 set listchars=tab:▸\ ,eol:¬
 set makeprg=./build.sh
+set matchpairs=(:),{:},[:],<:>
 set ruler
-set runtimepath=~/.vim,~/.vim/bundle/Vundle.vim,~/.vim/bundle/molokai,~/.vim/bundle/vim-airline,~/.vim/bundle/syntastic,~/.vim/bundle/nerdtree,~/.vim/bundle/vim-cpp-enhanced-highlight,~/.vim/bundle/taglist.vim,~/.vim/bundle/rust/src/etc/vim,/usr/share/vim/vimfiles,/usr/share/vim/vim74,/usr/share/vim/vimfiles/after,~/.vim/after,~/.vim/bundle/Vundle.vim,~/.vim/bundle/Vundle.vim/after,~/.vim/bundle/molokai/after,~/.vim/bundle/vim-airline/after,~/.vim/bundle/syntastic/after,~/.vim/bundle/nerdtree/after,~/.vim/bundle/vim-cpp-enhanced-highlight/after,~/.vim/bundle/taglist.vim/after,~/.vim/bundle/rust/src/etc/vim/after
+set runtimepath=~/.vim,~/.vim/bundle/Vundle.vim,~/.vim/bundle/molokai,~/.vim/bundle/vim-airline,~/.vim/bundle/syntastic,~/.vim/bundle/nerdtree,~/.vim/bundle/vim-cpp-enhanced-highlight,~/.vim/bundle/taglist.vim,~/.vim/bundle/rust.vim,/usr/share/vim/vimfiles,/usr/share/vim/vim74,/usr/share/vim/vimfiles/after,~/.vim/after,~/.vim/bundle/Vundle.vim,~/.vim/bundle/Vundle.vim/after,~/.vim/bundle/molokai/after,~/.vim/bundle/vim-airline/after,~/.vim/bundle/syntastic/after,~/.vim/bundle/nerdtree/after,~/.vim/bundle/vim-cpp-enhanced-highlight/after,~/.vim/bundle/taglist.vim/after,~/.vim/bundle/rust.vim/after
 set scrolloff=7
 set shiftwidth=4
 set noshowmode
@@ -65,7 +68,6 @@ set smarttab
 set softtabstop=4
 set suffixes=.bak,~,.swp,.o,.info,.aux,.log,.dvi,.bbl,.blg,.brf,.cb,.ind,.idx,.ilg,.inx,.out,.toc,.png,.jpg
 set tabstop=4
-set window=38
 let s:so_save = &so | let s:siso_save = &siso | set so=0 siso=0
 let v:this_session=expand("<sfile>:p")
 silent only
@@ -74,20 +76,11 @@ if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
   let s:wipebuf = bufnr('%')
 endif
 set shortmess=aoO
-badd +6 build.sh
-badd +11 \[Vundle]\ Installer
-badd +124 ~/.vimrc
-badd +8 build.bat
-badd +2 src/main.rs
-badd +152 src/common/mod.rs
-badd +210 src/linux.rs
-badd +1 src/ffi/mod.rs
-badd +4 src/ffi/linux.rs
-badd +97 src/ffi/sdl.rs
-badd +1 src/win32.rs
-badd +36 src/game/mod.rs
+badd +0 src/linux.rs
+badd +0 src/win32.rs
 argglobal
 silent! argdel *
+argadd src/linux.rs
 set stal=2
 edit src/linux.rs
 set splitbelow splitright
@@ -103,11 +96,11 @@ set nosplitbelow
 set nosplitright
 wincmd t
 set winheight=1 winwidth=1
-exe 'vert 1resize ' . ((&columns * 83 + 84) / 168)
-exe '2resize ' . ((&lines * 27 + 21) / 42)
-exe 'vert 2resize ' . ((&columns * 84 + 84) / 168)
-exe '3resize ' . ((&lines * 11 + 21) / 42)
-exe 'vert 3resize ' . ((&columns * 84 + 84) / 168)
+exe 'vert 1resize ' . ((&columns * 84 + 84) / 168)
+exe '2resize ' . ((&lines * 30 + 22) / 44)
+exe 'vert 2resize ' . ((&columns * 83 + 84) / 168)
+exe '3resize ' . ((&lines * 10 + 22) / 44)
+exe 'vert 3resize ' . ((&columns * 83 + 84) / 168)
 argglobal
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
@@ -182,7 +175,7 @@ setlocal nolisp
 setlocal lispwords=
 setlocal nolist
 setlocal makeprg=
-setlocal matchpairs=(:),{:},[:]
+setlocal matchpairs=(:),{:},[:],<:>
 setlocal modeline
 setlocal modifiable
 setlocal nrformats=octal,hex
@@ -225,15 +218,15 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 210 - ((18 * winheight(0) + 19) / 39)
+let s:l = 308 - ((33 * winheight(0) + 20) / 41)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-210
-normal! 0
+308
+normal! 021|
 wincmd w
 argglobal
-edit src/ffi/sdl.rs
+edit src/linux.rs
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
 onoremap <buffer> <silent> [[ :call rust#Jump('o', 'Back')
@@ -307,7 +300,7 @@ setlocal nolisp
 setlocal lispwords=
 setlocal nolist
 setlocal makeprg=
-setlocal matchpairs=(:),{:},[:]
+setlocal matchpairs=(:),{:},[:],<:>
 setlocal modeline
 setlocal modifiable
 setlocal nrformats=octal,hex
@@ -350,11 +343,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 248 - ((26 * winheight(0) + 13) / 27)
+let s:l = 1 - ((0 * winheight(0) + 15) / 30)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-248
+1
 normal! 0
 wincmd w
 argglobal
@@ -424,7 +417,7 @@ setlocal nolisp
 setlocal lispwords=
 setlocal nolist
 setlocal makeprg=
-setlocal matchpairs=(:),{:},[:]
+setlocal matchpairs=(:),{:},[:],<:>
 setlocal modeline
 setlocal nomodifiable
 setlocal nrformats=octal,hex
@@ -467,11 +460,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 wincmd w
-exe 'vert 1resize ' . ((&columns * 83 + 84) / 168)
-exe '2resize ' . ((&lines * 27 + 21) / 42)
-exe 'vert 2resize ' . ((&columns * 84 + 84) / 168)
-exe '3resize ' . ((&lines * 11 + 21) / 42)
-exe 'vert 3resize ' . ((&columns * 84 + 84) / 168)
+exe 'vert 1resize ' . ((&columns * 84 + 84) / 168)
+exe '2resize ' . ((&lines * 30 + 22) / 44)
+exe 'vert 2resize ' . ((&columns * 83 + 84) / 168)
+exe '3resize ' . ((&lines * 10 + 22) / 44)
+exe 'vert 3resize ' . ((&columns * 83 + 84) / 168)
 tabedit src/win32.rs
 set splitbelow splitright
 set nosplitbelow
@@ -552,7 +545,7 @@ setlocal nolisp
 setlocal lispwords=
 setlocal nolist
 setlocal makeprg=
-setlocal matchpairs=(:),{:},[:]
+setlocal matchpairs=(:),{:},[:],<:>
 setlocal modeline
 setlocal modifiable
 setlocal nrformats=octal,hex
@@ -595,12 +588,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 336 - ((7 * winheight(0) + 19) / 39)
+let s:l = 814 - ((7 * winheight(0) + 20) / 41)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-336
-normal! 022|
+814
+normal! 0
 tabnext 1
 set stal=1
 if exists('s:wipebuf')

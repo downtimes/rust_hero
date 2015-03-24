@@ -3,9 +3,13 @@ use libc::{mmap, munmap, MAP_PRIVATE, MAP_FAILED, MAP_ANON};
 use libc::{PROT_READ, PROT_WRITE};
 use std::default::Default;
 use std::ptr;
+use std::mem;
+use std::raw::Slice;
 use std::ffi::CString;
 
 use ffi::sdl::*;
+use common::util;
+use common::{Input, SoundBuffer, Button, GameMemory};
 
 #[allow(unused_imports)]
 #[allow(dead_code)]
@@ -147,6 +151,9 @@ const BYTES_PER_PIXEL: u32 = 4;
 const WINDOW_WIDTH: i32 = 640;
 const WINDOW_HEIGHT: i32 = 480;
 
+const SAMPLES_PER_SECOND: i32 = 48000;
+const BYTES_PER_SAMPLE: i32 = 4;
+
 struct BackBuffer {
     pixels: *mut c_void,
     size: size_t,
@@ -154,8 +161,6 @@ struct BackBuffer {
     texture_width: i32,
 }
 
-#[derive(Copy)]
-#[allow(dead_code)]
 struct SdlAudioRingBuffer {
     size: c_int,
     write_cursor: c_int,
@@ -163,10 +168,16 @@ struct SdlAudioRingBuffer {
     data: *mut u8,
 }
 
-#[allow(dead_code)]
+struct SdlSoundOutput {
+    running_sample_idx: i32,
+    secondary_buffer_size: i32,
+    latency_sample_count: i32,
+}
+
 extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8,
                              length: c_int) {
-    let mut ring_buffer = unsafe { *(user_data as *mut SdlAudioRingBuffer) };
+    let ring_buffer: &mut SdlAudioRingBuffer = 
+        unsafe { mem::transmute(user_data as *mut SdlAudioRingBuffer) };
 
     let mut region_size = length;
     let mut region2_size = 0;
@@ -174,7 +185,7 @@ extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8,
     if ring_buffer.play_cursor + length > ring_buffer.size {
         region_size = ring_buffer.size - ring_buffer.play_cursor;
         region2_size = length - region_size;
-    }
+   }
 
     copy_contents(audio_data,
                   unsafe { ring_buffer.data
@@ -199,7 +210,29 @@ extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8,
     ring_buffer.write_cursor = (ring_buffer.write_cursor + length) % ring_buffer.size;
 }
 
+
 #[allow(dead_code)]
+fn process_game_controller_button(old_state: &Button,
+                                  new_state: &mut Button, value: bool) {
+    new_state.ended_down = value;
+    if new_state.ended_down == old_state.ended_down {
+        new_state.half_transitions += 1;
+    }
+}
+
+#[allow(dead_code)]
+fn process_game_controller_axis(value: i16, dead_zone: i16) -> f32 {
+    let mut result = 0.0f32;
+
+    if value < -dead_zone {
+        result = (value + dead_zone) as f32 / (32768.0f32 - dead_zone as f32)
+    } else if value > dead_zone {
+        result = (value - dead_zone) as f32 / (32767.0f32 - dead_zone as f32)
+    }
+
+    result
+}
+
 fn init_audio(samples_per_second: i32, buffer_size: i32,
               ring_buffer: &mut SdlAudioRingBuffer) {
     let mut audio_settings = SDL_AudioSpec {
@@ -303,7 +336,14 @@ fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer) -> bool {
                 };
 
             if was_down != is_down {
+                let alt_key_down = 
+                    if (keyboard_event.keysym._mod & KMOD_ALT) != 0 {
+                        true
+                    } else {
+                        false 
+                    };
                 match code {
+                    SDLK_F4 => if alt_key_down { keep_running = false; },
                     SDLK_w => println!("w"),
                     _ => (),
                 }
@@ -312,6 +352,7 @@ fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer) -> bool {
 
         _ => (),
     }
+
     fn get_renderer_from_window_id(window_id: u32) -> *mut SDL_Renderer {
         unsafe {
             let window = SDL_GetWindowFromID(window_id);
@@ -322,11 +363,39 @@ fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer) -> bool {
     keep_running
 }
 
+fn open_controllers(controllers: &mut [*mut SDL_GameController; MAX_CONTROLLERS as usize]) -> i32 {
+    let mut controller_num = 0;
+    for controller_idx in 0..unsafe { SDL_NumJoysticks() } {
+        if controller_num >= MAX_CONTROLLERS {
+            break;
+        }
+        if unsafe { SDL_IsGameController(controller_idx) }
+        == SDL_bool::SDL_TRUE {
+            controllers[controller_num as usize] =
+                unsafe { SDL_GameControllerOpen(controller_num) };
+            controller_num += 1;
+        }
+
+    }
+    controller_num
+}
+
+fn close_controllers(controllers: [*mut SDL_GameController; MAX_CONTROLLERS as usize], controller_num: i32) {
+    for controller_idx in 0..controller_num {
+        let controller = controllers[controller_idx as usize];
+        if !controller.is_null() {
+            unsafe { SDL_GameControllerClose(controller); }
+        }
+    }
+}
+
 #[main]
 fn main() {
-    if unsafe { SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0 } {
+    if unsafe { SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER 
+                        | SDL_INIT_AUDIO) != 0 } {
         panic!("SDL initialisation failed!");
     }
+
 
     let window_title = CString::new("Rust Hero").unwrap();
     let window: *mut SDL_Window =
@@ -339,6 +408,10 @@ fn main() {
         let renderer: *mut SDL_Renderer =
             unsafe { SDL_CreateRenderer(window, -1, 0) };
 
+        if renderer.is_null() {
+            panic!("Couldn't create a render context for the window!");
+        }
+
         let mut buffer = BackBuffer {
                            pixels: ptr::null_mut(),
                            size: 0,
@@ -350,19 +423,71 @@ fn main() {
         let mut controllers =
             [ptr::null_mut::<SDL_GameController>(); MAX_CONTROLLERS as usize];
 
-        let mut controller_num = 0;
-        for controller_idx in 0..unsafe { SDL_NumJoysticks() } {
-            if controller_num >= MAX_CONTROLLERS {
-               break;
-            }
-            if unsafe { SDL_IsGameController(controller_idx) }
-                        == SDL_bool::SDL_TRUE {
-                controllers[controller_num as usize] =
-                    unsafe { SDL_GameControllerOpen(controller_num) };
-                controller_num += 1;
+        let controller_num = open_controllers(&mut controllers);
+
+        let sound_output = SdlSoundOutput {
+            running_sample_idx: 0,
+            secondary_buffer_size: SAMPLES_PER_SECOND * BYTES_PER_SAMPLE,
+            latency_sample_count: SAMPLES_PER_SECOND / 15,
+        };
+        let mut ring_buffer = SdlAudioRingBuffer {
+            size: 0,
+            write_cursor: 0,
+            play_cursor: 0,
+            data: ptr::null_mut(),
+        };
+        init_audio(SAMPLES_PER_SECOND, sound_output.secondary_buffer_size,
+                   &mut ring_buffer);
+
+        unsafe { SDL_PauseAudio(0); }
+        let mut sound_samples: &mut [i16] = unsafe { 
+            //Allocation implicitly freed at the end of the execution
+            let data = mmap(ptr::null_mut(),
+                            (SAMPLES_PER_SECOND * BYTES_PER_SAMPLE) as u64, 
+                            PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANON, -1, 0);
+            if data.is_null() {
+                panic!("Couldn't allocate the resources for the Sound-Buffer!");
             }
 
-        }
+            mem::transmute(
+                Slice { data: data as *const i16,
+                len: ((SAMPLES_PER_SECOND * BYTES_PER_SAMPLE) / 2) as usize})
+        };
+
+        let base_address = if cfg!(ndebug) { 0 } else { util::tera_bytes(2) };
+        let permanent_store_size = util::mega_bytes(64);
+        let transient_store_size = util::giga_bytes(1);
+        let total_size = permanent_store_size + transient_store_size;
+
+        let memory = unsafe { mmap(base_address as *mut c_void,
+                                  total_size as u64, PROT_READ | PROT_WRITE,
+                                  MAP_PRIVATE | MAP_ANON, -1, 0)  };
+            
+        if memory.is_null() { panic!("Memory for the Game could not be obtained!"); }
+
+        let mut game_memory: GameMemory = 
+            GameMemory {
+                initialized: false,
+                permanent: unsafe { 
+                    mem::transmute( Slice { 
+                        data: memory as *const u8, 
+                        len: permanent_store_size
+                    } 
+                    ) 
+                },
+                transient: unsafe { 
+                    mem::transmute( Slice { 
+                        data: (memory as *const u8)
+                            .offset(permanent_store_size as isize), 
+                        len: transient_store_size
+                    }
+                    ) 
+                },
+                platform_read_entire_file: debug::platform_read_entire_file,
+                platform_write_entire_file: debug::platform_write_entire_file,
+                platform_free_file_memory: debug::platform_free_file_memory,
+            };
 
         let mut running = true;
         while running {
@@ -418,15 +543,32 @@ fn main() {
                 }
             }
 
+            unsafe { SDL_LockAudio(); }
+            let byte_to_lock = (sound_output.running_sample_idx * BYTES_PER_SAMPLE)
+                                % sound_output.secondary_buffer_size;
+            let target_cursor = (ring_buffer.play_cursor + 
+                                  (sound_output.latency_sample_count *
+                                   BYTES_PER_SAMPLE)) 
+                                 % sound_output.secondary_buffer_size;
+            let bytes_to_write = 
+                if byte_to_lock > target_cursor {
+                    sound_output.secondary_buffer_size - byte_to_lock + target_cursor
+                } else {
+                    target_cursor - byte_to_lock
+                };
+            unsafe { SDL_UnlockAudio(); }
+            let sound_buffer = SoundBuffer {
+                samples: &mut sound_samples[..bytes_to_write as usize/
+                                                    mem::size_of::<i16>()],
+                samples_per_second: SAMPLES_PER_SECOND as u32,
+            };
+
 
             update_window(renderer, &mut buffer);
         }
 
-        for controller_idx in 0..controller_num {
-            unsafe {
-                SDL_GameControllerClose(controllers[controller_idx as usize]);
-            }
-        }
+        close_controllers(controllers, controller_num);
+
     } else {
         //TODO: Window creation failed horribly just log it
     }

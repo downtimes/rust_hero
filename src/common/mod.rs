@@ -52,7 +52,7 @@ pub struct VideoBuffer<'a> {
 
 #[allow(dead_code)]
 pub struct SoundBuffer<'a> {
-    //Samples memory is assumed to be two channels sizeerleaved
+    //Samples memory is assumed to be two channels interleaved
     pub samples: &'a mut [i16],
     pub samples_per_second: u32,
 }

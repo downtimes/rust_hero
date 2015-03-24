@@ -53,6 +53,18 @@ pub const SDLK_LEFT: i32 = (1 << 30) | 80;
 pub const SDLK_DOWN: i32 = (1 << 30) | 81;
 pub const SDLK_UP: i32 = (1 << 30) | 82;
 
+
+pub const KMOD_NONE: u16 = 0x0;
+pub const KMOD_LSHIFT: u16 = 0x1;
+pub const KMOD_RSHIFT: u16 = 0x2;
+pub const KMOD_LCTRL: u16 = 0x40;
+pub const KMOD_RCTRL: u16 = 0x80;
+pub const KMOD_LALT: u16 = 0x100;
+pub const KMOD_RALT: u16 = 0x200;
+
+pub const KMOD_ALT: u16 = KMOD_LALT | KMOD_RALT;
+
+
 #[repr(C)]
 pub struct SDL_Window;
 
@@ -249,4 +261,7 @@ extern "C" {
         axis: SDL_GameControllerAxis) -> i16;
     pub fn SDL_OpenAudio(desired: *mut SDL_AudioSpec,
                          obtained: *mut SDL_AudioSpec) -> c_int;
+    pub fn SDL_PauseAudio(pause_on: c_int);
+    pub fn SDL_LockAudio();
+    pub fn SDL_UnlockAudio();
 }

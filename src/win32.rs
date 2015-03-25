@@ -936,9 +936,9 @@ fn get_exe_path() -> PathBuf {
     };
     let result = unsafe { String::from_raw_parts(buffer.as_ptr() as *mut u8, 
                                                  name_length as usize,
-                                                 name_length as usize) };
+                                                 (name_length + 10) as usize) };
 
-    PathBuf::new(result).clone()
+    PathBuf::new(result.clone())
 }
 
 fn initialize_replay(exe_dirname: &PathBuf, file_size: usize, 

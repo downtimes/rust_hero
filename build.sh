@@ -1,6 +1,6 @@
 #!/bin/sh
 
-rustc --crate-type=dylib --crate-name=game -g -C prefer-dynamic src/lib.rs && mv libgame.so target/game.dll
+rustc --crate-type=dylib --crate-name=game -g -C prefer-dynamic src/lib.rs && mv libgame.so target/libgame.so
 
 if [[ "$1" != "dll" ]]; then
     rustc --crate-type=bin --crate-name=rust_hero -l SDL2 -l pthread -g src/main.rs && mv rust_hero target/rust_hero

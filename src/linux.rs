@@ -1,15 +1,44 @@
-use libc::{size_t};
-use libc::{mmap, munmap, MAP_PRIVATE, MAP_FAILED, MAP_ANON};
-use libc::{PROT_READ, PROT_WRITE};
+use libc::{readlink, mode_t, size_t, S_IRUSR, S_IWUSR};
+use libc::{open, close, mmap, munmap, MAP_PRIVATE, MAP_FAILED, MAP_ANON};
+use libc::{O_RDONLY, O_WRONLY, O_CREAT, PROT_READ, PROT_WRITE, fstat, stat};
 use std::default::Default;
 use std::ptr;
 use std::mem;
+use std::path::PathBuf;
 use std::raw::Slice;
 use std::ffi::CString;
 
 use ffi::sdl::*;
+use ffi::linux;
 use common::util;
-use common::{Input, SoundBuffer, Button, GameMemory};
+use common::{GetSoundSamplesT, UpdateAndRenderT, Input, SoundBuffer, Button};
+use common::{VideoBuffer, GameMemory, ThreadContext};
+
+fn get_stat_struct() -> stat {
+    stat {
+        st_dev: 0,
+        st_ino: 0,
+        st_nlink: 0,
+        st_mode: 0,
+        st_uid: 0,
+        st_gid: 0,
+        __pad0: 0,
+        st_rdev: 0,
+        st_size: 0,
+        st_blksize: 0,
+        st_blocks: 0,
+        st_atime: 0,
+        st_atime_nsec: 0,
+        st_mtime: 0,
+        st_mtime_nsec: 0,
+        st_ctime: 0,
+        st_ctime_nsec: 0,
+        __unused: [0; 3],
+    }
+}
+
+const S_IRGRP: mode_t = 32;
+const S_IROTH: mode_t = 4;
 
 #[allow(unused_imports)]
 #[allow(dead_code)]
@@ -18,7 +47,7 @@ mod debug {
     use libc::{c_void, open, close, mmap, munmap, O_RDONLY, O_CREAT};
     use libc::{MAP_ANON, MAP_PRIVATE, MAP_FAILED, stat, write, read, fstat};
     use libc::{PROT_READ, PROT_WRITE, S_IRUSR, S_IWUSR};
-    use libc::{O_WRONLY, mode_t};
+    use libc::{O_WRONLY, mode_t, size_t};
     use std::ptr;
     use std::default::Default;
     use std::ffi::CString;
@@ -26,31 +55,6 @@ mod debug {
     use common::{ThreadContext, ReadFileResult};
     use common::util;
 
-    const S_IRGRP: mode_t = 32;
-    const S_IROTH: mode_t = 4;
-
-    fn get_stat_struct() -> stat {
-        stat {
-            st_dev: 0,
-            st_ino: 0,
-            st_nlink: 0,
-            st_mode: 0,
-            st_uid: 0,
-            st_gid: 0,
-            __pad0: 0,
-            st_rdev: 0,
-            st_size: 0,
-            st_blksize: 0,
-            st_blocks: 0,
-            st_atime: 0,
-            st_atime_nsec: 0,
-            st_mtime: 0,
-            st_mtime_nsec: 0,
-            st_ctime: 0,
-            st_ctime_nsec: 0,
-            __unused: [0; 3],
-        }
-    }
 
     pub fn platform_read_entire_file(context: &ThreadContext,
                                      filename: &str) -> Result<ReadFileResult, ()> {
@@ -61,12 +65,12 @@ mod debug {
             unsafe { open(name.as_ptr(), O_RDONLY, 0) };
 
         if handle != -1 {
-            let mut file_stat: stat = get_stat_struct();
+            let mut file_stat: stat = super::get_stat_struct();
             if unsafe { fstat(handle, &mut file_stat) != -1 } {
                 let size = util::safe_truncate_u64(file_stat.st_size as u64);
                 let memory: *mut c_void =
                     unsafe { mmap(ptr::null_mut(),
-                                  size as u64, PROT_READ,
+                                  size as size_t, PROT_WRITE,
                                   MAP_PRIVATE | MAP_ANON, -1, 0)  };
 
                 if !memory.is_null() {
@@ -91,11 +95,18 @@ mod debug {
                                         contents: memory,
                                       });
                     } else {
+                        println!("Reading the file contents failed! ({})", filename);
                         platform_free_file_memory(context, memory, size);
                     }
+                } else {
+                    println!("Not enough memory could be optained!");
                 }
+            } else {
+                println!("Fstat for the File was not successfull! ({})", filename);
             }
             unsafe { close(handle); }
+        } else { 
+            println!("The File could not be opened! ({})", filename);
         }
 
         result
@@ -116,7 +127,7 @@ mod debug {
         let name = CString::new(filename).unwrap();
         let handle =
             unsafe { open(name.as_ptr(), O_WRONLY | O_CREAT,
-                          S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) };
+                          S_IRUSR | S_IWUSR | super::S_IRGRP | super::S_IROTH) };
 
         if handle != -1 {
             let mut bytes_to_write = size;
@@ -157,6 +168,8 @@ const BYTES_PER_SAMPLE: i32 = 4;
 struct BackBuffer {
     pixels: *mut c_void,
     size: size_t,
+    width: i32,
+    height: i32,
     texture: *mut SDL_Texture,
     texture_width: i32,
 }
@@ -172,6 +185,89 @@ struct SdlSoundOutput {
     running_sample_idx: i32,
     secondary_buffer_size: i32,
     latency_sample_count: i32,
+}
+
+struct Game {
+    handle: *mut c_void,
+    get_sound_samples: GetSoundSamplesT, 
+    update_and_render: UpdateAndRenderT,
+    write_time: linux::timespec,
+}
+
+
+//Stub functons if none of the game Code could be loaded! 
+extern fn get_sound_samples_stub(_: &ThreadContext, _: &mut GameMemory, _: &mut SoundBuffer) { }
+extern fn update_and_render_stub(_: &ThreadContext, _: &mut GameMemory, _: &Input, _: &mut VideoBuffer) { } 
+
+
+fn get_last_write_time(file_path: &CString) -> linux::timespec {
+    let mut file_stat = get_stat_struct();
+    if unsafe { stat(file_path.as_ptr(), &mut file_stat) != -1 } {
+        linux::timespec {
+            tv_sec: file_stat.st_mtime,
+            tv_nsec: file_stat.st_mtime_nsec,
+        }
+    } else {
+        linux::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        }
+    }
+}
+
+fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
+
+    let in_fd = unsafe { open(game_so_name.as_ptr(), O_RDONLY, 0) };
+    let out_fd = unsafe { open(temp_so_name.as_ptr(), O_WRONLY | O_CREAT,
+                          S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) };
+
+    let mut result = Game {
+        handle: ptr::null_mut(),
+        get_sound_samples: get_sound_samples_stub,
+        update_and_render: update_and_render_stub,
+        write_time: linux::timespec { tv_sec: 0 , tv_nsec: 0 },
+    };
+    
+    let mut file_stat: stat = get_stat_struct();
+    if unsafe { fstat(in_fd, &mut file_stat) != -1 } {
+        let size = file_stat.st_size as u64;
+        unsafe { 
+            linux::sendfile(out_fd, in_fd, ptr::null_mut(), size); 
+            result.write_time = get_last_write_time(temp_so_name);
+            result.handle = linux::dlopen(temp_so_name.as_ptr(), linux::RTLD_LAZY);
+
+            if !result.handle.is_null() {
+                let get_sound_samples_name = CString::new("get_sound_samples").unwrap();
+                let update_and_render_name = CString::new("update_and_render").unwrap();
+
+                let get_sound_samples = linux::dlsym(result.handle, 
+                                                     get_sound_samples_name.as_ptr());
+                let update_and_render = linux::dlsym(result.handle, 
+                                                     update_and_render_name.as_ptr());
+                if !get_sound_samples.is_null() && !update_and_render.is_null() {
+                    result.get_sound_samples = mem::transmute(get_sound_samples);
+                    result.update_and_render = mem::transmute(update_and_render);
+                }
+            }
+        }
+        
+    }
+
+    unsafe { 
+        close(in_fd);
+        close(out_fd);
+    }
+
+    result
+}
+
+fn unload_game_functions(game: &mut Game) {
+    if !game.handle.is_null() {
+        unsafe { linux::dlclose(game.handle); }
+        game.handle = ptr::null_mut();
+    }
+    game.get_sound_samples = get_sound_samples_stub;
+    game.update_and_render = update_and_render_stub;
 }
 
 extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8,
@@ -281,6 +377,8 @@ fn resize_texture(renderer: *mut SDL_Renderer, buffer: &mut BackBuffer,
                                        SDL_TEXTUREACCESS_STREAMING,
                                        width as c_int, height as c_int) };
     buffer.texture_width = width;
+    buffer.width = width;
+    buffer.height = height;
     let size = (width * height * BYTES_PER_PIXEL as i32) as size_t;
     buffer.pixels = unsafe { mmap(ptr::null_mut(), size, PROT_READ | PROT_WRITE,
                                   MAP_PRIVATE | MAP_ANON, -1, 0) };
@@ -389,6 +487,32 @@ fn close_controllers(controllers: [*mut SDL_GameController; MAX_CONTROLLERS as u
     }
 }
 
+fn get_exe_path() -> PathBuf {
+
+    let name = CString::new("/proc/self/exe").unwrap();
+    let mut buffer: [i8; linux::MAX_PATH] = [0; linux::MAX_PATH];
+    let name_length = unsafe { 
+        readlink(name.as_ptr(), buffer.as_mut_ptr(),
+                           linux::MAX_PATH as size_t)
+    };
+    let result = unsafe { String::from_raw_parts(buffer.as_ptr() as *mut u8, 
+                                                 name_length as usize,
+                                                 (name_length + 10) as usize) };
+
+    PathBuf::from(result.clone())
+}
+
+fn compare_file_time(time1: &linux::timespec, time2: &linux::timespec) -> i8 {
+    if (time1.tv_sec == time2.tv_sec) && (time1.tv_nsec == time2.tv_nsec) {
+        0
+    } else if (time1.tv_sec > time2.tv_sec) || 
+              ((time1.tv_sec == time2.tv_sec) && (time1.tv_nsec > time2.tv_nsec)) {
+        -1
+    } else {
+        1
+    }
+}
+
 #[main]
 fn main() {
     if unsafe { SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER 
@@ -415,6 +539,8 @@ fn main() {
         let mut buffer = BackBuffer {
                            pixels: ptr::null_mut(),
                            size: 0,
+                           width: 0,
+                           height: 0,
                            texture: ptr::null_mut(),
                            texture_width: 0,
                         };
@@ -488,9 +614,35 @@ fn main() {
                 platform_write_entire_file: debug::platform_write_entire_file,
                 platform_free_file_memory: debug::platform_free_file_memory,
             };
+        
+        let mut exe_dirname = get_exe_path();
+        exe_dirname.pop();
+
+        let mut game_so_path = exe_dirname.clone();
+        game_so_path.push("libgame.so");
+
+        let mut temp_so_path = exe_dirname.clone();
+        temp_so_path.push("libgame_temp.so");
+
+        let game_so_string = CString::new(game_so_path.to_str().unwrap()).unwrap();
+        let temp_so_string = CString::new(temp_so_path.to_str().unwrap()).unwrap();
+        
+        let mut game = load_game_functions(&game_so_string, &temp_so_string);
+
+        let thread_context = ThreadContext;
+
+        let mut new_input: &mut Input = &mut Default::default();
+        let mut old_input: &mut Input = &mut Default::default();
 
         let mut running = true;
         while running {
+            
+            let new_write_time = get_last_write_time(&game_so_string);
+            if compare_file_time(&game.write_time, &new_write_time) != 0 {
+                unload_game_functions(&mut game);
+                game = load_game_functions(&game_so_string, &temp_so_string);
+            }
+
             let mut event: SDL_Event = Default::default();
             while unsafe { SDL_PollEvent(&mut event) } != 0 {
                 running = handle_event(&event, &mut buffer);
@@ -543,6 +695,21 @@ fn main() {
                 }
             }
 
+            let mut video_buf = VideoBuffer {
+                memory: unsafe { mem::transmute(
+                                Slice { data: buffer.pixels as *const u32, 
+                                        len: (buffer.size/BYTES_PER_PIXEL as u64) as usize}
+                                    )},
+                width: buffer.width as usize,
+                height: buffer.height as usize,
+                pitch: (buffer.width*BYTES_PER_PIXEL as i32) as usize,
+            };
+
+            (game.update_and_render)(&thread_context,
+                                     &mut game_memory,
+                                     new_input,
+                                     &mut video_buf);
+
             unsafe { SDL_LockAudio(); }
             let byte_to_lock = (sound_output.running_sample_idx * BYTES_PER_SAMPLE)
                                 % sound_output.secondary_buffer_size;
@@ -557,14 +724,20 @@ fn main() {
                     target_cursor - byte_to_lock
                 };
             unsafe { SDL_UnlockAudio(); }
-            let sound_buffer = SoundBuffer {
+            let mut sound_buffer = SoundBuffer {
                 samples: &mut sound_samples[..bytes_to_write as usize/
                                                     mem::size_of::<i16>()],
                 samples_per_second: SAMPLES_PER_SECOND as u32,
             };
 
 
+            (game.get_sound_samples)(&thread_context,
+                                     &mut game_memory,
+                                     &mut sound_buffer);
+
+
             update_window(renderer, &mut buffer);
+            mem::swap(new_input, old_input);
         }
 
         close_controllers(controllers, controller_num);

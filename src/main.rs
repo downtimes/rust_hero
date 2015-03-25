@@ -2,6 +2,7 @@
 #![feature(main)]
 #![feature(libc)]
 #![feature(core)]
+#![feature(convert)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 extern crate libc;
@@ -16,6 +17,7 @@ mod win32;
 #[cfg(target_os="linux")]
 mod ffi {
     pub mod sdl;
+    pub mod linux;
 }
 #[cfg(target_os="linux")]
 mod linux;

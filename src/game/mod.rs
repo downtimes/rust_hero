@@ -112,7 +112,11 @@ struct GameState {
 
 fn generate_sound(buffer: &mut SoundBuffer, tone_frequency: u32, tsine: &mut f32) {
     let volume: f32 = 3000.0;
-    let wave_period = buffer.samples_per_second / tone_frequency;
+    let wave_period = if tone_frequency != 0 {
+        buffer.samples_per_second / tone_frequency
+    } else {
+        512f32
+    };
 
     debug_assert!(buffer.samples.len() % 2 == 0);
     for sample in buffer.samples.chunks_mut(2) {

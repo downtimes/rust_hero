@@ -3,6 +3,7 @@
 
 pub use libc::{c_int, c_char, c_void};
 use std::default::Default;
+use std::ptr;
 
 pub type SDL_Keycode = i32;
 pub type SDL_AudioFormat = u16;
@@ -96,6 +97,27 @@ pub struct SDL_WindowEvent {
     pub padding3: u8,
     pub data1: i32,
     pub data2: i32,
+}
+
+#[repr(C)]
+pub struct SDL_DisplayMode {
+    pub format: u32,
+    pub w: c_int,
+    pub h: c_int,
+    pub refresh_rate: c_int,
+    pub driverdata: *mut c_void,
+}
+
+impl Default for SDL_DisplayMode {
+    fn default() -> SDL_DisplayMode {
+        SDL_DisplayMode {
+            format: 0,
+            w: 0,
+            h: 0,
+            refresh_rate: 0,
+            driverdata: ptr::null_mut(),
+        }
+    }
 }
 
 #[repr(C)]
@@ -262,6 +284,12 @@ extern "C" {
     pub fn SDL_OpenAudio(desired: *mut SDL_AudioSpec,
                          obtained: *mut SDL_AudioSpec) -> c_int;
     pub fn SDL_PauseAudio(pause_on: c_int);
+    pub fn SDL_GetWindowDisplayIndex(window: *mut SDL_Window) -> c_int;
+    pub fn SDL_GetDesktopDisplayMode(display: c_int,
+                                     mode: *mut SDL_DisplayMode) -> c_int;
+    pub fn SDL_GetPerformanceCounter() -> u64;
+    pub fn SDL_GetPerformanceFrequency() -> u64;
+    pub fn SDL_Delay(ms: u32);
     pub fn SDL_LockAudio();
     pub fn SDL_UnlockAudio();
 }

@@ -513,6 +513,23 @@ fn compare_file_time(time1: &linux::timespec, time2: &linux::timespec) -> i8 {
     }
 }
 
+fn get_seconds_elapsed(old_counter: u64, new_counter: u64, frequency: u64) -> f32 {
+    (new_counter - old_counter) as f32 / frequency as f32
+}
+
+fn get_window_refresh_rate(window: *mut SDL_Window) -> c_int {
+    let mut mode: SDL_DisplayMode = Default::default();
+    let index = unsafe { SDL_GetWindowDisplayIndex(window) };
+
+    if unsafe { SDL_GetDesktopDisplayMode(index, &mut mode) != 0} {
+        60
+    } else if mode.refresh_rate == 0 {
+        60
+    } else {
+        mode.refresh_rate
+    }
+}
+
 #[main]
 fn main() {
     if unsafe { SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER 
@@ -545,6 +562,10 @@ fn main() {
                            texture_width: 0,
                         };
         resize_texture(renderer, &mut buffer, WINDOW_WIDTH, WINDOW_HEIGHT);
+
+        let monitor_refresh_rate = get_window_refresh_rate(window); 
+        let game_refresh_rate = monitor_refresh_rate / 2;
+        let target_seconds_per_frame = 1.0 / game_refresh_rate as f32;
 
         let mut controllers =
             [ptr::null_mut::<SDL_GameController>(); MAX_CONTROLLERS as usize];
@@ -614,6 +635,8 @@ fn main() {
                 platform_write_entire_file: debug::platform_write_entire_file,
                 platform_free_file_memory: debug::platform_free_file_memory,
             };
+
+        let frequency = unsafe { SDL_GetPerformanceFrequency() };
         
         let mut exe_dirname = get_exe_path();
         exe_dirname.pop();
@@ -634,6 +657,7 @@ fn main() {
         let mut new_input: &mut Input = &mut Default::default();
         let mut old_input: &mut Input = &mut Default::default();
 
+        let mut last_counter = unsafe { SDL_GetPerformanceCounter() };
         let mut running = true;
         while running {
             
@@ -734,6 +758,25 @@ fn main() {
             (game.get_sound_samples)(&thread_context,
                                      &mut game_memory,
                                      &mut sound_buffer);
+
+
+            let time_elapsed = get_seconds_elapsed(last_counter,
+                                   unsafe { SDL_GetPerformanceCounter()},
+                                   frequency);
+            if time_elapsed < target_seconds_per_frame {
+                let sleep_time = ((target_seconds_per_frame - time_elapsed) * 1000.0) - 1.0;
+                if sleep_time as u32 > 0 {
+                    unsafe { SDL_Delay(sleep_time as u32); }
+                }
+
+                //busy loop for the rest of the last second
+                while get_seconds_elapsed(last_counter,
+                                          unsafe { SDL_GetPerformanceCounter() },
+                                          frequency) < target_seconds_per_frame {
+                }
+            }
+
+            last_counter = unsafe { SDL_GetPerformanceCounter() };
 
 
             update_window(renderer, &mut buffer);

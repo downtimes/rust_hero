@@ -257,7 +257,11 @@ impl Window {
         let mut res: LRESULT = 0;
 
         match message {
-            WM_DESTROY => self.running = false,
+            WM_DESTROY => {
+                self.running = false;
+                unsafe { PostQuitMessage(0); }
+            },
+
             WM_CLOSE => self.running = false,
 
             WM_SYSKEYDOWN
@@ -266,10 +270,10 @@ impl Window {
             | WM_KEYUP => debug_assert!(false, "There sould be no key-messages in\
                                                 the windows message callback!"),
 
-            WM_PAsize => { 
-                let mut pasize = Default::default(); 
+            WM_PAINT => { 
+                let mut paint = Default::default(); 
 
-                let context = unsafe { BeginPaint(self.handle, &mut pasize) };
+                let context = unsafe { BeginPaint(self.handle, &mut paint) };
                 if context.is_null() {
                     panic!("BeginPaint failed!");
                 }
@@ -277,7 +281,7 @@ impl Window {
                 let (width, height) = get_client_dimensions(self.handle).unwrap();
                 unsafe { 
                     blit_buffer_to_window(context, &self.backbuffer, width, height);
-                    EndPaint(self.handle, &pasize);
+                    EndPaint(self.handle, &paint);
                 }
             },
 
@@ -1277,7 +1281,12 @@ fn main() {
             debug_assert!(safe_write_cursor >= play_cursor);
 
             let expected_sound_bytes_per_frame = SOUND_BYTES_PER_SECOND / game_refresh_rate as u32;
-            let seconds_to_flip = target_seconds_per_frame - from_begin_to_audio;
+            let seconds_to_flip = 
+                if target_seconds_per_frame > from_begin_to_audio {
+                    target_seconds_per_frame - from_begin_to_audio
+                } else {
+                    0.0f32
+                };
             let expected_bytes_to_flip = (expected_sound_bytes_per_frame as f32 * 
                                         (seconds_to_flip / target_seconds_per_frame)) as DWORD;
             let expected_frame_boundary_byte = play_cursor + expected_bytes_to_flip;

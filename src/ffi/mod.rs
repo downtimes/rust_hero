@@ -42,7 +42,7 @@ pub type LRESULT = pointer::LONG_PTR;
 pub type WPARAM = pointer::UINT_PTR;
 pub type ATOM = WORD;
 pub type LPMSG = *mut MSG;
-pub type LPPAsizeSTRUCT = *mut PAsizeSTRUCT;
+pub type LPPAINTSTRUCT = *mut PAINTSTRUCT;
 pub type HDC = HANDLE;
 pub type LPRECT = *mut RECT;
 pub type LPTSTR = *mut c_char;
@@ -59,7 +59,7 @@ pub const WM_CREATE: c_uint = 0x0001;
 pub const WM_CLOSE: c_uint = 0x0010;
 pub const WM_SIZE: c_uint = 0x0005;
 pub const WM_DESTROY: c_uint = 0x0002;
-pub const WM_PAsize: c_uint = 0x000F;
+pub const WM_PAINT: c_uint = 0x000F;
 pub const WM_ACTIVATEAPP: c_uint = 0x001C;
 pub const WM_QUIT: c_uint = 0x0012;
 pub const WM_KEYDOWN: c_uint = 0x0100;
@@ -291,7 +291,7 @@ impl Default for MSG{
 }
 
 #[repr(C)]
-pub struct PAsizeSTRUCT {
+pub struct PAINTSTRUCT {
     pub hdc: HDC,
     pub fErase: BOOL,
     pub rcPasize: RECT,
@@ -300,9 +300,9 @@ pub struct PAsizeSTRUCT {
     pub rgbReserved: [BYTE; 32],
 }
 
-impl Default for PAsizeSTRUCT {
-    fn default() -> PAsizeSTRUCT {
-        PAsizeSTRUCT{hdc: 0 as HDC,
+impl Default for PAINTSTRUCT {
+    fn default() -> PAINTSTRUCT {
+        PAINTSTRUCT{hdc: 0 as HDC,
                     fErase: 0 as BOOL,
                     rcPasize: Default::default(),
                     fRestore: 0 as BOOL,
@@ -386,6 +386,7 @@ impl Default for BITMAPINFO {
 
 //user32 and kernel32
 extern "system" {
+    pub fn PostQuitMessage(nExitCode: c_int);
     pub fn GetModuleHandleA(lpModuleName: LPCTSTR) -> HMODULE;
     pub fn DefWindowProcA(window: HWND, message: c_uint, 
                          wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -437,8 +438,8 @@ extern "system" {
 
 // gdi32
 extern "system" {
-    pub fn BeginPaint(hwnd: HWND, lpPasize: LPPAsizeSTRUCT) -> HDC;
-    pub fn EndPaint(hwnd: HWND, lpPasize: *const PAsizeSTRUCT) -> BOOL;
+    pub fn BeginPaint(hwnd: HWND, lpPasize: LPPAINTSTRUCT) -> HDC;
+    pub fn EndPaint(hwnd: HWND, lpPasize: *const PAINTSTRUCT) -> BOOL;
     pub fn PatBlt(hdc: HDC, nXLeft: c_int, nYLeft: c_int, nWidth: c_int, nHeight: c_int,
                   dwRop: DWORD) -> BOOL;
     pub fn CreateDIBSection(hdc: HDC, pbmi: *const BITMAPINFO, iUsage: c_uint,

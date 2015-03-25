@@ -12,7 +12,7 @@ use ffi::sdl::*;
 use ffi::linux;
 use common::util;
 use common::{GetSoundSamplesT, UpdateAndRenderT, Input, SoundBuffer, Button};
-use common::{VideoBuffer, GameMemory, ThreadContext};
+use common::{ControllerInput, VideoBuffer, GameMemory, ThreadContext};
 
 fn get_stat_struct() -> stat {
     stat {
@@ -329,6 +329,58 @@ fn process_game_controller_axis(value: i16, dead_zone: i16) -> f32 {
     result
 }
 
+fn fill_sound_buffer(output: &mut SdlSoundOutput, byte_to_lock: i32,
+                     bytes_to_write: i32, buffer: &SoundBuffer,
+                     ring_buffer: &mut SdlAudioRingBuffer) {
+
+    let region: *mut u8 = unsafe { ring_buffer.data
+                                        .offset(byte_to_lock as isize) };
+
+    let region_size = 
+        if bytes_to_write + byte_to_lock > output.secondary_buffer_size {
+            output.secondary_buffer_size - byte_to_lock
+        } else {
+            bytes_to_write
+        };
+
+    let region2: *mut u8 = ring_buffer.data;
+    let region2_size = bytes_to_write - region_size;
+
+    let mut samples = buffer.samples.as_ptr();
+
+    let region_sample_count = region_size/BYTES_PER_SAMPLE;
+    let mut sample_out = region as *mut i16;
+    for _ in 0..region_sample_count {
+        unsafe { 
+            *sample_out = *samples;
+            sample_out = sample_out.offset(1);
+            samples = samples.offset(1);
+    
+            *sample_out = *samples;
+            sample_out = sample_out.offset(1);
+            samples = samples.offset(1);
+
+            output.running_sample_idx += 1;
+        }
+    }
+
+    let region2_sample_count = region2_size/BYTES_PER_SAMPLE;
+    let mut sample_out = region2 as *mut i16;
+    for _ in 0..region2_sample_count {
+        unsafe { 
+            *sample_out = *samples;
+            sample_out = sample_out.offset(1);
+            samples = samples.offset(1);
+    
+            *sample_out = *samples;
+            sample_out = sample_out.offset(1);
+            samples = samples.offset(1);
+
+            output.running_sample_idx += 1;
+        }
+    }
+}
+
 fn init_audio(samples_per_second: i32, buffer_size: i32,
               ring_buffer: &mut SdlAudioRingBuffer) {
     let mut audio_settings = SDL_AudioSpec {
@@ -398,7 +450,15 @@ fn update_window(renderer: *mut SDL_Renderer,
     }
 }
 
-fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer) -> bool {
+fn process_key_press(button: &mut Button, is_down: bool) {
+    debug_assert!(button.ended_down != is_down);
+    button.ended_down = is_down;
+    button.half_transitions += 1;
+}
+
+fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer, 
+                keyboard: &mut ControllerInput) -> bool {
+
     let mut keep_running = true;
 
     let event_type = event._type();
@@ -442,7 +502,18 @@ fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer) -> bool {
                     };
                 match code {
                     SDLK_F4 => if alt_key_down { keep_running = false; },
-                    SDLK_w => println!("w"),
+                    SDLK_w => process_key_press(&mut keyboard.move_up, is_down),
+                    SDLK_a => process_key_press(&mut keyboard.move_left, is_down),
+                    SDLK_s => process_key_press(&mut keyboard.move_down, is_down),
+                    SDLK_d => process_key_press(&mut keyboard.move_right, is_down),
+                    SDLK_q => process_key_press(&mut keyboard.left_shoulder, is_down),
+                    SDLK_e => process_key_press(&mut keyboard.right_shoulder, is_down),
+                    SDLK_UP => process_key_press(&mut keyboard.action_up, is_down),
+                    SDLK_LEFT => process_key_press(&mut keyboard.action_left, is_down),
+                    SDLK_RIGHT => process_key_press(&mut keyboard.action_right, is_down),
+                    SDLK_DOWN => process_key_press(&mut keyboard.action_down, is_down),
+                    SDLK_ESCAPE => {},
+                    SDLK_SPACE => {},
                     _ => (),
                 }
             }
@@ -572,7 +643,7 @@ fn main() {
 
         let controller_num = open_controllers(&mut controllers);
 
-        let sound_output = SdlSoundOutput {
+        let mut sound_output = SdlSoundOutput {
             running_sample_idx: 0,
             secondary_buffer_size: SAMPLES_PER_SECOND * BYTES_PER_SAMPLE,
             latency_sample_count: SAMPLES_PER_SECOND / 15,
@@ -668,8 +739,12 @@ fn main() {
             }
 
             let mut event: SDL_Event = Default::default();
+            
+            new_input.controllers[0] = old_input.controllers[0];
+            new_input.controllers[0].is_connected = true;
+            new_input.controllers[0].zero_half_transitions();
             while unsafe { SDL_PollEvent(&mut event) } != 0 {
-                running = handle_event(&event, &mut buffer);
+                running = handle_event(&event, &mut buffer, &mut new_input.controllers[0]);
             }
 
             for controller_idx in 0..controller_num as usize {
@@ -724,9 +799,9 @@ fn main() {
                                 Slice { data: buffer.pixels as *const u32, 
                                         len: (buffer.size/BYTES_PER_PIXEL as u64) as usize}
                                     )},
-                width: buffer.width as usize,
-                height: buffer.height as usize,
-                pitch: (buffer.width*BYTES_PER_PIXEL as i32) as usize,
+                width: (buffer.width*BYTES_PER_PIXEL as i32) as usize,
+                height: (buffer.height*BYTES_PER_PIXEL as i32) as usize,
+                pitch: (buffer.width as i32) as usize,
             };
 
             (game.update_and_render)(&thread_context,
@@ -758,6 +833,9 @@ fn main() {
             (game.get_sound_samples)(&thread_context,
                                      &mut game_memory,
                                      &mut sound_buffer);
+
+            fill_sound_buffer(&mut sound_output, byte_to_lock, bytes_to_write,
+                              &sound_buffer, &mut ring_buffer);
 
 
             let time_elapsed = get_seconds_elapsed(last_counter,

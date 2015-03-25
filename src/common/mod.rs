@@ -112,7 +112,6 @@ impl ControllerInput {
     }
 }
 
-#[allow(dead_code)]
 pub struct ThreadContext;
 
 pub struct Input {

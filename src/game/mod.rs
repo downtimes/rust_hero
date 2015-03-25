@@ -5,7 +5,7 @@ use std::mem;
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input, ReadFileResult};
 use common::{ThreadContext};
 
-// ============= The public sizeerface ===============
+// ============= The public interface ===============
 //Has to be very low latency!
 #[no_mangle]
 pub extern fn get_sound_samples(_context: &ThreadContext,
@@ -95,7 +95,7 @@ pub extern fn update_and_render(context: &ThreadContext,
     }
 }
 
-// ======== End of the public sizeerface =========
+// ======== End of the public interface =========
 
 
 struct GameState {
@@ -115,7 +115,7 @@ fn generate_sound(buffer: &mut SoundBuffer, tone_frequency: u32, tsine: &mut f32
     let wave_period = if tone_frequency != 0 {
         buffer.samples_per_second as f32 / tone_frequency as f32
     } else {
-        512f32
+        buffer.samples_per_second as f32 / 512f32
     };
 
     debug_assert!(buffer.samples.len() % 2 == 0);

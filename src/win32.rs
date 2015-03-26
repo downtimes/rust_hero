@@ -4,6 +4,7 @@ use std::raw::Slice;
 use std::mem; 
 use std::i16;
 use std::ffi::CString;
+use std::iter::FromIterator;
 
 use common::util;
 use common::{Input, GameMemory, SoundBuffer, ControllerInput, Button, VideoBuffer};
@@ -927,22 +928,18 @@ fn get_seconds_elapsed(start: i64, end: i64, frequency: i64) -> f32 {
 }
 
 
-//TODO: total balla balla somewhere in here is a BIG BUG (linux equivalent too)
-//which leads to a total crash depending on how big the capacity of the 
-//String::from_raw_parts function parameter is chosen....
 fn get_exe_path() -> PathBuf {
     let mut buffer: [i8; MAX_PATH] = [0; MAX_PATH];
-    let name_length = unsafe { 
+    unsafe { 
         //TODO: remove all the occurances of MAX_PATH because on NTFS paths
         //can actually be longer than this constant!
         GetModuleFileNameA(ptr::null_mut(), buffer.as_mut_ptr(),
-                           MAX_PATH as u32)
-    };
-    let result = unsafe { String::from_raw_parts(buffer.as_ptr() as *mut u8, 
-                                                 name_length as usize,
-                                                 (name_length + 20) as usize) };
-
-    PathBuf::from(result)
+                           MAX_PATH as u32);
+    }
+    //TODO: I'm pretty sure this doesn't work with anythin except ascii
+    //characters for the path at the moment!
+    let string = String::from_iter(buffer.iter().map(|&x| x as u8 as char));
+    PathBuf::from(string)
 }
 
 fn initialize_replay(exe_dirname: &PathBuf, file_size: usize, 

@@ -776,11 +776,20 @@ fn resize_dib_section(buffer: &mut Backbuffer, width: c_int, height: c_int) {
     }
 }
 
-fn blit_buffer_to_window(context: HDC, buffer: &Backbuffer, _client_width: c_int,
-                 _client_height: c_int) {
+fn blit_buffer_to_window(context: HDC, buffer: &Backbuffer, client_width: c_int,
+                 client_height: c_int) {
+
+    let offset_x = 10;
+    let offset_y = 10;
+
     unsafe {
+        PatBlt(context, 0, 0, client_width, offset_y, BLACKNESS);
+        PatBlt(context, 0, offset_y + buffer.height, client_width, client_height, BLACKNESS);
+        PatBlt(context, 0, 0, offset_x, client_height, BLACKNESS);
+        PatBlt(context, offset_x + buffer.width, 0, client_width, client_height, BLACKNESS);
+
         StretchDIBits(context,
-                 0, 0, buffer.width, buffer.height,
+                 offset_x, offset_y, buffer.width, buffer.height,
                  0, 0, buffer.width, buffer.height,
                  buffer.memory as *const c_void,
                  &buffer.info,

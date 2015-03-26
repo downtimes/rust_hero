@@ -41,7 +41,6 @@ pub struct ReadFileResult {
     pub contents: *mut c_void,
 }
 
-#[allow(dead_code)]
 pub struct VideoBuffer<'a> {
     //Buffer memory is assumed to be BB GG RR xx
     pub memory: &'a mut [u32],
@@ -50,7 +49,6 @@ pub struct VideoBuffer<'a> {
     pub pitch: usize,
 }
 
-#[allow(dead_code)]
 pub struct SoundBuffer<'a> {
     //Samples memory is assumed to be two channels interleaved
     pub samples: &'a mut [i16],

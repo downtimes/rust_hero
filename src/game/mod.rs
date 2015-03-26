@@ -104,10 +104,10 @@ pub extern fn update_and_render(_context: &ThreadContext,
     let world = World {
                     tile_count_x: TILEMAP_COUNT_X,
                     tile_count_y: TILEMAP_COUNT_Y,
-                    upper_left_x: -30.0,
+                    tile_side_pixels: 60,
+                    upper_left_x: -60.0/2.0,
                     upper_left_y: 0.0,
-                    tile_width: 60.0,
-                    tile_height: 60.0,
+                    tile_side_meters: 1.4,
                     tilemap_count_x: 2,
                     tilemap_count_y: 2,
                     tilemaps: &tilemaps[..]
@@ -115,8 +115,8 @@ pub extern fn update_and_render(_context: &ThreadContext,
 
     let current_map = world.get_tilemap(state.player_tilemap_x, state.player_tilemap_y);
 
-    let player_width = 0.75 * world.tile_width;
-    let player_height = world.tile_height;
+    let player_width = 0.75 * world.tile_side_pixels as f32;
+    let player_height = world.tile_side_pixels as f32;
 
     for controller in input.controllers.iter() {
 
@@ -170,8 +170,8 @@ pub extern fn update_and_render(_context: &ThreadContext,
                 state.player_tilemap_x = new_position.tilemap_x;
                 state.player_tilemap_y = new_position.tilemap_y;
 
-                state.player_x = world.upper_left_x + new_position.tile_x as f32 * world.tile_width + new_position.x;
-                state.player_y = world.upper_left_y + new_position.tile_y as f32 * world.tile_height + new_position.y;
+                state.player_x = world.upper_left_x + new_position.tile_x as f32 * world.tile_side_pixels as f32 + new_position.x;
+                state.player_y = world.upper_left_y + new_position.tile_y as f32 * world.tile_side_pixels as f32 + new_position.y;
             }
         }
     }
@@ -190,10 +190,10 @@ pub extern fn update_and_render(_context: &ThreadContext,
                 } else {
                     1.0
                 };
-            let min_x = world.upper_left_x + column as f32 * world.tile_width;
-            let min_y = world.upper_left_y + row as f32 * world.tile_height;
-            let max_x = min_x + world.tile_width;
-            let max_y = min_y + world.tile_height;
+            let min_x = world.upper_left_x + column as f32 * world.tile_side_pixels as f32;
+            let min_y = world.upper_left_y + row as f32 * world.tile_side_pixels as f32;
+            let max_x = min_x + world.tile_side_pixels as f32;
+            let max_y = min_y + world.tile_side_pixels as f32;
             graphics::draw_rect(video_buffer, min_x, min_y, max_x, max_y,
                                 color, color, color);
         }
@@ -252,11 +252,11 @@ impl RawPosition {
 
         let rel_x = self.x - world.upper_left_x;
         let rel_y = self.y - world.upper_left_y;
-        let mut tile_x = (rel_x / world.tile_width).floor() as i32;
-        let mut tile_y = (rel_y / world.tile_height).floor() as i32;
+        let mut tile_x = (rel_x / world.tile_side_pixels as f32).floor() as i32;
+        let mut tile_y = (rel_y / world.tile_side_pixels as f32).floor() as i32;
 
-        result.x = rel_x - tile_x as f32 * world.tile_width;
-        result.y = rel_y - tile_y as f32 * world.tile_height;
+        result.x = rel_x - tile_x as f32 * world.tile_side_pixels as f32;
+        result.y = rel_y - tile_y as f32 * world.tile_side_pixels as f32;
 
         if tile_x < 0 {
             tile_x = world.tile_count_x as i32 + tile_x;
@@ -292,10 +292,11 @@ struct World<'a> {
     
     upper_left_x: f32,
     upper_left_y: f32,
-    tile_width: f32,
-    tile_height: f32,
     tile_count_x: usize,
     tile_count_y: usize,
+
+    tile_side_pixels: u32,
+    tile_side_meters: f32,
     
     tilemaps: &'a[TileMap<'a>],
 }

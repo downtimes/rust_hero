@@ -125,6 +125,8 @@ pub struct Input {
     pub mouse_x1: Button,
     pub mouse_x2: Button,
 
+    pub delta_time: f32,
+
     //TODO: see if it fits rustaceans better if we have an Option of
     //ControllerInputs here?
     //The 0 Controller is the keyboard all the others are possible joysticks
@@ -143,6 +145,9 @@ impl Default for Input {
             mouse_m: Default::default(),
             mouse_x1: Default::default(),
             mouse_x2: Default::default(),
+
+            delta_time: 0.0,
+
             controllers: [Default::default(); 5],
         }
     }

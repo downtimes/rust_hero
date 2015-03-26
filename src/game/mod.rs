@@ -4,6 +4,8 @@ use std::mem;
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input, ReadFileResult};
 use common::{ThreadContext};
 
+mod graphics;
+
 // ============= The public interface ===============
 //Has to be very low latency!
 #[no_mangle]
@@ -23,67 +25,104 @@ pub extern fn update_and_render(_context: &ThreadContext,
 
     debug_assert!(mem::size_of::<GameState>() <= game_memory.permanent.len());
 
-    let _state: &mut GameState = 
+    let state: &mut GameState = 
         unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
 
     if !game_memory.initialized {
+        state.player_x = 100.0;
+        state.player_y = 100.0;
+
         game_memory.initialized = true;
     }
     
     for controller in input.controllers.iter() {
 
+        //Analog movement
         if controller.is_analog() {
 
+        //Digital movement
         } else {
-        }
+            let mut dplayer_x = 0.0; //In Pixels per second
+            let mut dplayer_y = 0.0;
+            
+            if controller.move_up.ended_down {
+                dplayer_y = -1.0;
+            }
+            if controller.move_down.ended_down {
+                dplayer_y = 1.0;
+            }
+            if controller.move_left.ended_down {
+                dplayer_x = -1.0;
+            }
+            if controller.move_right.ended_down {
+                dplayer_x = 1.0;
+            }
 
+            dplayer_x *= 64.0;
+            dplayer_y *= 64.0;
+
+            state.player_x += dplayer_x * input.delta_time;
+            state.player_y += dplayer_y * input.delta_time;
+        }
     }
+
+    let tilemap: [[u32; 17]; 9] = 
+        [
+            [ 1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1, 1 ],
+            [ 1, 1, 0, 0,   0, 1, 0, 0,   0, 0, 0, 0,   0, 1, 0, 0, 1 ],
+            [ 1, 1, 0, 0,   0, 0, 0, 0,   1, 0, 0, 0,   0, 0, 1, 0, 1 ],
+            [ 1, 0, 0, 0,   0, 0, 0, 0,   1, 0, 0, 0,   0, 0, 0, 0, 1 ],
+            [ 0, 0, 0, 0,   0, 1, 0, 0,   1, 0, 0, 0,   0, 0, 0, 0, 0 ],
+            [ 1, 1, 0, 0,   0, 1, 0, 0,   1, 0, 0, 0,   0, 1, 0, 0, 1 ],
+            [ 1, 0, 0, 0,   0, 1, 0, 0,   1, 0, 0, 0,   1, 0, 0, 0, 1 ],
+            [ 1, 1, 1, 1,   1, 0, 0, 0,   0, 0, 0, 0,   0, 1, 0, 0, 1 ],
+            [ 1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1, 1 ]
+        ];
 
     let buffer_width = video_buffer.width;
     let buffer_height = video_buffer.height;
-    draw_quad(video_buffer, 0.0, 0.0, buffer_width as f32, buffer_height as f32,
-              0x00FF00FF);
-    draw_quad(video_buffer, -1.0, -10.0, -40.0, -40.0, 0x00FFFFFF);
+    graphics::draw_rect(video_buffer, 0.0, 0.0, buffer_width as f32, buffer_height as f32,
+                        1.0, 0.0, 1.0);
+
+    let upper_left_x = -30.0;
+    let upper_left_y = 0.0;
+    let tile_width = 60.0;
+    let tile_height = 60.0;
+    
+    for row in 0..tilemap.len() {
+        for column in 0..tilemap[row].len() {
+            let elem = tilemap[row][column];
+            let color = 
+                if elem == 0 {
+                    0.5
+                } else {
+                    1.0
+                };
+            let min_x = upper_left_x + column as f32 * tile_width;
+            let min_y = upper_left_y + row as f32 * tile_height;
+            let max_x = min_x + tile_width;
+            let max_y = min_y + tile_height;
+            graphics::draw_rect(video_buffer, min_x, min_y, max_x, max_y,
+                                color, color, color);
+        }
+    }
+
+    let player_width = 0.75 * tile_width;
+    let player_height = tile_height;
+    let player_top = state.player_y - player_height;
+    let player_left = state.player_x - 0.5 * player_width;
+    graphics::draw_rect(video_buffer, 
+                        player_left, player_top,
+                        player_left + player_width, player_top + player_height,
+                        1.0, 1.0, 0.0);
+
 }
 
 // ======== End of the public interface =========
 
 
-struct GameState; 
-
-
-
-
-fn draw_quad(buffer: &mut VideoBuffer, mut min_x: f32, mut min_y: f32, mut max_x: f32,
-             mut max_y: f32, color: u32) {
-    if min_x < 0.0 {
-        min_x = 0.0;
-    }
-    if min_y < 0.0 {
-        min_y = 0.0;
-    }
-    if max_x > buffer.width as f32 {
-        max_x = buffer.width as f32;
-    }
-    if max_y > buffer.height as f32{
-        max_y = buffer.height as f32;
-    }
-
-    let width = if min_x < max_x {
-        (max_x - min_x) as usize
-    } else {
-        0
-    };
-    let height = if min_y < max_y {
-        (max_y - min_y) as usize
-    } else {
-        0
-    };
-
-    for row in buffer.memory.chunks_mut(buffer.pitch).skip(min_y as usize).take(height) {
-        for pixel in row.iter_mut().skip(min_x as usize).take(width) {
-           *pixel = color; 
-        }
-    }
-}
+struct GameState {
+    player_x: f32,
+    player_y: f32,
+} 
 

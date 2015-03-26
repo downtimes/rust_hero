@@ -159,8 +159,8 @@ mod debug {
 const MAX_CONTROLLERS: c_int = 4;
 
 const BYTES_PER_PIXEL: u32 = 4;
-const WINDOW_WIDTH: i32 = 640;
-const WINDOW_HEIGHT: i32 = 480;
+const WINDOW_WIDTH: i32 = 960;
+const WINDOW_HEIGHT: i32 = 540;
 
 const SAMPLES_PER_SECOND: i32 = 48000;
 const BYTES_PER_SAMPLE: i32 = 4;

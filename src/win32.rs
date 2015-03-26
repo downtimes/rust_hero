@@ -1051,7 +1051,7 @@ fn main() {
                         },
                     };
 
-    resize_dib_section(&mut window.backbuffer, 1280, 720); 
+    resize_dib_section(&mut window.backbuffer, 960, 540); 
 
     let class_str = CString::new("HandmadeHeroWindowClass");
     let window_class = WNDCLASS{style: CS_HREDRAW|CS_VREDRAW, 
@@ -1205,6 +1205,8 @@ fn main() {
 
     window.running = true;
     while window.running {
+
+        new_input.delta_time = target_seconds_per_frame;
 
         let new_write_time = get_last_write_time(&game_dll_string)
                                               .unwrap_or(FILETIME {
@@ -1390,7 +1392,7 @@ fn main() {
 //        let display_cicles = sizerinsics::__rdtsc();
 //        let mc_per_second = (display_cicles - last_cycles) as f32/ (1000.0 * 1000.0);
 //
-//        prsizeln!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
+//        println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
 
         mem::swap(new_input, old_input);
 

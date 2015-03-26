@@ -926,6 +926,10 @@ fn get_seconds_elapsed(start: i64, end: i64, frequency: i64) -> f32 {
     (end - start) as f32 / frequency as f32
 }
 
+
+//TODO: total balla balla somewhere in here is a BIG BUG (linux equivalent too)
+//which leads to a total crash depending on how big the capacity of the 
+//String::from_raw_parts function parameter is chosen....
 fn get_exe_path() -> PathBuf {
     let mut buffer: [i8; MAX_PATH] = [0; MAX_PATH];
     let name_length = unsafe { 
@@ -936,9 +940,9 @@ fn get_exe_path() -> PathBuf {
     };
     let result = unsafe { String::from_raw_parts(buffer.as_ptr() as *mut u8, 
                                                  name_length as usize,
-                                                 (name_length + 10) as usize) };
+                                                 (name_length + 20) as usize) };
 
-    PathBuf::new(result.clone())
+    PathBuf::from(result)
 }
 
 fn initialize_replay(exe_dirname: &PathBuf, file_size: usize, 

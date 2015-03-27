@@ -33,90 +33,64 @@ pub extern fn update_and_render(_context: &ThreadContext,
         state.player_position.tile_rel_y = 1.0;
         state.player_position.tile_x = 3;
         state.player_position.tile_y = 3;
-        state.player_position.tilemap_x = 0;
-        state.player_position.tilemap_y = 0;
 
         game_memory.initialized = true;
     }
     
-    const TILEMAP_COUNT_Y: usize = 9;
-    const TILEMAP_COUNT_X: usize = 17;
+    const CHUNK_SHIFT: u32 = 5;
+    const CHUNK_DIM: usize = 1 << CHUNK_SHIFT;
 
-    let tiles0: [u32; TILEMAP_COUNT_X * TILEMAP_COUNT_Y] = 
+    let tiles0: [u32; CHUNK_DIM * CHUNK_DIM] = 
         [
-             1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1, 1 ,
-             1, 1, 0, 0,   0, 1, 0, 0,   0, 0, 0, 0,   0, 1, 0, 0, 1 ,
-             1, 1, 0, 0,   0, 0, 0, 0,   1, 0, 0, 0,   0, 0, 1, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   1, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 1, 0, 0,   1, 0, 0, 0,   0, 0, 0, 0, 0 ,
-             1, 1, 0, 0,   0, 1, 0, 0,   1, 0, 0, 0,   0, 1, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 1, 0, 0,   1, 0, 0, 0,   1, 0, 0, 0, 1 ,
-             1, 1, 1, 1,   1, 0, 0, 0,   0, 0, 0, 0,   0, 1, 0, 0, 1 ,
-             1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1, 1 
+             1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1 ,  1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1 ,
+             1, 1, 0, 0,   0, 1, 0, 0,   0, 0, 0, 0,   0, 1, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 1, 0, 0,   0, 0, 0, 0,   1, 0, 0, 0,   0, 0, 1, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 0, 0, 0,   0, 0, 0, 0,   1, 0, 0, 0,   0, 0, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 0, 0, 0,   0, 1, 0, 0,   1, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 1, 0, 0,   0, 1, 0, 0,   1, 0, 0, 0,   0, 1, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 0, 0, 0,   0, 1, 0, 0,   1, 0, 0, 0,   1, 0, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 1, 1, 1,   1, 0, 0, 0,   0, 0, 0, 0,   0, 1, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1 ,  1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1 , 
+             1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1 ,  1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1 ,
+             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,  1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 1 ,
+             1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1 ,  1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 , 
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
+             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,  0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0 ,
         ];
 
-    let tiles1: [u32; TILEMAP_COUNT_X * TILEMAP_COUNT_Y] = 
-        [
-             1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1, 1 
-        ];
-
-    let tiles2: [u32; TILEMAP_COUNT_X * TILEMAP_COUNT_Y] = 
-        [
-             1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 0 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1, 1 
-        ];
-
-    let tiles3: [u32; TILEMAP_COUNT_X * TILEMAP_COUNT_Y] = 
-        [
-             1, 1, 1, 1,   1, 1, 1, 1,   0, 1, 1, 1,   1, 1, 1, 1, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0, 1 ,
-             1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1,   1, 1, 1, 1, 1 
-        ];
-
-    let tilemaps = [TileMap {
+    let tilechunks = [TileChunk {
                         tiles: &tiles0[..],
-                    },TileMap {
-                        tiles: &tiles1[..],
-                    },TileMap {
-                        tiles: &tiles2[..],
-                    },TileMap {
-                        tiles: &tiles3[..],
                     }];
 
-    let world = World {
-                    tile_count_x: TILEMAP_COUNT_X,
-                    tile_count_y: TILEMAP_COUNT_Y,
-                    tile_side_pixels: 60,
-                    upper_left_x: -60.0/2.0,
-                    upper_left_y: 0.0,
-                    tile_side_meters: 1.4,
-                    tilemap_count_x: 2,
-                    _tilemap_count_y: 2,
-                    tilemaps: &tilemaps[..]
-                };
 
-    let current_map = world.get_tilemap(state.player_position.tilemap_x, state.player_position.tilemap_y);
+    let world = World {
+                    tile_side_pixels: 60,
+                    tile_side_meters: 1.4,
+                    tilechunk_count_x: 1,
+                    _tilechunk_count_y: 1,
+                    chunk_shift: CHUNK_SHIFT,
+                    _chunk_mask: CHUNK_DIM as u32 - 1,
+                    chunk_dim: CHUNK_DIM,
+                    tilechunks: &tilechunks[..]
+                };
 
     let player_width = 0.75 * world.tile_side_meters;
     let player_height = world.tile_side_meters;
@@ -132,11 +106,10 @@ pub extern fn update_and_render(_context: &ThreadContext,
             let mut dplayer_y = 0.0;
             
             if controller.move_up.ended_down {
-                dplayer_y = -1.0;
+                dplayer_y = 1.0;
             }
             if controller.move_down.ended_down {
-
-                dplayer_y = 1.0;
+                dplayer_y = -1.0;
             }
             if controller.move_left.ended_down {
                 dplayer_x = -1.0;
@@ -169,14 +142,25 @@ pub extern fn update_and_render(_context: &ThreadContext,
         }
     }
 
+    //Clear the screen to pink!
     let buffer_width = video_buffer.width;
     let buffer_height = video_buffer.height;
     graphics::draw_rect(video_buffer, 0.0, 0.0, buffer_width as f32, buffer_height as f32,
                         1.0, 0.0, 1.0);
 
-    for row in 0..world.tile_count_y {
-        for column in 0..world.tile_count_x {
-            let elem = current_map.get_tile_value(column as i32, row as i32, &world);
+    let chunk_pos = get_chunk_position(&world, state.player_position.tile_x,
+                                      state.player_position.tile_y);
+    let current_map = world.get_tilechunk(&chunk_pos);
+
+    let screen_center_x = 0.5 * video_buffer.width as f32;
+    let screen_center_y = 0.5 * video_buffer.height as f32;
+
+    for rel_row in -10i32..10 {
+        for rel_column in -18i32..18 {
+            let column = (rel_column + state.player_position.tile_x as i32) as u32;
+            let row = (rel_row + state.player_position.tile_y as i32) as u32;
+
+            let elem = current_map.get_tile_value(column as u32, row as u32, &world);
             let mut color = 
                 if elem == 0 {
                     0.5
@@ -184,27 +168,24 @@ pub extern fn update_and_render(_context: &ThreadContext,
                     1.0
                 };
 
-            if column == state.player_position.tile_x as usize && 
-               row == state.player_position.tile_y as usize {
+            if column == state.player_position.tile_x && 
+               row == state.player_position.tile_y {
                 color = 0.8;
             }
-            let min_x = world.upper_left_x + column as f32 * world.tile_side_pixels as f32;
-            let min_y = world.upper_left_y + row as f32 * world.tile_side_pixels as f32;
+
+            let min_x = screen_center_x + rel_column as f32 * world.tile_side_pixels as f32;
+            let min_y = screen_center_y - rel_row as f32 * world.tile_side_pixels as f32;
             let max_x = min_x + world.tile_side_pixels as f32;
-            let max_y = min_y + world.tile_side_pixels as f32;
-            graphics::draw_rect(video_buffer, min_x, min_y, max_x, max_y,
+            let max_y = min_y - world.tile_side_pixels as f32;
+            graphics::draw_rect(video_buffer, min_x, max_y, max_x, min_y,
                                 color, color, color);
         }
     }
 
 
-    let player_top = world.upper_left_y + world.tile_side_pixels as f32 * 
-                     state.player_position.tile_y as f32 + 
-                     world.meters_to_pixels(state.player_position.tile_rel_y) - 
+    let player_top = screen_center_y - world.meters_to_pixels(state.player_position.tile_rel_y) - 
                      world.meters_to_pixels(player_height);
-    let player_left = world.upper_left_x + world.tile_side_pixels as f32 * 
-                      state.player_position.tile_x as f32 +
-                      world.meters_to_pixels(state.player_position.tile_rel_x) - 
+    let player_left = screen_center_x + world.meters_to_pixels(state.player_position.tile_rel_x) - 
                       world.meters_to_pixels(0.5 * player_width);
     graphics::draw_rect(video_buffer, 
                         player_left, player_top,
@@ -218,75 +199,74 @@ pub extern fn update_and_render(_context: &ThreadContext,
 
 
 struct GameState {
-    player_position: CanonicalPosition,
+    player_position: WorldPosition,
 } 
 
+struct TileChunkPosition {
+    tilechunk_x: u32,
+    tilechunk_y: u32,
+}
 
-#[derive(Default, Copy)]
-struct CanonicalPosition {
-    tilemap_x: i32,
-    tilemap_y: i32,
 
-    tile_x: i32,
-    tile_y: i32,
+fn get_chunk_position(world: &World, tile_x: u32, tile_y: u32) -> TileChunkPosition {
+    TileChunkPosition {
+        tilechunk_x: tile_x >> world.chunk_shift,
+        tilechunk_y: tile_y >> world.chunk_shift,
+        //tile_x: tile_x & world.chunk_mask,
+        //tile_y: tile_y & world.chunk_mask,
+    }
+}
 
+
+#[derive(Copy)]
+struct WorldPosition {
+    tile_x: u32,
+    tile_y: u32,
     //Tile relative
     tile_rel_x: f32,
     tile_rel_y: f32,
 }
 
-fn canonicalize_coord(world: &World, tile_count: usize, tilemap: &mut i32, tile: &mut i32, 
-                      tile_rel: &mut f32) {
+fn canonicalize_coord(world: &World, tile: &mut u32, tile_rel: &mut f32) {
 
         let offset = (*tile_rel / world.tile_side_meters as f32).floor();
-        *tile += offset as i32;
+
+        let new_tile = *tile as i32 + offset as i32;
+        *tile = new_tile as u32;
 
         *tile_rel -= offset * world.tile_side_meters;
 
         //TODO: for small offset values this debug_assert triggers!
         //rounding puts us back on the tile we came from
         debug_assert!(*tile_rel >= 0.0 && *tile_rel < world.tile_side_meters as f32);
-
-        if *tile < 0 {
-            *tile = tile_count as i32 + *tile;
-            *tilemap -= 1;
-        }
-
-        if *tile >= tile_count as i32 {
-            *tile = *tile - tile_count as i32;
-            *tilemap += 1;
-        }
 }
 
-impl CanonicalPosition {
+impl WorldPosition {
     fn recanonicalize(&mut self, world: &World) {
 
-        canonicalize_coord(&world, world.tile_count_x, &mut self.tilemap_x, 
-                           &mut self.tile_x, &mut self.tile_rel_x);
-        canonicalize_coord(&world, world.tile_count_y, &mut self.tilemap_y,
-                           &mut self.tile_y, &mut self.tile_rel_y);
+        canonicalize_coord(&world, &mut self.tile_x, &mut self.tile_rel_x);
+        canonicalize_coord(&world, &mut self.tile_y, &mut self.tile_rel_y);
     }
 }
 
 struct World<'a> {
-    tilemap_count_x: usize,
-    _tilemap_count_y: usize,
-    
-    upper_left_x: f32,
-    upper_left_y: f32,
-    tile_count_x: usize,
-    tile_count_y: usize,
-
     tile_side_pixels: u32,
     tile_side_meters: f32,
-    
-    tilemaps: &'a[TileMap<'a>],
+
+    tilechunk_count_x: usize,
+    _tilechunk_count_y: usize,
+
+    chunk_shift: u32,
+    _chunk_mask: u32,
+    chunk_dim: usize,
+    tilechunks: &'a[TileChunk<'a>],
 }
 
 
 impl<'a> World<'a> {
-    fn get_tilemap(&self, tilemap_x: i32, tilemap_y: i32) -> &'a TileMap<'a> {
-        &self.tilemaps[(tilemap_y * self.tilemap_count_x as i32 + tilemap_x) as usize]
+    fn get_tilechunk(&self, chunk_pos: &TileChunkPosition) -> &'a TileChunk<'a> {
+        &self.tilechunks[(chunk_pos.tilechunk_y * self.tilechunk_count_x as u32
+                        + chunk_pos.tilechunk_x) as usize]
     }
 
     fn meters_to_pixels(&self, meters: f32) -> f32 {
@@ -295,38 +275,32 @@ impl<'a> World<'a> {
 }
 
 
-struct TileMap<'a> {
+struct TileChunk<'a> {
     tiles: &'a[u32]
 }
 
-impl<'a> TileMap<'a> {
-    fn get_tile_value(&self, tile_x: i32, tile_y: i32, world: &World) -> u32 {
-        self.tiles[(tile_y * world.tile_count_x as i32 + tile_x) as usize]
+impl<'a> TileChunk<'a> {
+    fn get_tile_value(&self, tile_x: u32, tile_y: u32, world: &World) -> u32 {
+        let index = tile_y as usize * world.chunk_dim + tile_x as usize;
+        if index > self.tiles.len() {
+            0
+        } else {
+            self.tiles[index]
+        }
     }
 }
 
 
-fn is_world_point_empty(world: &World, position: &CanonicalPosition) -> bool {
-
-    let tilemap = world.get_tilemap(position.tilemap_x, position.tilemap_y);
-
-    is_tilemap_point_empty(position.tile_x, position.tile_y, tilemap, world)
-}
-
-fn is_tilemap_point_empty(test_x: i32, test_y: i32, tilemap: &TileMap,
-                          world: &World) -> bool {
-
-    let mut is_empty = false;
-
-    if test_x >= 0 && test_x < world.tile_count_x as i32 &&
-    test_y >= 0 && test_y < world.tile_count_y as i32 {
-
-        let tile_elem = tilemap.get_tile_value(test_x, test_y, world);
-        is_empty = tile_elem == 0;
-    }
-
-    is_empty
+fn is_world_point_empty(world: &World, position: &WorldPosition) -> bool {
+    get_tile_value(&world, &position) == 0
 }
 
 
+fn get_tile_value(world: &World, position: &WorldPosition) -> u32 {
+
+    let chunk_pos = get_chunk_position(&world, position.tile_x, position.tile_y);
+    let tilechunk = world.get_tilechunk(&chunk_pos);
+
+    tilechunk.get_tile_value(position.tile_x, position.tile_y, world)
+}
 

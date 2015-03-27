@@ -1,6 +1,6 @@
 use std::ptr;
 use std::path::PathBuf;
-use std::raw::Slice;
+use std::slice;
 use std::mem; 
 use std::i16;
 use std::ffi::CString;
@@ -359,11 +359,8 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
         fn fill_region(region: *mut c_void, region_size: DWORD,
                        sound_output: &mut SoundOutput, source: &[i16]) {
                            
-            let out: &mut [i16] = unsafe { mem::transmute( 
-                                        Slice {
-                                            data: region as *const i16,
-                                            len: region_size as usize / mem::size_of::<i16>()
-                                        }) };
+            let out: &mut [i16] = unsafe { slice::from_raw_parts_mut(region as *mut i16,
+                                                region_size as usize / mem::size_of::<i16>()) };
             debug_assert!((region_size % BYTES_PER_SAMPLE) == 0);
             debug_assert!(out.len() == source.len());
 
@@ -404,11 +401,8 @@ fn clear_sound_output(sound_output: &mut SoundOutput) {
         fill_region(region2, region2_size);
 
         fn fill_region(region: *mut c_void, region_size: DWORD) {
-            let out: &mut [i32] = unsafe { mem::transmute( 
-                                        Slice {
-                                            data: region as *const i32,
-                                            len: (region_size / BYTES_PER_SAMPLE) as usize, 
-                                        }) };
+            let out: &mut [i32] = unsafe { slice::from_raw_parts_mut(region as *mut i32,
+                                                (region_size / BYTES_PER_SAMPLE) as usize) };
             for sample in out.iter_mut() {
                 *sample = 0;
             }
@@ -1140,9 +1134,9 @@ fn main() {
                 panic!("Couldn't allocate the resources for the Sound-Buffer!");
             }
 
-            mem::transmute(
-                Slice { data: data as *const i16,
-                             len: sound_output.get_buffer_size() as usize / mem::size_of::<i16>()})
+
+            slice::from_raw_parts_mut(data as *mut i16, 
+                                      sound_output.get_buffer_size() as usize / mem::size_of::<i16>())
         };
    
     let base_address = if cfg!(ndebug) { 0 } else { util::tera_bytes(2) };
@@ -1158,21 +1152,11 @@ fn main() {
     let mut game_memory: GameMemory = 
         GameMemory {
             initialized: false,
-            permanent: unsafe { 
-                        mem::transmute( Slice { 
-                                            data: memory as *const u8, 
-                                            len: permanent_store_size
-                                        } 
-                                      ) 
-                        },
-            transient: unsafe { 
-                        mem::transmute( Slice { 
-                                            data: (memory as *const u8)
-                                                   .offset(permanent_store_size as isize), 
-                                            len: transient_store_size
-                                        }
-                                      ) 
-                        },
+            permanent: unsafe { slice::from_raw_parts_mut(memory as *mut u8,
+                                                          permanent_store_size) },
+            transient: unsafe { slice::from_raw_parts_mut((memory as *mut u8)
+                                                          .offset(permanent_store_size as isize), 
+                                                          permanent_store_size) },
             platform_read_entire_file: debug::platform_read_entire_file,
             platform_write_entire_file: debug::platform_write_entire_file,
             platform_free_file_memory: debug::platform_free_file_memory,
@@ -1244,10 +1228,8 @@ fn main() {
                        &old_input.controllers[1..]);
 
         let mut video_buf = VideoBuffer {
-            memory: unsafe { mem::transmute(
-                             Slice { data: window.backbuffer.memory as *const u32, 
-                                 len: (window.backbuffer.size/BYTES_PER_PIXEL) as usize})
-                           },
+            memory: unsafe { slice::from_raw_parts_mut(window.backbuffer.memory as *mut u32, 
+                                 (window.backbuffer.size/BYTES_PER_PIXEL) as usize) },
             width: window.backbuffer.width as usize,
             height: window.backbuffer.height as usize,
             pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as usize,

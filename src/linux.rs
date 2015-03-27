@@ -5,7 +5,7 @@ use std::default::Default;
 use std::ptr;
 use std::mem;
 use std::path::PathBuf;
-use std::raw::Slice;
+use std::slice;
 use std::ffi::CString;
 
 use ffi::sdl::*;
@@ -668,9 +668,8 @@ fn main() {
                 panic!("Couldn't allocate the resources for the Sound-Buffer!");
             }
 
-            mem::transmute(
-                Slice { data: data as *const i16,
-                len: ((SAMPLES_PER_SECOND * BYTES_PER_SAMPLE) / 2) as usize})
+            slice::from_raw_parts_mut(data as *mut i16,
+                                      ((SAMPLES_PER_SECOND * BYTES_PER_SAMPLE) / 2) as usize)
         };
 
         let base_address = if cfg!(ndebug) { 0 } else { util::tera_bytes(2) };
@@ -687,21 +686,11 @@ fn main() {
         let mut game_memory: GameMemory = 
             GameMemory {
                 initialized: false,
-                permanent: unsafe { 
-                    mem::transmute( Slice { 
-                        data: memory as *const u8, 
-                        len: permanent_store_size
-                    } 
-                    ) 
-                },
-                transient: unsafe { 
-                    mem::transmute( Slice { 
-                        data: (memory as *const u8)
-                            .offset(permanent_store_size as isize), 
-                        len: transient_store_size
-                    }
-                    ) 
-                },
+                permanent: unsafe { slice::from_raw_parts_mut(memory as *mut u8, 
+                                                              permanent_store_size) },
+                transient: unsafe { slice::from_raw_parts_mut((memory as *mut u8)
+                                                              .offset(permanent_store_size as isize), 
+                                                              transient_store_size) },
                 platform_read_entire_file: debug::platform_read_entire_file,
                 platform_write_entire_file: debug::platform_write_entire_file,
                 platform_free_file_memory: debug::platform_free_file_memory,
@@ -795,10 +784,8 @@ fn main() {
             }
 
             let mut video_buf = VideoBuffer {
-                memory: unsafe { mem::transmute(
-                                Slice { data: buffer.pixels as *const u32, 
-                                        len: (buffer.size/BYTES_PER_PIXEL as u64) as usize}
-                                    )},
+                memory: unsafe { slice::from_raw_parts_mut(buffer.pixels as *mut u32, 
+                                        (buffer.size/BYTES_PER_PIXEL as u64) as usize) },
                 width: (buffer.width*BYTES_PER_PIXEL as i32) as usize,
                 height: (buffer.height*BYTES_PER_PIXEL as i32) as usize,
                 pitch: (buffer.width as i32) as usize,

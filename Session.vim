@@ -29,9 +29,9 @@ vmap [% [%m'gv``
 vmap ]% ]%m'gv``
 vmap a% [%v]%
 nmap gx <Plug>NetrwBrowseX
-nmap <S-Insert> "+gP
-nnoremap <C-Tab> w
 nnoremap <C-F4> c
+nnoremap <C-Tab> w
+nmap <S-Insert> "+gP
 nnoremap <silent> <Plug>NetrwBrowseX :call netrw#NetrwBrowseX(expand("<cWORD>"),0)
 onoremap <C-F4> c
 vnoremap <C-F4> c
@@ -65,7 +65,6 @@ set fileencodings=ucs-bom,utf-8,default,latin1
 set guifont=Liberation_Mono:h10:cANSI
 set helplang=de
 set history=50
-set hlsearch
 set ignorecase
 set incsearch
 set keymodel=startsel,stopsel
@@ -98,7 +97,7 @@ badd +15 D:\WinWorkspace\rust_hero\src\main.rs
 badd +6 src\lib.rs
 badd +13 src\common\mod.rs
 args src\win32.rs
-edit src\win32.rs
+edit src\game\mod.rs
 set splitbelow splitright
 wincmd _ | wincmd |
 vsplit
@@ -112,11 +111,11 @@ set nosplitbelow
 set nosplitright
 wincmd t
 set winheight=1 winwidth=1
-exe 'vert 1resize ' . ((&columns * 118 + 117) / 235)
+exe 'vert 1resize ' . ((&columns * 113 + 117) / 235)
 exe '2resize ' . ((&lines * 47 + 30) / 60)
-exe 'vert 2resize ' . ((&columns * 116 + 117) / 235)
+exe 'vert 2resize ' . ((&columns * 121 + 117) / 235)
 exe '3resize ' . ((&lines * 10 + 30) / 60)
-exe 'vert 3resize ' . ((&columns * 116 + 117) / 235)
+exe 'vert 3resize ' . ((&columns * 121 + 117) / 235)
 argglobal
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
@@ -229,12 +228,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 1075 - ((28 * winheight(0) + 29) / 58)
+let s:l = 271 - ((47 * winheight(0) + 29) / 58)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-1075
-normal! 025|
+271
+normal! 018|
 wincmd w
 argglobal
 edit src\ffi\mod.rs
@@ -349,7 +348,7 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 83 - ((10 * winheight(0) + 23) / 47)
+let s:l = 83 - ((0 * winheight(0) + 23) / 47)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
@@ -461,11 +460,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 wincmd w
-exe 'vert 1resize ' . ((&columns * 118 + 117) / 235)
+exe 'vert 1resize ' . ((&columns * 113 + 117) / 235)
 exe '2resize ' . ((&lines * 47 + 30) / 60)
-exe 'vert 2resize ' . ((&columns * 116 + 117) / 235)
+exe 'vert 2resize ' . ((&columns * 121 + 117) / 235)
 exe '3resize ' . ((&lines * 10 + 30) / 60)
-exe 'vert 3resize ' . ((&columns * 116 + 117) / 235)
+exe 'vert 3resize ' . ((&columns * 121 + 117) / 235)
 tabnext 1
 if exists('s:wipebuf')
   silent exe 'bwipe ' . s:wipebuf

@@ -81,7 +81,7 @@ pub mod debug {
 
                         result = Ok(ReadFileResult {
                                         size: size,
-                                        contents: memory,
+                                        contents: memory as *mut u8,
                                       });
                     } else {
                         platform_free_file_memory(context, memory, size);

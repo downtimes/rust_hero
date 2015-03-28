@@ -10,7 +10,7 @@ mod memory;
 mod random;
 
 use self::tilemap::{TileMap, is_tilemap_point_empty};
-use self::tilemap::{TilemapPosition};
+use self::tilemap::{TilemapPosition, on_same_tile};
 use self::memory::MemoryArena;
 
 // ============= The public interface ===============
@@ -25,7 +25,7 @@ pub extern fn get_sound_samples(_context: &ThreadContext,
 }
 
 #[no_mangle]
-pub extern fn update_and_render(_context: &ThreadContext,
+pub extern fn update_and_render(context: &ThreadContext,
                                 game_memory: &mut GameMemory,
                                 input: &Input,
                                 video_buffer: &mut VideoBuffer) {
@@ -40,10 +40,13 @@ pub extern fn update_and_render(_context: &ThreadContext,
     let mut rand_index = 6;
 
     if !game_memory.initialized {
+        graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
+                              context, "test/test_background.bmp");
         state.player_position.offset_x = 0.5;
         state.player_position.offset_y = 0.5;
         state.player_position.tile_x = 3;
         state.player_position.tile_y = 3;
+        state.player_position.tile_z = 0;
 
         let game_state_size = mem::size_of::<GameState>();
         state.world_arena = MemoryArena::new(game_memory.permanent.len() - game_state_size,
@@ -96,20 +99,21 @@ pub extern fn update_and_render(_context: &ThreadContext,
                     random::NUMBERS[rand_index] % 3
                 };
             rand_index += 1;
+            debug_assert!(random_choice < 3);
+
+            let mut created_z = false;
 
             if random_choice == 0 {
                 door_right = true;
             } else if random_choice == 1{
                 door_top = true;
             } else {
-                abs_tile_z = 
-                    if abs_tile_z == 0 { 
-                        door_up = true;
-                        1 
-                    } else { 
-                        door_down = true;
-                        0 
-                    };
+                created_z = true;
+                if abs_tile_z == 0 { 
+                    door_up = true;
+                } else { 
+                    door_down = true;
+                };
             }
 
 
@@ -166,28 +170,34 @@ pub extern fn update_and_render(_context: &ThreadContext,
                 }
             }
 
-            if door_up {
-                door_down = true;
-                door_up = false;
-            } else if door_down {
-                door_up = true;
-                door_down = false;
-            } else {
-                door_up == false;
-                door_down == false;
-            }
-
-            if door_right {
-                screen_x += 1;
-            } else {
-                screen_y += 1;
-            } 
-
             door_bottom = door_top;
             door_left = door_right;
 
+
+            if created_z {
+                door_up = !door_up;
+                door_down = !door_down;
+            } else {
+                door_up = false;
+                door_down = false;
+            }
+
             door_top = false;
             door_right = false;
+
+            if random_choice == 0 {
+                screen_x += 1;
+            } else if random_choice == 1 {
+                screen_y += 1;
+            } else {
+                if abs_tile_z == 0 {
+                    abs_tile_z += 1;
+                } else {
+                    abs_tile_z -= 1;
+                }
+            }
+
+            debug_assert!((abs_tile_z as usize) < tilemap.tilechunk_count_z);
         }
 
         game_memory.initialized = true;
@@ -250,7 +260,21 @@ pub extern fn update_and_render(_context: &ThreadContext,
             if is_tilemap_point_empty(&world.tilemap, &player_left_bottom) &&
                is_tilemap_point_empty(&world.tilemap, &player_right_bottom) &&
                is_tilemap_point_empty(&world.tilemap, &state.player_position) {
-                   state.player_position = new_position;
+                   let player_p = &mut state.player_position;
+
+                   if on_same_tile(player_p, &new_position) {
+                       let tile_value = world.tilemap.get_tile_value(new_position.tile_x,
+                                                                     new_position.tile_y,
+                                                                     new_position.tile_z);
+                       if let Some(value) = tile_value {
+                           if value == 2 {
+                               new_position.tile_z += 1;
+                           } else if value == 3 {
+                               new_position.tile_z -= 1;
+                           }
+                       }
+                   }
+                   *player_p = new_position;
             }
         }
     }

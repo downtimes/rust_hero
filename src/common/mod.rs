@@ -38,7 +38,7 @@ pub type UpdateAndRenderT = extern fn(&ThreadContext, &mut GameMemory, &Input, &
 #[allow(dead_code)]
 pub struct ReadFileResult {
     pub size: u32,
-    pub contents: *mut c_void,
+    pub contents: *mut u8,
 }
 
 pub struct VideoBuffer<'a> {

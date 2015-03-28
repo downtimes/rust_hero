@@ -15,14 +15,18 @@ pub struct TileMap<'a> {
 
 impl<'a> TileMap<'a> {
     pub fn get_tilechunk(&'a self, chunk_pos: &TileChunkPosition) -> Option<&'a TileChunk<'a>> {
-        let index = chunk_pos.tilechunk_z as usize * self.tilechunk_count_x * self.tilechunk_count_y +
-                    chunk_pos.tilechunk_y as usize * self.tilechunk_count_x + 
-                    chunk_pos.tilechunk_x as usize;
+        let index = self.get_index(chunk_pos);
         if index < self.tilechunks.len() {
             Some(&self.tilechunks[index])
         } else {
             None
         }
+    }
+
+    fn get_index(&self, chunk_pos: &TileChunkPosition) -> usize {
+        chunk_pos.tilechunk_z as usize * self.tilechunk_count_x * self.tilechunk_count_y +
+        chunk_pos.tilechunk_y as usize * self.tilechunk_count_x + 
+        chunk_pos.tilechunk_x as usize
     }
 
     pub fn set_tile_value(&mut self, memory: &mut MemoryArena,
@@ -31,9 +35,7 @@ impl<'a> TileMap<'a> {
 
         let chunk_pos = get_chunk_position(self, tile_x, tile_y, tile_z);
         
-        let index = chunk_pos.tilechunk_y as usize * self.tilechunk_count_x
-                          + chunk_pos.tilechunk_x as usize;
-
+        let index = self.get_index(&chunk_pos);
         if index < self.tilechunks.len() {
             let chunk = &mut self.tilechunks[index];
 
@@ -44,7 +46,8 @@ impl<'a> TileMap<'a> {
             chunk.set_tile_value(chunk_pos.tile_x, chunk_pos.tile_y,
                                  value, self.chunk_dim);
         } else {
-            panic!("Wanted to set tilechunk which does not exist!");
+            panic!("Wanted to set tilechunk which does not exist!
+                   x: {}, y: {}, z: {}", tile_x, tile_y, tile_z);
         }
     }
 
@@ -89,7 +92,7 @@ pub struct TilemapPosition {
 
 pub fn canonicalize_coord(tilemap: &TileMap, tile: &mut u32, tile_offset: &mut f32) {
 
-        let offset = (*tile_offset / tilemap.tile_side_meters as f32).round();
+        let offset = (*tile_offset / tilemap.tile_side_meters).round();
 
         let new_tile = *tile as i32 + offset as i32;
         *tile = new_tile as u32;
@@ -111,7 +114,7 @@ impl TilemapPosition {
 
 pub fn is_tilemap_point_empty<'a>(tilemap: &'a TileMap<'a>, position: &TilemapPosition) -> bool {
     match tilemap.get_tile_value(position.tile_x, position.tile_y, position.tile_z) {
-        Some(value) => value == 0,
+        Some(value) => value != 1,
         None => false,
     }
 }
@@ -144,4 +147,9 @@ fn get_chunk_position(tile_map: &TileMap, tile_x: u32, tile_y: u32,
         tile_x: tile_x & tile_map.chunk_mask,
         tile_y: tile_y & tile_map.chunk_mask,
     }
+}
+
+pub fn on_same_tile(position1: &TilemapPosition, position2: &TilemapPosition) -> bool {
+    position1.tile_x == position2.tile_x && position1.tile_y == position2.tile_y
+    && position1.tile_z == position2.tile_z
 }

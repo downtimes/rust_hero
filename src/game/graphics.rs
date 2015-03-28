@@ -1,8 +1,10 @@
-use common::VideoBuffer;
+use common::{VideoBuffer, ThreadContext};
+use common::PlatformReadEntireFileT;
+use std::mem;
 
 pub fn draw_rect(buffer: &mut VideoBuffer, real_min_x: f32, real_min_y: f32, 
-             real_max_x: f32, real_max_y: f32, 
-             r: f32, g: f32, b: f32) {
+                 real_max_x: f32, real_max_y: f32, 
+                 r: f32, g: f32, b: f32) {
     let mut min_x = real_min_x.round() as isize;
     let mut max_x = real_max_x.round() as isize;
     let mut min_y = real_min_y.round() as isize;
@@ -42,5 +44,33 @@ pub fn draw_rect(buffer: &mut VideoBuffer, real_min_x: f32, real_min_y: f32,
            *pixel = color; 
         }
     }
+}
+
+#[repr(C, packed)]
+struct BitmapHeader {
+    file_type: u16,
+    file_size: u32,
+    _reserved1: u16,
+    _reserved2: u16,
+    bitmap_offset: u32,
+    size: u32,
+    width: i32,
+    height: i32,
+    planes: u16,
+    bytes_per_pixel: u16,
+}
+
+pub struct Bitmap;
+
+#[cfg(not(ndebug))]
+pub fn debug_load_bitmap(read_func: PlatformReadEntireFileT, context: &ThreadContext,
+                   file_name: &str) -> Option<Bitmap> {
+    let file = read_func(context, file_name);
+    if let Ok(result) = file {
+        let header: &BitmapHeader = unsafe { mem::transmute(result.contents) };
+        let pixels = unsafe { result.contents.offset(header.bitmap_offset as isize) };
+    }
+
+    None
 }
 

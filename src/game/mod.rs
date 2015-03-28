@@ -40,8 +40,14 @@ pub extern fn update_and_render(context: &ThreadContext,
     let mut rand_index = 6;
 
     if !game_memory.initialized {
-        graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
-                              context, "test/test_background.bmp");
+        state.test_bitmap = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
+                              context, "test/test_background.bmp").unwrap();
+        state.hero_head = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
+                              context, "test/test_hero_front_head.bmp").unwrap();
+        state.hero_torso = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
+                              context, "test/test_hero_front_torso.bmp").unwrap();
+        state.hero_cape = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
+                              context, "test/test_hero_front_cape.bmp").unwrap();
         state.player_position.offset_x = 0.5;
         state.player_position.offset_y = 0.5;
         state.player_position.tile_x = 3;
@@ -285,6 +291,8 @@ pub extern fn update_and_render(context: &ThreadContext,
     graphics::draw_rect(video_buffer, 0.0, 0.0, buffer_width as f32, buffer_height as f32,
                         1.0, 0.0, 1.0);
 
+    graphics::draw_bitmap(video_buffer, &state.test_bitmap, 0.0, 0.0);
+
     let screen_center_x = 0.5 * video_buffer.width as f32;
     let screen_center_y = 0.5 * video_buffer.height as f32;
 
@@ -296,29 +304,30 @@ pub extern fn update_and_render(context: &ThreadContext,
             let elem = world.tilemap.get_tile_value(column as u32, row as u32,
                                                     state.player_position.tile_z);
             if let Some(value) = elem {
+                if value > 0 {
+                    let mut color = 0.5;
+                    if value == 1 {
+                        color = 1.0;
+                    } else if value > 1 {
+                        color = 0.3;
+                    }
+                    if column == state.player_position.tile_x && 
+                        row == state.player_position.tile_y {
 
-                let mut color = 0.5;
-                if value == 1 {
-                    color = 1.0;
-                } else if value > 1 {
-                    color = 0.3;
+                        color = 0.8;
+                    }
+
+                    let center_x = screen_center_x - meters_to_pixel * state.player_position.offset_x
+                        + rel_column as f32 * tile_side_pixels as f32;
+                    let center_y = screen_center_y + meters_to_pixel * state.player_position.offset_y
+                        - rel_row as f32 * tile_side_pixels as f32;
+                    let min_x = center_x - 0.5 * tile_side_pixels as f32;
+                    let min_y = center_y - 0.5 * tile_side_pixels as f32;
+                    let max_x = min_x + tile_side_pixels as f32;
+                    let max_y = min_y + tile_side_pixels as f32;
+                    graphics::draw_rect(video_buffer, min_x, min_y, max_x, max_y,
+                                        color, color, color);
                 }
-                if column == state.player_position.tile_x && 
-                    row == state.player_position.tile_y {
-
-                    color = 0.8;
-                }
-
-                let center_x = screen_center_x - meters_to_pixel * state.player_position.offset_x
-                    + rel_column as f32 * tile_side_pixels as f32;
-                let center_y = screen_center_y + meters_to_pixel * state.player_position.offset_y
-                    - rel_row as f32 * tile_side_pixels as f32;
-                let min_x = center_x - 0.5 * tile_side_pixels as f32;
-                let min_y = center_y - 0.5 * tile_side_pixels as f32;
-                let max_x = min_x + tile_side_pixels as f32;
-                let max_y = min_y + tile_side_pixels as f32;
-                graphics::draw_rect(video_buffer, min_x, min_y, max_x, max_y,
-                                    color, color, color);
             }
         }
     }
@@ -331,6 +340,8 @@ pub extern fn update_and_render(context: &ThreadContext,
                         player_left + meters_to_pixel * player_width,
                         player_top + meters_to_pixel * player_height,
                         1.0, 1.0, 0.0);
+    graphics::draw_bitmap(video_buffer, &state.hero_head, player_left, player_top);
+
 
 }
 
@@ -342,6 +353,10 @@ struct GameState<'a> {
     world_arena: MemoryArena,
     player_position: TilemapPosition,
     world: &'a mut World<'a>,
+    test_bitmap: graphics::Bitmap<'a>,
+    hero_head: graphics::Bitmap<'a>,
+    hero_torso: graphics::Bitmap<'a>,
+    hero_cape: graphics::Bitmap<'a>,
 } 
 
 struct World<'a> {

@@ -81,7 +81,22 @@ pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {
 
         for _ in min_x..max_x {
             unsafe { 
-                *dest = *source;
+                let a = (*source >> 24) as f32 / 255.0;
+                let sr = (*source >> 16) & 0xFF;
+                let sg = (*source >> 8) & 0xFF;
+                let sb = *source  & 0xFF;
+                
+                let dr = (*dest >> 16) & 0xFF;
+                let dg = (*dest >> 8) & 0xFF;
+                let db = *dest  & 0xFF;
+
+                //Lerp between source and dest
+                let r = ((1.0 - a) * dr as f32 + a * sr as f32).round() as u32;
+                let g = ((1.0 - a) * dg as f32 + a * sg as f32).round() as u32;
+                let b = ((1.0 - a) * db as f32 + a * sb as f32).round() as u32;
+
+                *dest = (r << 16) | (g << 8) | b; 
+
                 source = source.offset(1);
                 dest = dest.offset(1);
             }
@@ -130,39 +145,38 @@ pub struct Bitmap<'a> {
 pub fn debug_load_bitmap(read_func: PlatformReadEntireFileT, context: &ThreadContext,
                    file_name: &str) -> Option<Bitmap<'static>> {
     
-    //Note: Bitmap byteorder is AA BB GG RR first row is bottom line
+    //Note: Bitmap byteorder is determined by the header. bottom up
     let file = read_func(context, file_name);
     if let Ok(result) = file {
-        let bytes_per_pixel = 4;
         let header: &BitmapHeader = unsafe { mem::transmute(result.contents) };
+
+        debug_assert!(header.compression == 3);
 
         let pixels = 
             unsafe { slice::from_raw_parts_mut(
-                        result.contents.offset(header.bitmap_offset as isize) as *mut u8, 
-                        (header.width * header.height * bytes_per_pixel) as usize) 
+                        result.contents.offset(header.bitmap_offset as isize) as *mut u32, 
+                        (header.width * header.height) as usize) 
                     };
 
-        //Shift alpha from bottom byte to top
-        for pixel in pixels.chunks_mut(bytes_per_pixel as usize) {
-            let c0 = pixel[0] as u32;
-            let c1 = pixel[1] as u32;
-            let c2 = pixel[2] as u32;
-            let c3 = pixel[3] as u32;
+        let alpha_mask = !(header.red_mask | header.green_mask | header.blue_mask);
 
-            let pixel_ptr = pixel.as_ptr() as *mut u32;
-            unsafe { *pixel_ptr = (c0 << 24) | (c3 << 16) | (c2 << 8) | c1; }
+        let red_shift = header.red_mask.trailing_zeros();
+        let blue_shift = header.blue_mask.trailing_zeros();
+        let green_shift = header.green_mask.trailing_zeros();
+        let alpha_shift = alpha_mask.trailing_zeros();
+
+        //Shift bits according to masks
+        for pixel in pixels.iter_mut() {
+            *pixel = (((*pixel >> alpha_shift) & 0xFF) << 24) |
+                     (((*pixel >> red_shift) & 0xFF) << 16) |
+                     (((*pixel >> green_shift) & 0xFF) << 8) |
+                     ((*pixel >> blue_shift) & 0xFF);
         }
-
-        //Reinterpret the memory as u32
-        let result = unsafe { slice::from_raw_parts_mut(
-                                    pixels.as_mut_ptr() as *mut u32, 
-                                    pixels.len() / bytes_per_pixel as usize) 
-                            };
 
         Some(Bitmap{
             width: header.width as u32,
             height: header.height as u32,
-            memory: result,
+            memory: pixels,
         })
     } else {
         None

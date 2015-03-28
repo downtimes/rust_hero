@@ -94,14 +94,17 @@ pub fn canonicalize_coord(tilemap: &TileMap, tile: &mut u32, tile_offset: &mut f
 
         let offset = (*tile_offset / tilemap.tile_side_meters).round();
 
-        let new_tile = *tile as i32 + offset as i32;
-        *tile = new_tile as u32;
+        let new_tile = (*tile as i32 + offset as i32) as u32;
+        *tile = new_tile;
 
         *tile_offset -= offset * tilemap.tile_side_meters;
         //TODO: the rounding makes problems for us here. we might round back
         //to the tile we came from so the assertion fires
-        debug_assert!(*tile_offset >= -0.5 * tilemap.tile_side_meters);
-        debug_assert!(*tile_offset <= 0.5 * tilemap.tile_side_meters);
+        //substract epsilon when tile_offset > tilemap.tile_side_meters?
+        debug_assert!(*tile_offset >= -0.5 * tilemap.tile_side_meters, "tile_offset {}", *tile_offset);
+        debug_assert!(*tile_offset <= 0.5 * tilemap.tile_side_meters, 
+                      "tile_offset {:.10}\n checked against {:.10}",
+                      *tile_offset, 0.5 * tilemap.tile_side_meters);
 }
 
 impl TilemapPosition {

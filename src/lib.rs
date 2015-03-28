@@ -1,4 +1,5 @@
 #![feature(libc)]
+#![feature(core)]
 extern crate libc;
 
 mod common;

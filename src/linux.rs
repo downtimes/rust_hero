@@ -1,4 +1,4 @@
-use libc::{readlink, mode_t, size_t, S_IRUSR, S_IWUSR};
+use libc::{mode_t, size_t, S_IRUSR, S_IWUSR};
 use libc::{open, close, mmap, munmap, MAP_PRIVATE, MAP_FAILED, MAP_ANON};
 use libc::{O_RDONLY, O_WRONLY, O_CREAT, PROT_READ, PROT_WRITE, fstat, stat};
 use std::default::Default;
@@ -6,6 +6,7 @@ use std::ptr;
 use std::mem;
 use std::path::PathBuf;
 use std::slice;
+use std::fs::readlink;
 use std::ffi::CString;
 
 use ffi::sdl::*;
@@ -559,18 +560,7 @@ fn close_controllers(controllers: [*mut SDL_GameController; MAX_CONTROLLERS as u
 }
 
 fn get_exe_path() -> PathBuf {
-
-    let name = CString::new("/proc/self/exe").unwrap();
-    let mut buffer: [i8; linux::MAX_PATH] = [0; linux::MAX_PATH];
-    let name_length = unsafe { 
-        readlink(name.as_ptr(), buffer.as_mut_ptr(),
-                           linux::MAX_PATH as size_t)
-    };
-    let result = unsafe { String::from_raw_parts(buffer.as_ptr() as *mut u8, 
-                                                 name_length as usize,
-                                                 (name_length + 10) as usize) };
-
-    PathBuf::from(result.clone())
+    readlink("/proc/self/exe").unwrap();
 }
 
 fn compare_file_time(time1: &linux::timespec, time2: &linux::timespec) -> i8 {

@@ -49,16 +49,24 @@ pub fn draw_rect(buffer: &mut VideoBuffer, real_min_x: f32, real_min_y: f32,
 
 //TODO: see how to do this crazy blit with iterators to be more idiomatic rust!
 //Something with iter.zip!
-pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {
+pub fn draw_bitmap_aligned(buffer: &mut VideoBuffer, bitmap: &Bitmap,
+                           mut x: f32, mut y: f32,
+                           align_x: i32, align_y: i32)  {
+    y = y - align_y as f32;
+    x = x - align_x as f32;
     let mut min_y = y.round() as isize;
     let mut min_x = x.round() as isize;
     let mut max_x = (x + bitmap.width as f32).round() as isize;
     let mut max_y = (y + bitmap.height as f32).round() as isize;
 
+    let mut source_offset_x = 0;
     if min_x < 0 {
+        source_offset_x -= min_x;
         min_x = 0;
     }
+    let mut source_offset_y = 0;
     if min_y < 0 {
+        source_offset_y -= min_y;
         min_y = 0;
     }
     if max_x > buffer.width as isize {
@@ -68,11 +76,10 @@ pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {
         max_y = buffer.height as isize;
     }
 
-
-    let bitmap_offset = bitmap.width as isize * (bitmap.height as isize - 1);
+    let bitmap_offset = bitmap.width as isize * (bitmap.height as isize - 1)
+                        - bitmap.width as isize * source_offset_y + source_offset_x;
     let buffer_offset = min_y * buffer.pitch as isize + min_x; 
 
-    //TODO: Sourcerow is wrong for clipping!
     let mut source_row = unsafe { bitmap.memory.as_ptr().offset(bitmap_offset) };
     let mut dest_row = unsafe { buffer.memory.as_mut_ptr().offset(buffer_offset) };
     for _ in min_y..max_y {
@@ -107,6 +114,10 @@ pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {
             source_row = source_row.offset(-(bitmap.width as isize));
         }
     }
+}
+
+pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {
+    draw_bitmap_aligned(buffer, bitmap, x, y, 0, 0);
 }
 
 #[repr(C, packed)]

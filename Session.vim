@@ -29,9 +29,9 @@ vmap [% [%m'gv``
 vmap ]% ]%m'gv``
 vmap a% [%v]%
 nmap gx <Plug>NetrwBrowseX
-nnoremap <C-F4> c
-nnoremap <C-Tab> w
 nmap <S-Insert> "+gP
+nnoremap <C-Tab> w
+nnoremap <C-F4> c
 nnoremap <silent> <Plug>NetrwBrowseX :call netrw#NetrwBrowseX(expand("<cWORD>"),0)
 onoremap <C-F4> c
 vnoremap <C-F4> c
@@ -89,13 +89,19 @@ if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
 endif
 set shortmess=aoO
 badd +49 Session.vim
-badd +1075 src\win32.rs
-badd +148 src\game\mod.rs
-badd +83 src\ffi\mod.rs
+badd +1231 src\win32.rs
+badd +134 src\game\mod.rs
+badd +37 src\ffi\mod.rs
 badd +165 src\ffi\direct_sound.rs
-badd +15 D:\WinWorkspace\rust_hero\src\main.rs
-badd +6 src\lib.rs
-badd +13 src\common\mod.rs
+badd +4 D:\WinWorkspace\rust_hero\src\main.rs
+badd +2 src\lib.rs
+badd +157 src\common\mod.rs
+badd +20 src\game\tilemap.rs
+badd +1 \<std\ macros>
+badd +1 src\linux.rs
+badd +5 build.bat
+badd +29 src\game\memory.rs
+badd +2 src\game\random.rs
 args src\win32.rs
 edit src\game\mod.rs
 set splitbelow splitright
@@ -111,11 +117,11 @@ set nosplitbelow
 set nosplitright
 wincmd t
 set winheight=1 winwidth=1
-exe 'vert 1resize ' . ((&columns * 113 + 117) / 235)
+exe 'vert 1resize ' . ((&columns * 118 + 117) / 235)
 exe '2resize ' . ((&lines * 47 + 30) / 60)
-exe 'vert 2resize ' . ((&columns * 121 + 117) / 235)
+exe 'vert 2resize ' . ((&columns * 116 + 117) / 235)
 exe '3resize ' . ((&lines * 10 + 30) / 60)
-exe 'vert 3resize ' . ((&columns * 121 + 117) / 235)
+exe 'vert 3resize ' . ((&columns * 116 + 117) / 235)
 argglobal
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
@@ -128,7 +134,7 @@ nnoremap <buffer> <silent> ]] :call rust#Jump('n', 'Forward')
 setlocal keymap=
 setlocal noarabic
 setlocal autoindent
-setlocal balloonexpr=
+setlocal balloonexpr=netrw#NetrwBalloonHelp()
 setlocal nobinary
 setlocal bufhidden=
 setlocal buflisted
@@ -228,15 +234,15 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 271 - ((47 * winheight(0) + 29) / 58)
+let s:l = 44 - ((26 * winheight(0) + 29) / 58)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-271
-normal! 018|
+44
+normal! 045|
 wincmd w
 argglobal
-edit src\ffi\mod.rs
+edit src\game\mod.rs
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
 onoremap <buffer> <silent> [[ :call rust#Jump('o', 'Back')
@@ -248,7 +254,7 @@ nnoremap <buffer> <silent> ]] :call rust#Jump('n', 'Forward')
 setlocal keymap=
 setlocal noarabic
 setlocal autoindent
-setlocal balloonexpr=
+setlocal balloonexpr=netrw#NetrwBalloonHelp()
 setlocal nobinary
 setlocal bufhidden=
 setlocal buflisted
@@ -306,7 +312,7 @@ setlocal nolinebreak
 setlocal nolisp
 setlocal nolist
 setlocal makeprg=
-setlocal matchpairs=(:),{:},[:]
+setlocal matchpairs=(:),{:},[:],<:>
 setlocal modeline
 setlocal modifiable
 setlocal nrformats=octal,hex
@@ -348,12 +354,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 83 - ((0 * winheight(0) + 23) / 47)
+let s:l = 164 - ((43 * winheight(0) + 23) / 47)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-83
-normal! 032|
+164
+normal! 056|
 wincmd w
 argglobal
 enew
@@ -460,11 +466,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 wincmd w
-exe 'vert 1resize ' . ((&columns * 113 + 117) / 235)
+exe 'vert 1resize ' . ((&columns * 118 + 117) / 235)
 exe '2resize ' . ((&lines * 47 + 30) / 60)
-exe 'vert 2resize ' . ((&columns * 121 + 117) / 235)
+exe 'vert 2resize ' . ((&columns * 116 + 117) / 235)
 exe '3resize ' . ((&lines * 10 + 30) / 60)
-exe 'vert 3resize ' . ((&columns * 121 + 117) / 235)
+exe 'vert 3resize ' . ((&columns * 116 + 117) / 235)
 tabnext 1
 if exists('s:wipebuf')
   silent exe 'bwipe ' . s:wipebuf

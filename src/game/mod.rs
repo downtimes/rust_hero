@@ -1,5 +1,4 @@
 use std::mem;
-use std::slice;
 
 #[allow(unused_imports)]
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input, ReadFileResult};
@@ -7,9 +6,12 @@ use common::{ThreadContext};
 
 mod graphics;
 mod tilemap;
+mod memory;
+mod random;
 
 use self::tilemap::{TileMap, is_tilemap_point_empty};
 use self::tilemap::{TilemapPosition};
+use self::memory::MemoryArena;
 
 // ============= The public interface ===============
 //Has to be very low latency!
@@ -33,6 +35,9 @@ pub extern fn update_and_render(_context: &ThreadContext,
     let state: &mut GameState = 
         unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
 
+    //random table index 6 start to get a room with staircase on the first
+    //screen
+    let mut rand_index = 6;
 
     if !game_memory.initialized {
         state.player_position.offset_x = 0.5;
@@ -51,57 +56,148 @@ pub extern fn update_and_render(_context: &ThreadContext,
         
         let tilemap = &mut state.world.tilemap;
 
-        const CHUNK_SHIFT: u32 = 8;
+        const CHUNK_SHIFT: u32 = 4;
         const CHUNK_DIM: usize = 1 << CHUNK_SHIFT;
 
-        tilemap.tile_side_pixels = 60;
+        tilemap.tilechunk_count_x = 60;
+        tilemap.tilechunk_count_y = 60;
+        tilemap.tilechunk_count_z = 2;
         tilemap.tile_side_meters = 1.4;
-        tilemap.tilechunk_count_x = 4;
-        tilemap.tilechunk_count_y = 4;
         tilemap.chunk_shift = CHUNK_SHIFT;
         tilemap.chunk_mask = CHUNK_DIM as u32 - 1;
+        tilemap.chunk_dim = CHUNK_DIM;
 
         //Allocating enough chunks so our empty map hopefully fits
         tilemap.tilechunks = world_arena.push_slice(tilemap.tilechunk_count_x 
-                                                    * tilemap.tilechunk_count_y);
+                                                    * tilemap.tilechunk_count_y
+                                                    * tilemap.tilechunk_count_z);
 
-        for chunk_y in 0..tilemap.tilechunk_count_x {
-            for chunk_x in 0..tilemap.tilechunk_count_y {
-                tilemap.tilechunks[chunk_y * tilemap.tilechunk_count_x + chunk_x].chunk_dim = CHUNK_DIM;
-                tilemap.tilechunks[chunk_y * tilemap.tilechunk_count_x + chunk_x].tiles = 
-                    world_arena.push_slice(CHUNK_DIM * CHUNK_DIM);
-            }
-        }
-
-        //Generating a random
+        //Generating a random maze
         let tiles_per_screen_x = 17;
         let tiles_per_screen_y = 9;
+        let mut screen_y = 0;
+        let mut screen_x = 0;
 
-        for screen_y in 0..32 {
-            for screen_x in 0..32 {
-                for tile_y in 0..tiles_per_screen_y {
-                    for tile_x in 0..tiles_per_screen_x {
-                        let abs_tile_x = screen_x * tiles_per_screen_x + tile_x;
-                        let abs_tile_y = screen_y * tiles_per_screen_y +  tile_y;
-                        let value = 
-                            if tile_x == tile_y && tile_y % 2 == 0{
-                                1
-                            } else {
-                                0
-                            };
-                        tilemap.set_tile_value(world_arena, abs_tile_x, 
-                                               abs_tile_y, value);
+        let mut door_left = false;
+        let mut door_right = false;
+        let mut door_top = false;
+        let mut door_bottom = false;
+        let mut door_up = false;
+        let mut door_down = false;
+
+        let mut abs_tile_z = 0;
+
+        for _ in 0..100 {
+
+            let random_choice =
+                if door_up || door_down {
+                    random::NUMBERS[rand_index] % 2
+                } else {
+                    random::NUMBERS[rand_index] % 3
+                };
+            rand_index += 1;
+
+            if random_choice == 0 {
+                door_right = true;
+            } else if random_choice == 1{
+                door_top = true;
+            } else {
+                abs_tile_z = 
+                    if abs_tile_z == 0 { 
+                        door_up = true;
+                        1 
+                    } else { 
+                        door_down = true;
+                        0 
+                    };
+            }
+
+
+            for tile_y in 0..tiles_per_screen_y {
+                for tile_x in 0..tiles_per_screen_x {
+                    let abs_tile_x = screen_x * tiles_per_screen_x + tile_x;
+                    let abs_tile_y = screen_y * tiles_per_screen_y +  tile_y;
+                    let mut tile_value = 0;
+                    //vertical walls
+                    if tile_x == 0 {
+                        tile_value = 1;
+
+                        if door_left && tile_y == tiles_per_screen_y / 2 {
+                            tile_value = 0;
+                        }
                     }
+                    
+                    if tile_x == tiles_per_screen_x - 1 {
+                        tile_value = 1;
+
+                        if door_right && tile_y == tiles_per_screen_y / 2 {
+                            tile_value = 0;
+                        }
+                    }
+                    //horizontal walls
+                    if tile_y == 0 {
+                        tile_value = 1;
+
+                        if door_bottom && tile_x == tiles_per_screen_x / 2 {
+                            tile_value = 0;
+                        }
+                    }
+                    if tile_y == tiles_per_screen_y - 1 {
+                        tile_value = 1;
+
+                        if door_top && tile_x == tiles_per_screen_x / 2 {
+                            tile_value = 0;
+                        }
+                    }
+
+                    //"Staircases"
+                    if tile_x == 10 && tile_y == 6 {
+                        if door_up {
+                            tile_value = 2;
+                        } 
+                        if door_down {
+                            tile_value = 3;
+                        }
+                    }
+
+                    tilemap.set_tile_value(world_arena, abs_tile_x, 
+                                           abs_tile_y, abs_tile_z,
+                                           tile_value);
                 }
             }
-        }
 
+            if door_up {
+                door_down = true;
+                door_up = false;
+            } else if door_down {
+                door_up = true;
+                door_down = false;
+            } else {
+                door_up == false;
+                door_down == false;
+            }
+
+            if door_right {
+                screen_x += 1;
+            } else {
+                screen_y += 1;
+            } 
+
+            door_bottom = door_top;
+            door_left = door_right;
+
+            door_top = false;
+            door_right = false;
+        }
 
         game_memory.initialized = true;
     }
 
     let world = &state.world;
     
+    let tile_side_pixels = 60;
+    let meters_to_pixel = tile_side_pixels as f32 / world.tilemap.tile_side_meters;
+
     let player_width = 0.75 * world.tilemap.tile_side_meters;
     let player_height = world.tilemap.tile_side_meters;
 
@@ -173,87 +269,50 @@ pub extern fn update_and_render(_context: &ThreadContext,
             let row = (rel_row + state.player_position.tile_y as i32) as u32;
             let column = (rel_column + state.player_position.tile_x as i32) as u32;
 
-            let position = TilemapPosition{
-                tile_x: column,
-                tile_y: row,
-                offset_x: 0.0,
-                offset_y: 0.0,
-            };
-            let elem = world.tilemap.get_tile_value(&position);
-            let mut color = 
-                if elem == 0 {
-                    0.5
-                } else {
-                    1.0
-                };
+            let elem = world.tilemap.get_tile_value(column as u32, row as u32,
+                                                    state.player_position.tile_z);
+            if let Some(value) = elem {
 
-            if column == state.player_position.tile_x && 
-               row == state.player_position.tile_y {
-                color = 0.8;
+                let mut color = 0.5;
+                if value == 1 {
+                    color = 1.0;
+                } else if value > 1 {
+                    color = 0.3;
+                }
+                if column == state.player_position.tile_x && 
+                    row == state.player_position.tile_y {
+
+                    color = 0.8;
+                }
+
+                let center_x = screen_center_x - meters_to_pixel * state.player_position.offset_x
+                    + rel_column as f32 * tile_side_pixels as f32;
+                let center_y = screen_center_y + meters_to_pixel * state.player_position.offset_y
+                    - rel_row as f32 * tile_side_pixels as f32;
+                let min_x = center_x - 0.5 * tile_side_pixels as f32;
+                let min_y = center_y - 0.5 * tile_side_pixels as f32;
+                let max_x = min_x + tile_side_pixels as f32;
+                let max_y = min_y + tile_side_pixels as f32;
+                graphics::draw_rect(video_buffer, min_x, min_y, max_x, max_y,
+                                    color, color, color);
             }
-
-            let center_x = screen_center_x - world.tilemap.meters_to_pixels(state.player_position.offset_x)
-                        + rel_column as f32 * world.tilemap.tile_side_pixels as f32;
-            let center_y = screen_center_y + world.tilemap.meters_to_pixels(state.player_position.offset_y)
-                        - rel_row as f32 * world.tilemap.tile_side_pixels as f32;
-            let min_x = center_x - 0.5 * world.tilemap.tile_side_pixels as f32;
-            let min_y = center_y - 0.5 * world.tilemap.tile_side_pixels as f32;
-            let max_x = min_x + world.tilemap.tile_side_pixels as f32;
-            let max_y = min_y + world.tilemap.tile_side_pixels as f32;
-            graphics::draw_rect(video_buffer, min_x, min_y, max_x, max_y,
-                                color, color, color);
         }
     }
 
 
-    let player_top = screen_center_y - world.tilemap.meters_to_pixels(player_height);
-    let player_left = screen_center_x - world.tilemap.meters_to_pixels(0.5 * player_width);
+    let player_top = screen_center_y - meters_to_pixel * player_height;
+    let player_left = screen_center_x - meters_to_pixel * 0.5 * player_width;
     graphics::draw_rect(video_buffer, 
                         player_left, player_top,
-                        player_left + world.tilemap.meters_to_pixels(player_width),
-                        player_top + world.tilemap.meters_to_pixels(player_height),
+                        player_left + meters_to_pixel * player_width,
+                        player_top + meters_to_pixel * player_height,
                         1.0, 1.0, 0.0);
 
 }
 
 // ======== End of the public interface =========
 
-struct MemoryArena {
-    size: usize,
-    used: usize,
-    base_ptr: *mut u8,
-}
 
-impl MemoryArena {
-    fn new(new_size: usize, base_ptr: *const u8) -> MemoryArena {
-        MemoryArena {
-            size: new_size,
-            used: 0,
-            base_ptr: base_ptr as *mut u8,
-        }
-    }
-
-    //TODO: Think about clear to zero options
-    fn push_struct<T>(&mut self) -> &'static mut T {
-        let size = mem::size_of::<T>();
-        debug_assert!(self.used + size <= self.size);
-
-        let result_ptr = unsafe { self.base_ptr.offset(self.used as isize) };
-        self.used += size;
-        
-        unsafe { mem::transmute(result_ptr) }
-    }
-
-    fn push_slice<T>(&mut self, count: usize) -> &'static mut [T] {
-        let mem_size = count * mem::size_of::<T>();
-        debug_assert!(self.used + mem_size <= self.size);
-
-        let result_ptr = unsafe { self.base_ptr.offset(self.used as isize) };
-        self.used += mem_size;
-        
-        unsafe { slice::from_raw_parts_mut(result_ptr as *mut T, count) }
-    }
-}
 
 struct GameState<'a> {
     world_arena: MemoryArena,

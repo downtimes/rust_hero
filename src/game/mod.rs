@@ -309,7 +309,7 @@ pub extern fn update_and_render(context: &ThreadContext,
                is_tilemap_point_empty(&world.tilemap, &state.player_position) {
                    let player_p = &mut state.player_position;
 
-                   if on_same_tile(player_p, &new_position) {
+                   if !on_same_tile(player_p, &new_position) {
                        let tile_value = world.tilemap.get_tile_value(new_position.tile_x,
                                                                      new_position.tile_y,
                                                                      new_position.tile_z);

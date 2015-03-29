@@ -6,7 +6,7 @@ use std::ptr;
 use std::mem;
 use std::path::PathBuf;
 use std::slice;
-use std::fs::readlink;
+use std::fs::read_link;
 use std::ffi::CString;
 
 use ffi::sdl::*;
@@ -93,7 +93,7 @@ mod debug {
                     if bytes_to_read == 0 {
                         result = Ok(ReadFileResult {
                                         size: size,
-                                        contents: memory,
+                                        contents: memory as *mut u8,
                                       });
                     } else {
                         println!("Reading the file contents failed! ({})", filename);
@@ -513,8 +513,8 @@ fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer,
                     SDLK_LEFT => process_key_press(&mut keyboard.action_left, is_down),
                     SDLK_RIGHT => process_key_press(&mut keyboard.action_right, is_down),
                     SDLK_DOWN => process_key_press(&mut keyboard.action_down, is_down),
-                    SDLK_ESCAPE => {},
-                    SDLK_SPACE => {},
+                    SDLK_ESCAPE => process_key_press(&mut keyboard.back, is_down),
+                    SDLK_SPACE => process_key_press(&mut keyboard.start, is_down), 
                     _ => (),
                 }
             }
@@ -560,7 +560,7 @@ fn close_controllers(controllers: [*mut SDL_GameController; MAX_CONTROLLERS as u
 }
 
 fn get_exe_path() -> PathBuf {
-    readlink("/proc/self/exe").unwrap();
+    read_link("/proc/self/exe").unwrap()
 }
 
 fn compare_file_time(time1: &linux::timespec, time2: &linux::timespec) -> i8 {
@@ -710,6 +710,8 @@ fn main() {
         let mut last_counter = unsafe { SDL_GetPerformanceCounter() };
         let mut running = true;
         while running {
+
+            new_input.delta_time = target_seconds_per_frame;
             
             let new_write_time = get_last_write_time(&game_so_string);
             if compare_file_time(&game.write_time, &new_write_time) != 0 {
@@ -718,6 +720,7 @@ fn main() {
             }
 
             let mut event: SDL_Event = Default::default();
+
             
             new_input.controllers[0] = old_input.controllers[0];
             new_input.controllers[0].is_connected = true;
@@ -776,8 +779,8 @@ fn main() {
             let mut video_buf = VideoBuffer {
                 memory: unsafe { slice::from_raw_parts_mut(buffer.pixels as *mut u32, 
                                         (buffer.size/BYTES_PER_PIXEL as u64) as usize) },
-                width: (buffer.width*BYTES_PER_PIXEL as i32) as usize,
-                height: (buffer.height*BYTES_PER_PIXEL as i32) as usize,
+                width: (buffer.width as i32) as usize,
+                height: (buffer.height as i32) as usize,
                 pitch: (buffer.width as i32) as usize,
             };
 

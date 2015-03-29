@@ -8,6 +8,6 @@ fi
 
 if [[ "$1" == "run" ]]; then
 	pushd data
-	../target/rust_hero
+	RUST_BACKTRACE=1 ../target/rust_hero
 	popd
 fi

@@ -76,13 +76,20 @@ if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
   let s:wipebuf = bufnr('%')
 endif
 set shortmess=aoO
-badd +0 src/linux.rs
-badd +0 src/win32.rs
+badd +851 src/linux.rs
+badd +1 src/win32.rs
+badd +8 src/ffi/linux.rs
+badd +4 src/main.rs
+badd +29 src/ffi/sdl.rs
+badd +80 src/common/mod.rs
+badd +11 build.sh
+badd +323 src/game/mod.rs
+badd +2 src/game/tilemap.rs
 argglobal
 silent! argdel *
 argadd src/linux.rs
 set stal=2
-edit src/linux.rs
+edit src/game/mod.rs
 set splitbelow splitright
 wincmd _ | wincmd |
 vsplit
@@ -96,11 +103,11 @@ set nosplitbelow
 set nosplitright
 wincmd t
 set winheight=1 winwidth=1
-exe 'vert 1resize ' . ((&columns * 84 + 84) / 168)
+exe 'vert 1resize ' . ((&columns * 98 + 84) / 168)
 exe '2resize ' . ((&lines * 30 + 22) / 44)
-exe 'vert 2resize ' . ((&columns * 83 + 84) / 168)
+exe 'vert 2resize ' . ((&columns * 69 + 84) / 168)
 exe '3resize ' . ((&lines * 10 + 22) / 44)
-exe 'vert 3resize ' . ((&columns * 83 + 84) / 168)
+exe 'vert 3resize ' . ((&columns * 69 + 84) / 168)
 argglobal
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
@@ -218,15 +225,15 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 308 - ((33 * winheight(0) + 20) / 41)
+let s:l = 311 - ((20 * winheight(0) + 20) / 41)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-308
-normal! 021|
+311
+normal! 0
 wincmd w
 argglobal
-edit src/linux.rs
+edit src/common/mod.rs
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
 onoremap <buffer> <silent> [[ :call rust#Jump('o', 'Back')
@@ -343,11 +350,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 1 - ((0 * winheight(0) + 15) / 30)
+let s:l = 65 - ((8 * winheight(0) + 15) / 30)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-1
+65
 normal! 0
 wincmd w
 argglobal
@@ -460,11 +467,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 wincmd w
-exe 'vert 1resize ' . ((&columns * 84 + 84) / 168)
+exe 'vert 1resize ' . ((&columns * 98 + 84) / 168)
 exe '2resize ' . ((&lines * 30 + 22) / 44)
-exe 'vert 2resize ' . ((&columns * 83 + 84) / 168)
+exe 'vert 2resize ' . ((&columns * 69 + 84) / 168)
 exe '3resize ' . ((&lines * 10 + 22) / 44)
-exe 'vert 3resize ' . ((&columns * 83 + 84) / 168)
+exe 'vert 3resize ' . ((&columns * 69 + 84) / 168)
 tabedit src/win32.rs
 set splitbelow splitright
 set nosplitbelow
@@ -588,12 +595,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 814 - ((7 * winheight(0) + 20) / 41)
+let s:l = 1239 - ((33 * winheight(0) + 20) / 41)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-814
-normal! 0
+1239
+normal! 029|
 tabnext 1
 set stal=1
 if exists('s:wipebuf')

@@ -123,7 +123,7 @@ pub struct Input {
     pub mouse_x1: Button,
     pub mouse_x2: Button,
 
-    pub delta_time: f32,
+    pub delta_t: f32,
 
     //TODO: see if it fits rustaceans better if we have an Option of
     //ControllerInputs here?
@@ -144,7 +144,7 @@ impl Default for Input {
             mouse_x1: Default::default(),
             mouse_x2: Default::default(),
 
-            delta_time: 0.0,
+            delta_t: 0.0,
 
             controllers: [Default::default(); 5],
         }

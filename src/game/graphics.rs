@@ -3,13 +3,15 @@ use common::PlatformReadEntireFileT;
 use std::mem;
 use std::slice;
 
-pub fn draw_rect(buffer: &mut VideoBuffer, real_min_x: f32, real_min_y: f32, 
-                 real_max_x: f32, real_max_y: f32, 
-                 r: f32, g: f32, b: f32) {
-    let mut min_x = real_min_x.round() as isize;
-    let mut max_x = real_max_x.round() as isize;
-    let mut min_y = real_min_y.round() as isize;
-    let mut max_y = real_max_y.round() as isize;
+use super::math::V2f;
+
+pub fn draw_rect(buffer: &mut VideoBuffer, real_min: V2f,
+                 real_max: V2f, r: f32, g: f32, b: f32) {
+
+    let mut min_x = real_min.x.round() as isize;
+    let mut max_x = real_max.x.round() as isize;
+    let mut min_y = real_min.y.round() as isize;
+    let mut max_y = real_max.y.round() as isize;
 
     if min_x < 0 {
         min_x = 0;
@@ -50,14 +52,14 @@ pub fn draw_rect(buffer: &mut VideoBuffer, real_min_x: f32, real_min_y: f32,
 //TODO: see how to do this crazy blit with iterators to be more idiomatic rust!
 //Something with iter.zip!
 pub fn draw_bitmap_aligned(buffer: &mut VideoBuffer, bitmap: &Bitmap,
-                           mut x: f32, mut y: f32,
+                           mut top_left: V2f,
                            align_x: i32, align_y: i32)  {
-    y = y - align_y as f32;
-    x = x - align_x as f32;
-    let mut min_y = y.round() as isize;
-    let mut min_x = x.round() as isize;
-    let mut max_x = (x + bitmap.width as f32).round() as isize;
-    let mut max_y = (y + bitmap.height as f32).round() as isize;
+    top_left.y = top_left.y - align_y as f32;
+    top_left.x = top_left.x - align_x as f32;
+    let mut min_y = top_left.y.round() as isize;
+    let mut min_x = top_left.x.round() as isize;
+    let mut max_x = (top_left.x + bitmap.width as f32).round() as isize;
+    let mut max_y = (top_left.y + bitmap.height as f32).round() as isize;
 
     let mut source_offset_x = 0;
     if min_x < 0 {
@@ -117,7 +119,7 @@ pub fn draw_bitmap_aligned(buffer: &mut VideoBuffer, bitmap: &Bitmap,
 }
 
 pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {
-    draw_bitmap_aligned(buffer, bitmap, x, y, 0, 0);
+    draw_bitmap_aligned(buffer, bitmap, V2f{ x: x, y: y } , 0, 0);
 }
 
 #[repr(C, packed)]

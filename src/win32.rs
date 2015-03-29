@@ -996,7 +996,7 @@ fn initialize_replay(exe_dirname: &PathBuf, file_size: usize,
     mmap_path.push("mmap.rhm");
 
     let mut input_path = exe_dirname.clone();
-    input_path.push("mmap.rhm");
+    input_path.push("input.rhi");
 
     let mmap_name = CString::new(mmap_path.to_str().unwrap()).unwrap();
     let input_name = CString::new(input_path.to_str().unwrap()).unwrap();
@@ -1069,6 +1069,8 @@ fn override_input(replay: &mut Replay, input: &mut Input) {
     }
 }
 
+//TODO: Looped live code editing is currently busted. Needs a fix
+//recording starts but playback crashes (infinite loop?)
 #[main]
 fn main() {
     let (XInputGetState, _) = load_xinput_functions();
@@ -1245,7 +1247,7 @@ fn main() {
     window.running = true;
     while window.running {
 
-        new_input.delta_time = target_seconds_per_frame;
+        new_input.delta_t = target_seconds_per_frame;
 
         let new_write_time = get_last_write_time(&game_dll_string)
                                               .unwrap_or(FILETIME {

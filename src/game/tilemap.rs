@@ -1,5 +1,7 @@
-
 use super::memory::MemoryArena;
+
+use super::math::V2f;
+
 
 pub struct TileMap<'a> {
     pub tile_side_meters: f32,
@@ -86,8 +88,7 @@ pub struct TilemapPosition {
     pub tile_z: u32,
 
     //Tile relative
-    pub offset_x: f32,
-    pub offset_y: f32,
+    pub offset: V2f
 }
 
 pub fn canonicalize_coord(tilemap: &TileMap, tile: &mut u32, tile_offset: &mut f32) {
@@ -111,8 +112,8 @@ pub fn canonicalize_coord(tilemap: &TileMap, tile: &mut u32, tile_offset: &mut f
 impl TilemapPosition {
     pub fn recanonicalize(&mut self, tilemap: &TileMap) {
 
-        canonicalize_coord(tilemap, &mut self.tile_x, &mut self.offset_x);
-        canonicalize_coord(tilemap, &mut self.tile_y, &mut self.offset_y);
+        canonicalize_coord(tilemap, &mut self.tile_x, &mut self.offset.x);
+        canonicalize_coord(tilemap, &mut self.tile_y, &mut self.offset.y);
     }
 }
 
@@ -128,8 +129,8 @@ pub fn substract(tilemap: &TileMap, a: &TilemapPosition, b: &TilemapPosition) ->
     let d_tile_z = tilemap.tile_side_meters * (a.tile_z as f32 - b.tile_z as f32);
 
     TilemapDifference {
-        dx: d_tile_x + a.offset_x - b.offset_x, 
-        dy: d_tile_y + a.offset_y - b.offset_y,
+        dx: d_tile_x + a.offset.x - b.offset.x, 
+        dy: d_tile_y + a.offset.y - b.offset.y,
         dz: d_tile_z,
     }
 }

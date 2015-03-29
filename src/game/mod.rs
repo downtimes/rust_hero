@@ -8,10 +8,12 @@ mod graphics;
 mod tilemap;
 mod memory;
 mod random;
+mod math;
 
 use self::tilemap::{TileMap, substract, is_tilemap_point_empty};
 use self::tilemap::{TilemapDifference, TilemapPosition, on_same_tile};
 use self::memory::MemoryArena;
+use self::math::V2f;
 
 // ============= The public interface ===============
 //Has to be very low latency!
@@ -83,8 +85,8 @@ pub extern fn update_and_render(context: &ThreadContext,
         state.camera_position.tile_y = 9/2;
         state.camera_position.tile_z = 0;
 
-        state.player_position.offset_x = 0.5;
-        state.player_position.offset_y = 0.5;
+        state.player_position.offset.x = 0.5;
+        state.player_position.offset.y = 0.5;
         state.player_position.tile_x = 3;
         state.player_position.tile_y = 3;
         state.player_position.tile_z = 0;
@@ -250,8 +252,8 @@ pub extern fn update_and_render(context: &ThreadContext,
     let tile_side_pixels = 60;
     let meters_to_pixel = tile_side_pixels as f32 / world.tilemap.tile_side_meters;
 
-    let player_width = 0.75 * world.tilemap.tile_side_meters;
-    let player_height = world.tilemap.tile_side_meters;
+    let player_dim = V2f{ x: 0.75 * world.tilemap.tile_side_meters, 
+                          y: world.tilemap.tile_side_meters };
     let tilemap = &state.world.tilemap;
 
     for controller in input.controllers.iter() {
@@ -261,47 +263,59 @@ pub extern fn update_and_render(context: &ThreadContext,
 
         //Digital movement
         } else {
-            let mut dplayer_x = 0.0; //In Meters per second
-            let mut dplayer_y = 0.0;
+            //in m/s^2
+            let mut player_acc = V2f{ x: 0.0, y: 0.0 };
             
             if controller.move_up.ended_down {
                 state.hero_face_direction = 1;
-                dplayer_y = 1.0;
+                player_acc.y = 1.0;
             }
             if controller.move_down.ended_down {
                 state.hero_face_direction = 3;
-                dplayer_y = -1.0;
+                player_acc.y = -1.0;
             }
             if controller.move_left.ended_down {
                 state.hero_face_direction = 2;
-                dplayer_x = -1.0;
+                player_acc.x = -1.0;
             }
             if controller.move_right.ended_down {
                 state.hero_face_direction = 0;
-                dplayer_x = 1.0;
+                player_acc.x = 1.0;
+            }
+            
+            //Diagonal correction. replace with vector length resize when available
+            if player_acc.x != 0.0 && player_acc.y != 0.0 {
+                player_acc = player_acc * 0.707106781187;
             }
 
             let player_speed = 
                 if controller.start.ended_down {
-                    10.0
+                    100.0
                 } else {
-                    2.0
+                    10.0
                 };
 
-            dplayer_x *= player_speed;
-            dplayer_y *= player_speed;
+            player_acc = player_acc * player_speed;
+
+            //friction force currently just by rule of thumb;
+            player_acc = player_acc - state.player_velocity * 1.5;
+
 
             let mut new_position = state.player_position;
-            new_position.offset_x += dplayer_x * input.delta_time;
-            new_position.offset_y += dplayer_y * input.delta_time;
+            // new_pos = 1/2*a*t^2 + v*t + old_pos;
+            new_position.offset = player_acc * 0.5 * input.delta_t.powi(2) + 
+                                  state.player_velocity * input.delta_t +
+                                  new_position.offset;
+            // new_velocity = a*t + old_velocity;
+            state.player_velocity = player_acc * input.delta_t + state.player_velocity;
             new_position.recanonicalize(&world.tilemap);
 
             let mut player_right_bottom = new_position;
-            player_right_bottom.offset_x += 0.5*player_width;
+            player_right_bottom.offset.x += 0.5*player_dim.x;
             player_right_bottom.recanonicalize(&world.tilemap);
 
             let mut player_left_bottom = new_position;
-            player_left_bottom.offset_x -= 0.5*player_width;
+            player_left_bottom.offset.x -= 0.5*player_dim.x;
             player_left_bottom.recanonicalize(&world.tilemap);
 
             if is_tilemap_point_empty(&world.tilemap, &player_left_bottom) &&
@@ -346,9 +360,8 @@ pub extern fn update_and_render(context: &ThreadContext,
     }
 
     //Clear the screen to pink!
-    let buffer_width = video_buffer.width;
-    let buffer_height = video_buffer.height;
-    graphics::draw_rect(video_buffer, 0.0, 0.0, buffer_width as f32, buffer_height as f32,
+    let buffer_dim = V2f{ x: video_buffer.width as f32, y: video_buffer.height as f32 };
+    graphics::draw_rect(video_buffer, V2f{ x: 0.0, y: 0.0 }, buffer_dim, 
                         1.0, 0.0, 1.0);
 
     graphics::draw_bitmap(video_buffer, &state.test_bitmap, 0.0, 0.0);
@@ -377,15 +390,15 @@ pub extern fn update_and_render(context: &ThreadContext,
                            color = 0.8;
                     }
 
-                    let center_x = screen_center_x - meters_to_pixel * state.camera_position.offset_x
-                        + rel_column as f32 * tile_side_pixels as f32;
-                    let center_y = screen_center_y + meters_to_pixel * state.camera_position.offset_y
-                        - rel_row as f32 * tile_side_pixels as f32;
-                    let min_x = center_x - 0.5 * tile_side_pixels as f32;
-                    let min_y = center_y - 0.5 * tile_side_pixels as f32;
-                    let max_x = min_x + tile_side_pixels as f32;
-                    let max_y = min_y + tile_side_pixels as f32;
-                    graphics::draw_rect(video_buffer, min_x, min_y, max_x, max_y,
+                    let center = V2f{ x: screen_center_x - meters_to_pixel * state.camera_position.offset.x
+                                           + rel_column as f32 * tile_side_pixels as f32,
+                                       y: screen_center_y + meters_to_pixel * state.camera_position.offset.y
+                                           - rel_row as f32 * tile_side_pixels as f32,
+                                    };
+
+                    let min = center - 0.5 * tile_side_pixels as f32;
+                    let max = min + tile_side_pixels as f32;
+                    graphics::draw_rect(video_buffer, min, max,
                                         color, color, color);
                 }
             }
@@ -396,28 +409,29 @@ pub extern fn update_and_render(context: &ThreadContext,
     let TilemapDifference { dx, dy, dz: _ } = substract(tilemap, 
                                                         &state.player_position, 
                                                         &state.camera_position);
-    let player_groundpoint_x = screen_center_x + meters_to_pixel * dx;
-    let player_groundpoint_y = screen_center_y - meters_to_pixel * dy;
-    let player_top = player_groundpoint_y - meters_to_pixel * player_height;
-    let player_left = player_groundpoint_x - meters_to_pixel * 0.5 * player_width;
+    let player_groundpoint = V2f{
+        x: screen_center_x + meters_to_pixel * dx,
+        y: screen_center_y - meters_to_pixel * dy,
+    };
+    let player_dim_half_x = V2f{ 
+        x: 0.5 * player_dim.x, 
+        y: player_dim.y,
+    };
+    let player_top_left = player_groundpoint - player_dim_half_x * meters_to_pixel;
+    let player_bottom_right = player_top_left + player_dim * meters_to_pixel;
     graphics::draw_rect(video_buffer, 
-                        player_left, player_top,
-                        player_left + meters_to_pixel * player_width,
-                        player_top + meters_to_pixel * player_height,
+                        player_top_left, player_bottom_right,
                         1.0, 1.0, 0.0);
     
     let hero_bitmaps = &state.hero_bitmaps[state.hero_face_direction];
     graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.torso,
-                                  player_groundpoint_x, player_groundpoint_y,
-                                  hero_bitmaps.align_x,
+                                  player_groundpoint, hero_bitmaps.align_x,
                                   hero_bitmaps.align_y);
     graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.cape,
-                                  player_groundpoint_x, player_groundpoint_y,
-                                  hero_bitmaps.align_x,
+                                  player_groundpoint, hero_bitmaps.align_x,
                                   hero_bitmaps.align_y);
     graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.head,
-                                  player_groundpoint_x, player_groundpoint_y,
-                                  hero_bitmaps.align_x,
+                                  player_groundpoint, hero_bitmaps.align_x,
                                   hero_bitmaps.align_y);
 
 
@@ -438,6 +452,7 @@ struct HeroBitmaps<'a> {
 struct GameState<'a> {
     world_arena: MemoryArena,
     player_position: TilemapPosition,
+    player_velocity: V2f,
     camera_position: TilemapPosition,
 
     world: &'a mut World<'a>,

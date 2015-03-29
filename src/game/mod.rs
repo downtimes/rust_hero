@@ -318,9 +318,21 @@ pub extern fn update_and_render(context: &ThreadContext,
             player_left_bottom.offset.x -= 0.5*player_dim.x;
             player_left_bottom.recanonicalize(&world.tilemap);
 
-            if is_tilemap_point_empty(&world.tilemap, &player_left_bottom) &&
-               is_tilemap_point_empty(&world.tilemap, &player_right_bottom) &&
-               is_tilemap_point_empty(&world.tilemap, &state.player_position) {
+            let mut col_p = state.player_position;
+            let collided = 
+                if !is_tilemap_point_empty(&world.tilemap, &player_left_bottom) {
+                    col_p = player_left_bottom;
+                    true
+                } else if !is_tilemap_point_empty(&world.tilemap, &player_right_bottom) {
+                    col_p = player_right_bottom;
+                    true
+                } else if !is_tilemap_point_empty(&world.tilemap, &state.player_position) {
+                    true
+                } else {
+                    false
+                };
+
+            if !collided {
                    let player_p = &mut state.player_position;
 
                    if !on_same_tile(player_p, &new_position) {
@@ -355,6 +367,22 @@ pub extern fn update_and_render(context: &ThreadContext,
                    } else if dy < -(5.0 * tilemap.tile_side_meters) {
                        cam_pos.tile_y -= 9;
                    }
+            } else {
+                let r =
+                    if col_p.tile_x < state.player_position.tile_x {
+                        V2f { x: -1.0, y: 0.0 }
+                    } else if col_p.tile_x > state.player_position.tile_x {
+                        V2f { x: 1.0, y: 0.0 }
+                    } else if col_p.tile_y < state.player_position.tile_y {
+                        V2f { x: 0.0, y: 1.0 }
+                    } else if col_p.tile_y > state.player_position.tile_y {
+                        V2f { x: 0.0, y: -1.0 }
+                    } else {
+                        V2f { x: 0.0, y: 0.0 }
+                    };
+
+                state.player_velocity = state.player_velocity - r * 
+                                        math::dot(r, state.player_velocity) * 1.0;
             }
         }
     }

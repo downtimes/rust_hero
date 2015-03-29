@@ -6,6 +6,10 @@ pub struct V2f {
     pub y: f32,
 }
 
+pub fn dot(a: V2f, b: V2f) -> f32 {
+    a.x * b.x + a.y * b.y
+}
+
 impl ops::Mul<f32> for V2f {
     type Output = V2f;
 

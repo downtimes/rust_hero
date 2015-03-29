@@ -310,23 +310,24 @@ pub extern fn update_and_render(context: &ThreadContext,
             state.player_velocity = player_acc * input.delta_t + state.player_velocity;
             new_position.recanonicalize(&world.tilemap);
 
-            let mut player_right_bottom = new_position;
-            player_right_bottom.offset.x += 0.5*player_dim.x;
-            player_right_bottom.recanonicalize(&world.tilemap);
+            let mut new_right_bottom = new_position;
+            new_right_bottom.offset.x += 0.5*player_dim.x;
+            new_right_bottom.recanonicalize(&world.tilemap);
 
-            let mut player_left_bottom = new_position;
-            player_left_bottom.offset.x -= 0.5*player_dim.x;
-            player_left_bottom.recanonicalize(&world.tilemap);
+            let mut new_left_bottom = new_position;
+            new_left_bottom.offset.x -= 0.5*player_dim.x;
+            new_left_bottom.recanonicalize(&world.tilemap);
 
             let mut col_p = state.player_position;
             let collided = 
-                if !is_tilemap_point_empty(&world.tilemap, &player_left_bottom) {
-                    col_p = player_left_bottom;
+                if !is_tilemap_point_empty(&world.tilemap, &new_position) {
+                    col_p = new_position;
                     true
-                } else if !is_tilemap_point_empty(&world.tilemap, &player_right_bottom) {
-                    col_p = player_right_bottom;
+                } else if !is_tilemap_point_empty(&world.tilemap, &new_right_bottom) {
+                    col_p = new_right_bottom;
                     true
-                } else if !is_tilemap_point_empty(&world.tilemap, &state.player_position) {
+                } else if !is_tilemap_point_empty(&world.tilemap, &new_left_bottom) {
+                    col_p = new_left_bottom;
                     true
                 } else {
                     false
@@ -335,6 +336,7 @@ pub extern fn update_and_render(context: &ThreadContext,
             if !collided {
                    let player_p = &mut state.player_position;
 
+                   //trigger stuff if we change tiles
                    if !on_same_tile(player_p, &new_position) {
                        let tile_value = world.tilemap.get_tile_value(new_position.tile_x,
                                                                      new_position.tile_y,
@@ -347,6 +349,8 @@ pub extern fn update_and_render(context: &ThreadContext,
                            }
                        }
                    }
+
+                   //accept the move
                    *player_p = new_position;
                    
                    //Adjust the camera to look at the right room

@@ -249,9 +249,38 @@ struct Window {
     pause: bool,
     timer_fine_resolution: bool,
     backbuffer: Backbuffer,
+    debug_cursor: HCURSOR,
+    win_pos: WINDOWPLACEMENT,
 }
 
 impl Window {
+    fn toggle_fullscreen(&mut self) {
+        unsafe {
+            let style = GetWindowLongA(self.handle, GWL_STYLE);
+            if (style & WS_OVERLAPPEDWINDOW) != 0 {
+                let mut monitor_info = Default::default();
+                let win_place = GetWindowPlacement(self.handle, &mut self.win_pos);
+                let mon_inf = GetMonitorInfoA(MonitorFromWindow(self.handle,
+                                                               MONITOR_DEFAULTTOPRIMARY),
+                                             &mut monitor_info);
+                if win_place != 0 && mon_inf != 0 {
+                    SetWindowLongA(self.handle, GWL_STYLE, style & (!WS_OVERLAPPEDWINDOW));
+                    SetWindowPos(self.handle, HWND_TOP,
+                                 monitor_info.rcMonitor.left, monitor_info.rcMonitor.top,
+                                 monitor_info.rcMonitor.right - monitor_info.rcMonitor.left,
+                                 monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
+                                 SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+                }
+            } else {
+                SetWindowLongA(self.handle, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+                SetWindowPlacement(self.handle, &mut self.win_pos);
+                SetWindowPos(self.handle, ptr::null_mut(), 0, 0, 0, 0,
+                             SWP_NOOWNERZORDER | SWP_FRAMECHANGED |
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+            }
+        }
+    }
+
     fn process_messages(&mut self, message: c_uint, 
                         wparam: WPARAM, lparam: LPARAM) -> LRESULT {
 
@@ -264,6 +293,14 @@ impl Window {
             },
 
             WM_CLOSE => self.running = false,
+
+            WM_SETCURSOR => unsafe { 
+                if cfg!(ndebug) {
+                    SetCursor(ptr::null_mut());
+                } else {
+                    SetCursor(self.debug_cursor);
+                }
+            },
 
             WM_SYSKEYDOWN
             | WM_SYSKEYUP
@@ -822,6 +859,7 @@ fn process_pending_messages(window: &mut Window,
                 let vk_code = msg.wparam as u8;
                 let was_down = (msg.lparam & (1 << 30)) != 0;
                 let is_down = (msg.lparam & (1 << 31)) == 0;
+                let alt_key_down = (msg.lparam & (1 << 29)) != 0;
 
                 if was_down != is_down {
                     match vk_code {
@@ -855,9 +893,14 @@ fn process_pending_messages(window: &mut Window,
                         VK_SPACE => process_keyboard_message(
                                         &mut keyboard_controller.start, is_down),
                         VK_F4 => {
-                            let alt_key_down = (msg.lparam & (1 << 29)) != 0;
                             if alt_key_down {
                                 window.running = false; 
+                            }
+                        },
+
+                        VK_RETURN => {
+                            if alt_key_down && is_down {
+                                window.toggle_fullscreen();
                             }
                         },
 
@@ -1052,6 +1095,9 @@ fn main() {
                             pitch: 0,
                             size: 0,
                         },
+
+                        debug_cursor: unsafe { LoadCursorA(ptr::null_mut(), IDC_ARROW) },
+                        win_pos: Default::default(),
                     };
 
     resize_dib_section(&mut window.backbuffer, 960, 540); 
@@ -1076,7 +1122,7 @@ fn main() {
     window.handle = unsafe {
         CreateWindowExA(0 as DWORD, window_class.lpszClassName, 
                         window_title.as_ptr(),
-                        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                        WS_OVERLAPPEDWINDOW as DWORD | WS_VISIBLE as DWORD,
                         CW_USEDEFAULT, CW_USEDEFAULT, 
                         CW_USEDEFAULT, CW_USEDEFAULT, 
                         0 as HWND, 0 as HWND, module_handle,

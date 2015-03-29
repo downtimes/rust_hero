@@ -16,6 +16,8 @@ pub use self::pointer::{LONG_PTR, UINT_PTR};
 
 pub mod direct_sound;
 
+use std::mem;
+
 #[cfg(target_arch = "x86")]
 pub mod pointer {
     use libc::{c_long, c_uint};
@@ -31,12 +33,14 @@ pub mod pointer {
 
 pub type HINSTANCE = HANDLE;
 pub type HBITMAP = HANDLE;
+pub type HMONITOR = HANDLE;
 pub type HMODULE = HINSTANCE;
 pub type HICON = HANDLE;
 pub type HCURSOR = HANDLE;
 pub type HBRUSH = HANDLE;
 pub type HMENU = HANDLE;
 pub type LPCTSTR = LPCSTR;
+pub type UINT = c_uint;
 pub type LPARAM = pointer::LONG_PTR;
 pub type LRESULT = pointer::LONG_PTR;
 pub type WPARAM = pointer::UINT_PTR;
@@ -66,6 +70,8 @@ pub const WM_KEYDOWN: c_uint = 0x0100;
 pub const WM_KEYUP: c_uint = 0x0101;
 pub const WM_SYSKEYDOWN: c_uint = 0x0104;
 pub const WM_SYSKEYUP: c_uint = 0x0105;
+pub const WM_SETCURSOR: c_uint = 0x0020; 
+
 
 pub const FILE_MAP_WRITE: DWORD = 0x0002;
 
@@ -83,6 +89,19 @@ pub const VK_UP: u8 = 0x26u8;
 pub const VK_RIGHT: u8 = 0x27u8;
 pub const VK_DOWN: u8 = 0x28u8;
 pub const VK_F4: u8 = 0x73u8;
+pub const VK_RETURN: u8 = 0x0Du8;
+
+pub const GWL_STYLE: c_int = -16; 
+
+pub const MONITOR_DEFAULTTOPRIMARY: DWORD = 1;
+
+pub const HWND_TOP: HWND = 0 as HWND;
+
+pub const SWP_NOOWNERZORDER: UINT = 0x0200;
+pub const SWP_FRAMECHANGED: UINT = 0x0020;
+pub const SWP_NOMOVE: UINT = 0x0002;
+pub const SWP_NOSIZE: UINT = 0x0001;
+pub const SWP_NOZORDER: UINT = 0x0004;
 
 pub const CS_OWNDC: c_uint = 0x0020;
 pub const CS_HREDRAW: c_uint = 0x0002;
@@ -94,13 +113,13 @@ pub const BI_RGB: DWORD = 0;
 
 pub const SRCCOPY: DWORD = 0x00CC0020;
 
-pub const WS_OVERLAPPED: DWORD = 0x00000000;
-pub const WS_CAPTION: DWORD = 0x00C00000;
-pub const WS_SYSMENU: DWORD = 0x00080000;
-pub const WS_THICKFRAME: DWORD = 0x00040000;
-pub const WS_MINIMIZEBOX: DWORD = 0x00020000;
-pub const WS_MAXIMIZEBOX: DWORD = 0x00010000;
-pub const WS_OVERLAPPEDWINDOW: DWORD = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |
+pub const WS_OVERLAPPED: LONG = 0x00000000;
+pub const WS_CAPTION: LONG = 0x00C00000;
+pub const WS_SYSMENU: LONG = 0x00080000;
+pub const WS_THICKFRAME: LONG = 0x00040000;
+pub const WS_MINIMIZEBOX: LONG = 0x00020000;
+pub const WS_MAXIMIZEBOX: LONG = 0x00010000;
+pub const WS_OVERLAPPEDWINDOW: LONG = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |
                                      WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
 pub const WS_VISIBLE: DWORD = 0x10000000;
 
@@ -136,6 +155,8 @@ pub const VREFRESH: c_int = 116;
 pub const MAX_PATH: usize = 260;
 
 pub const TIMERR_NOERROR: c_uint = 0;
+
+pub const IDC_ARROW: LPCTSTR = 32512 as LPCTSTR;
 
 #[allow(overflowing_literals)]
 pub const CW_USEDEFAULT: c_int = 0x80000000;
@@ -269,6 +290,15 @@ pub struct POINT {
     pub y: LONG,
 }
 
+impl Default for POINT {
+    fn default() -> POINT {
+        POINT {
+            x: 0,
+            y: 0,
+        }
+    }
+}
+
 #[repr(C)]
 pub struct MSG {
     pub hwnd: HWND,
@@ -360,6 +390,48 @@ impl Default for BITMAPINFOHEADER {
     }
 }
 
+#[repr(C)]
+pub struct MONITORINFO {
+    pub cbSize: DWORD,
+    pub rcMonitor: RECT,
+    pub rcWork: RECT,
+    pub dwFlags: DWORD,
+}
+
+impl Default for MONITORINFO {
+    fn default() -> MONITORINFO {
+        MONITORINFO {
+            cbSize: mem::size_of::<MONITORINFO>() as u32,
+            rcMonitor: Default::default(),
+            rcWork: Default::default(),
+            dwFlags: 0,
+        }
+    }
+}
+
+#[repr(C)]
+pub struct WINDOWPLACEMENT {
+    pub length: UINT,
+    pub flags: UINT,
+    pub showCmd: UINT,
+    pub ptMinPosition: POINT,
+    pub ptMaxPosition: POINT,
+    pub rcNormalPosition: RECT,
+}
+
+impl Default for WINDOWPLACEMENT {
+    fn default() -> WINDOWPLACEMENT {
+        WINDOWPLACEMENT {
+            length: mem::size_of::<WINDOWPLACEMENT>() as UINT,
+            flags: 0,
+            showCmd: 0,
+            ptMinPosition: Default::default(),
+            ptMaxPosition: Default::default(),
+            rcNormalPosition: Default::default(),
+        }
+    }
+}
+
 
 #[repr(C)]
 pub struct RGBQUAD {
@@ -433,7 +505,16 @@ extern "system" {
                              dwMaximumSizeLow: DWORD, lpName: LPCTSTR) -> HANDLE;
     pub fn RtlCopyMemory(Destination: LPVOID, Source: *const c_void,
                       Length: SIZE_T);
-
+    pub fn LoadCursorA(hInstance: HINSTANCE, lpCursorName: LPCTSTR) -> HCURSOR;
+    pub fn SetCursor(hCursor: HCURSOR) -> HCURSOR;
+    pub fn GetWindowLongA(hWnd: HWND, nIndex: c_int) -> LONG;
+    pub fn SetWindowPos(hWnd: HWND, hWndInsertAfter: HWND, X: c_int,
+                        Y: c_int, cx: c_int, cy: c_int, uflags: UINT) -> BOOL;
+    pub fn SetWindowLongA(hWnd: HWND, nIndex: c_int, dwNewLong: LONG) -> LONG;
+    pub fn GetWindowPlacement(hWnd: HWND, lpwndpl: *mut WINDOWPLACEMENT) -> BOOL;
+    pub fn SetWindowPlacement(hWnd: HWND, lpwndpl: *const WINDOWPLACEMENT) -> BOOL;
+    pub fn MonitorFromWindow(hWnd: HWND, dwFlags: DWORD) -> HMONITOR;
+    pub fn GetMonitorInfoA(hMonitor: HMONITOR, lpmi: *mut MONITORINFO) -> BOOL;
 }
 
 // gdi32

@@ -112,6 +112,8 @@ impl ControllerInput {
 
 pub struct ThreadContext;
 
+pub const MAX_CONTROLLERS: usize = 5;
+
 pub struct Input {
     pub mouse_x: i32,
     pub mouse_y: i32,
@@ -128,7 +130,7 @@ pub struct Input {
     //TODO: see if it fits rustaceans better if we have an Option of
     //ControllerInputs here?
     //The 0 Controller is the keyboard all the others are possible joysticks
-    pub controllers: [ControllerInput; 5],
+    pub controllers: [ControllerInput; MAX_CONTROLLERS],
 }
 
 impl Default for Input {

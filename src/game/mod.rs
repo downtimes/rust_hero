@@ -2,7 +2,7 @@ use std::mem;
 
 #[allow(unused_imports)]
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input, ReadFileResult};
-use common::{ThreadContext};
+use common::{ThreadContext, MAX_CONTROLLERS};
 
 mod graphics;
 mod tilemap;
@@ -85,11 +85,6 @@ pub extern fn update_and_render(context: &ThreadContext,
         state.camera_position.tile_y = 9/2;
         state.camera_position.tile_z = 0;
 
-        state.player_position.offset.x = 0.5;
-        state.player_position.offset.y = 0.5;
-        state.player_position.tile_x = 3;
-        state.player_position.tile_y = 3;
-        state.player_position.tile_z = 0;
 
         let game_state_size = mem::size_of::<GameState>();
         state.world_arena = 
@@ -247,151 +242,75 @@ pub extern fn update_and_render(context: &ThreadContext,
         game_memory.initialized = true;
     }
 
+    for (c_index, controller) in input.controllers.iter().enumerate() {
+
+        if let Some(e_index) = state.player_index_for_controller[c_index] {
+            //in m/s^2
+            let mut acc = V2f { x: 0.0, y: 0.0 };
+
+            //Analog movement
+            if controller.is_analog() {
+                let avg_x = controller.average_x.unwrap_or_default();
+                let avg_y = controller.average_y.unwrap_or_default();
+                acc = V2f { x: avg_x, y: avg_y };
+
+            //Digital movement
+            } else {
+                if controller.move_up.ended_down {
+                    acc.y = 1.0;
+                }
+                if controller.move_down.ended_down {
+                    acc.y = -1.0;
+                }
+                if controller.move_left.ended_down {
+                    acc.x = -1.0;
+                }
+                if controller.move_right.ended_down {
+                    acc.x = 1.0;
+                }
+            }
+
+            let entity = &mut state.entities[e_index];
+            move_player(entity, acc, state.world, input.delta_t);
+        } else {
+            if controller.start.ended_down {
+                add_player(state, c_index);
+            }
+        }
+    }
+
     let world = &state.world;
     
     let tile_side_pixels = 60;
     let meters_to_pixel = tile_side_pixels as f32 / world.tilemap.tile_side_meters;
 
-    let player_dim = V2f{ x: 0.75 * world.tilemap.tile_side_meters, 
-                          y: world.tilemap.tile_side_meters };
     let tilemap = &state.world.tilemap;
 
-    for controller in input.controllers.iter() {
+    
+    //Adjust the camera to look at the right room
+    let cam_pos = &mut state.camera_position;
 
-        //Analog movement
-        if controller.is_analog() {
+    if state.camera_follows_entity_index.is_some() {
+        let camera_entity = &state.entities[state.camera_follows_entity_index.unwrap()];
+        cam_pos.tile_z = camera_entity.position.tile_z;
 
-        //Digital movement
-        } else {
-            //in m/s^2
-            let mut player_acc = V2f{ x: 0.0, y: 0.0 };
-            
-            if controller.move_up.ended_down {
-                state.hero_face_direction = 1;
-                player_acc.y = 1.0;
-            }
-            if controller.move_down.ended_down {
-                state.hero_face_direction = 3;
-                player_acc.y = -1.0;
-            }
-            if controller.move_left.ended_down {
-                state.hero_face_direction = 2;
-                player_acc.x = -1.0;
-            }
-            if controller.move_right.ended_down {
-                state.hero_face_direction = 0;
-                player_acc.x = 1.0;
-            }
-            
-            //Diagonal correction. replace with vector length resize when available
-            if player_acc.x != 0.0 && player_acc.y != 0.0 {
-                player_acc = player_acc * 0.707106781187;
-            }
+        let TilemapDifference { dx, dy, dz: _ } = 
+            substract(tilemap, &camera_entity.position, cam_pos);
 
-            let player_speed = 
-                if controller.start.ended_down {
-                    100.0
-                } else {
-                    10.0
-                };
+        if dx > 9.0 * tilemap.tile_side_meters {
+            cam_pos.tile_x += 17;
+        } else if dx < -(9.0 * tilemap.tile_side_meters) {
+            cam_pos.tile_x -= 17;
+        }
 
-            player_acc = player_acc * player_speed;
-
-            //friction force currently just by rule of thumb;
-            player_acc = player_acc - state.player_velocity * 1.5;
-
-
-            let mut new_position = state.player_position;
-            // new_pos = 1/2*a*t^2 + v*t + old_pos;
-            new_position.offset = player_acc * 0.5 * input.delta_t.powi(2) + 
-                                  state.player_velocity * input.delta_t +
-                                  new_position.offset;
-            // new_velocity = a*t + old_velocity;
-            state.player_velocity = player_acc * input.delta_t + state.player_velocity;
-            new_position.recanonicalize(&world.tilemap);
-
-            let mut new_right_bottom = new_position;
-            new_right_bottom.offset.x += 0.5*player_dim.x;
-            new_right_bottom.recanonicalize(&world.tilemap);
-
-            let mut new_left_bottom = new_position;
-            new_left_bottom.offset.x -= 0.5*player_dim.x;
-            new_left_bottom.recanonicalize(&world.tilemap);
-
-            let mut col_p = state.player_position;
-            let collided = 
-                if !is_tilemap_point_empty(&world.tilemap, &new_position) {
-                    col_p = new_position;
-                    true
-                } else if !is_tilemap_point_empty(&world.tilemap, &new_right_bottom) {
-                    col_p = new_right_bottom;
-                    true
-                } else if !is_tilemap_point_empty(&world.tilemap, &new_left_bottom) {
-                    col_p = new_left_bottom;
-                    true
-                } else {
-                    false
-                };
-
-            if !collided {
-                   let player_p = &mut state.player_position;
-
-                   //trigger stuff if we change tiles
-                   if !on_same_tile(player_p, &new_position) {
-                       let tile_value = world.tilemap.get_tile_value(new_position.tile_x,
-                                                                     new_position.tile_y,
-                                                                     new_position.tile_z);
-                       if let Some(value) = tile_value {
-                           if value == 2 {
-                               new_position.tile_z += 1;
-                           } else if value == 3 {
-                               new_position.tile_z -= 1;
-                           }
-                       }
-                   }
-
-                   //accept the move
-                   *player_p = new_position;
-                   
-                   //Adjust the camera to look at the right room
-                   let cam_pos = &mut state.camera_position;
-                   cam_pos.tile_z = new_position.tile_z;
-
-                   let TilemapDifference { dx, dy, dz: _ } = 
-                       substract(tilemap, player_p, cam_pos);
-
-                   if dx > 9.0 * tilemap.tile_side_meters {
-                       cam_pos.tile_x += 17;
-                   } else if dx < -(9.0 * tilemap.tile_side_meters) {
-                       cam_pos.tile_x -= 17;
-                   }
-
-                   if dy > 5.0 * tilemap.tile_side_meters {
-                       cam_pos.tile_y += 9;
-                   } else if dy < -(5.0 * tilemap.tile_side_meters) {
-                       cam_pos.tile_y -= 9;
-                   }
-            } else {
-                let r =
-                    if col_p.tile_x < state.player_position.tile_x {
-                        V2f { x: -1.0, y: 0.0 }
-                    } else if col_p.tile_x > state.player_position.tile_x {
-                        V2f { x: 1.0, y: 0.0 }
-                    } else if col_p.tile_y < state.player_position.tile_y {
-                        V2f { x: 0.0, y: 1.0 }
-                    } else if col_p.tile_y > state.player_position.tile_y {
-                        V2f { x: 0.0, y: -1.0 }
-                    } else {
-                        V2f { x: 0.0, y: 0.0 }
-                    };
-
-                state.player_velocity = state.player_velocity - r * 
-                                        math::dot(r, state.player_velocity) * 1.0;
-            }
+        if dy > 5.0 * tilemap.tile_side_meters {
+            cam_pos.tile_y += 9;
+        } else if dy < -(5.0 * tilemap.tile_side_meters) {
+            cam_pos.tile_y -= 9;
         }
     }
 
-    //Clear the screen to pink!
+    //Clear the screen to pink! And start rendering
     let buffer_dim = V2f{ x: video_buffer.width as f32, y: video_buffer.height as f32 };
     graphics::draw_rect(video_buffer, V2f{ x: 0.0, y: 0.0 }, buffer_dim, 
                         1.0, 0.0, 1.0);
@@ -403,11 +322,11 @@ pub extern fn update_and_render(context: &ThreadContext,
 
     for rel_row in -6i32..6 {
         for rel_column in -10i32..10 {
-            let row = (rel_row + state.camera_position.tile_y as i32) as u32;
-            let column = (rel_column + state.camera_position.tile_x as i32) as u32;
+            let row = (rel_row + cam_pos.tile_y as i32) as u32;
+            let column = (rel_column + cam_pos.tile_x as i32) as u32;
 
             let elem = world.tilemap.get_tile_value(column as u32, row as u32,
-                                                    state.camera_position.tile_z);
+                                                    cam_pos.tile_z);
             if let Some(value) = elem {
                 if value > 0 {
                     let mut color = 0.5;
@@ -417,19 +336,16 @@ pub extern fn update_and_render(context: &ThreadContext,
                         color = 0.3;
                     }
 
-                    if row == state.player_position.tile_y &&
-                       column == state.player_position.tile_x {
-                           color = 0.8;
-                    }
-
-                    let center = V2f{ x: screen_center_x - meters_to_pixel * state.camera_position.offset.x
+                    let center = V2f{ x: screen_center_x - meters_to_pixel * cam_pos.offset.x
                                            + rel_column as f32 * tile_side_pixels as f32,
-                                       y: screen_center_y + meters_to_pixel * state.camera_position.offset.y
+                                       y: screen_center_y + meters_to_pixel * cam_pos.offset.y
                                            - rel_row as f32 * tile_side_pixels as f32,
                                     };
 
-                    let min = center - 0.5 * tile_side_pixels as f32;
-                    let max = min + tile_side_pixels as f32;
+                    let tile_side_pixels_v = V2f{ x: tile_side_pixels as f32,
+                                                  y: tile_side_pixels as f32, };
+                    let min = center - tile_side_pixels_v * 0.5;
+                    let max = min + tile_side_pixels_v;
                     graphics::draw_rect(video_buffer, min, max,
                                         color, color, color);
                 }
@@ -438,39 +354,190 @@ pub extern fn update_and_render(context: &ThreadContext,
     }
 
 
-    let TilemapDifference { dx, dy, dz: _ } = substract(tilemap, 
-                                                        &state.player_position, 
-                                                        &state.camera_position);
-    let player_groundpoint = V2f{
-        x: screen_center_x + meters_to_pixel * dx,
-        y: screen_center_y - meters_to_pixel * dy,
-    };
-    let player_dim_half_x = V2f{ 
-        x: 0.5 * player_dim.x, 
-        y: player_dim.y,
-    };
-    let player_top_left = player_groundpoint - player_dim_half_x * meters_to_pixel;
-    let player_bottom_right = player_top_left + player_dim * meters_to_pixel;
-    graphics::draw_rect(video_buffer, 
-                        player_top_left, player_bottom_right,
-                        1.0, 1.0, 0.0);
-    
-    let hero_bitmaps = &state.hero_bitmaps[state.hero_face_direction];
-    graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.torso,
-                                  player_groundpoint, hero_bitmaps.align_x,
-                                  hero_bitmaps.align_y);
-    graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.cape,
-                                  player_groundpoint, hero_bitmaps.align_x,
-                                  hero_bitmaps.align_y);
-    graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.head,
-                                  player_groundpoint, hero_bitmaps.align_x,
-                                  hero_bitmaps.align_y);
+    for entity in state.entities.iter() {
+        if entity.exists {
+            let TilemapDifference { dx, dy, dz: _ } = substract(tilemap, &entity.position, cam_pos);
+            let entity_groundpoint = V2f{
+                x: screen_center_x + meters_to_pixel * dx,
+                y: screen_center_y - meters_to_pixel * dy,
+            };
+            let entity_dim_half_x = V2f{ 
+                x: 0.5 * entity.dim.x, 
+                y: entity.dim.y,
+            };
+            let entity_top_left = entity_groundpoint - entity_dim_half_x * meters_to_pixel;
+            let entity_bottom_right = entity_top_left + entity.dim * meters_to_pixel;
+            graphics::draw_rect(video_buffer, 
+                                entity_top_left, entity_bottom_right,
+                                1.0, 1.0, 0.0);
+            
+            let hero_bitmaps = &state.hero_bitmaps[entity.face_direction];
+            graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.torso,
+                                          entity_groundpoint, hero_bitmaps.align_x,
+                                          hero_bitmaps.align_y);
+            graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.cape,
+                                          entity_groundpoint, hero_bitmaps.align_x,
+                                          hero_bitmaps.align_y);
+            graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.head,
+                                          entity_groundpoint, hero_bitmaps.align_x,
+                                          hero_bitmaps.align_y);
+        }
+    }
 
 
 }
 
 // ======== End of the public interface =========
 
+fn add_player<'a>(state: &'a mut GameState, c_index: usize) {
+    state.player_index_for_controller[c_index] = Some(state.entity_count);
+    let entity = &mut state.entities[state.entity_count];
+
+    if state.camera_follows_entity_index.is_none() {
+        state.camera_follows_entity_index = Some(state.entity_count);
+    }
+
+    state.entity_count += 1;
+
+    debug_assert!(entity.exists == false);
+    entity.dim = V2f{ x: 0.75 * state.world.tilemap.tile_side_meters, 
+                      y: state.world.tilemap.tile_side_meters };
+    entity.exists = true;
+    entity.position.offset.x = 0.5;
+    entity.position.offset.y = 0.5;
+    entity.position.tile_x = 3;
+    entity.position.tile_y = 3;
+    entity.position.tile_z = 0;
+}
+           
+
+fn move_player<'a>(entity: &mut Entity, mut acc: V2f, 
+                   world: &'a World<'a>, delta_t: f32) {
+
+    //Diagonal correction. replace with vector length resize when available
+    if acc.x != 0.0 && acc.y != 0.0 {
+        acc = acc * 0.707106781187;
+    }
+
+    let entity_speed = 50.0; // m/s^2
+
+    acc = acc * entity_speed;
+
+    //friction force currently just by rule of thumb;
+    acc = acc - entity.velocity * 8.0;
+
+
+    //Copy old player Position before we handle input 
+    let old_position = entity.position;
+    let mut new_position = entity.position;
+    // new_pos = 1/2*a*t^2 + v*t + old_pos;
+    let player_delta = acc * 0.5 * delta_t.powi(2) 
+                       + entity.velocity * delta_t;
+    new_position.offset = player_delta + new_position.offset;
+
+    // new_velocity = a*t + old_velocity;
+    entity.velocity = acc * delta_t + entity.velocity;
+    new_position.recanonicalize(world.tilemap);
+
+    let mut new_right_bottom = new_position;
+    new_right_bottom.offset.x += 0.5*entity.dim.x;
+    new_right_bottom.recanonicalize(world.tilemap);
+
+    let mut new_left_bottom = new_position;
+    new_left_bottom.offset.x -= 0.5*entity.dim.x;
+    new_left_bottom.recanonicalize(world.tilemap);
+
+    let mut col_p = entity.position;
+    let collided = 
+        if !is_tilemap_point_empty(world.tilemap, &new_position) {
+            col_p = new_position;
+            true
+        } else if !is_tilemap_point_empty(world.tilemap, &new_right_bottom) {
+            col_p = new_right_bottom;
+            true
+        } else if !is_tilemap_point_empty(world.tilemap, &new_left_bottom) {
+            col_p = new_left_bottom;
+            true
+        } else {
+            false
+        };
+
+    if !collided {
+
+        //accept the move
+        entity.position = new_position;
+
+    } else {
+        let r =
+            if col_p.tile_x < entity.position.tile_x {
+                V2f { x: -1.0, y: 0.0 }
+            } else if col_p.tile_x > entity.position.tile_x {
+                V2f { x: 1.0, y: 0.0 }
+            } else if col_p.tile_y < entity.position.tile_y {
+                V2f { x: 0.0, y: 1.0 }
+            } else if col_p.tile_y > entity.position.tile_y {
+                V2f { x: 0.0, y: -1.0 }
+            } else {
+                V2f { x: 0.0, y: 0.0 }
+            };
+
+        entity.velocity = entity.velocity - r * 
+            math::dot(r, entity.velocity) * 1.0;
+    }
+    //            let tile_side_meters_v = V2f { x: tilemap.tile_side_meters, 
+    //                                           y: tilemap.tile_side_meters };
+    //
+    //            let min_tile_x = 0;
+    //            let min_tile_y = 0;
+    //            let max_tile_x = 0;
+    //            let max_tile_y = 0;
+    //
+    //            let mut best_point = state.player_position;
+    //            let mut best_distance_sq = player_delta.length_sq();
+    //            let tile_z = state.player_position.tile_z; 
+    //            for x in min_tile_x..max_tile_x + 1 {
+    //                for y in min_tile_y..max_tile_y + 1 {
+    //                    if let Some(value) = world.tilemap.get_tile_value(x, y, tile_z)  {
+    //                        match value {
+    //                            0 => {
+    //                                let min_corner = tile_side_meters_v * -0.5;
+    //                                let max_corner = tile_side_meters_v * 0.5;
+    //                                let TilemapDifference{ dx, dy, dz: _ } = 
+    //                                    substract(tilemap, test_tile_p, new_positon);
+    //                                let test_p = closest_point_in_rect(min_corner, max_corner);
+    //                            },
+    //                            _ => {},
+    //                        }
+    //                    }
+    //                }
+    //            }
+    //trigger stuff if we change tiles
+    if !on_same_tile(&old_position, &entity.position) {
+        let tile_value = world.tilemap.get_tile_value_pos(&entity.position);
+        if let Some(value) = tile_value {
+            if value == 2 {
+                entity.position.tile_z += 1;
+            } else if value == 3 {
+                entity.position.tile_z -= 1;
+            }
+        }
+    }
+
+    //adjust facing direction depending on velocity
+    if entity.velocity.x.abs() > entity.velocity.y.abs() {
+        if entity.velocity.x > 0.0 {
+            entity.face_direction = 0;
+        } else {
+            entity.face_direction = 2;
+        }
+    } else if entity.velocity.x.abs() < entity.velocity.y.abs() {
+        if entity.velocity.y > 0.0 {
+            entity.face_direction = 1;
+        } else {
+            entity.face_direction = 3;
+        }
+    }
+}
 
 struct HeroBitmaps<'a> {
     head: graphics::Bitmap<'a>,
@@ -481,17 +548,27 @@ struct HeroBitmaps<'a> {
     align_y: i32
 }
 
+struct Entity {
+    dim: V2f,
+    exists: bool,
+    position: TilemapPosition,
+    velocity: V2f,
+    face_direction: usize,
+}
+
 struct GameState<'a> {
     world_arena: MemoryArena,
-    player_position: TilemapPosition,
-    player_velocity: V2f,
+    world: &'a mut World<'a>,
+
+    camera_follows_entity_index: Option<usize>,
     camera_position: TilemapPosition,
 
-    world: &'a mut World<'a>,
+    player_index_for_controller: [Option<usize>; MAX_CONTROLLERS],
+    entity_count: usize,
+    entities: [Entity; 256],
 
     test_bitmap: graphics::Bitmap<'a>,
     hero_bitmaps: [HeroBitmaps<'a>; 4],
-    hero_face_direction: usize,
 } 
 
 struct World<'a> {

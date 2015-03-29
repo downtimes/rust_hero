@@ -66,6 +66,10 @@ impl<'a> TileMap<'a> {
             None => None,
         }
     }
+
+    pub fn get_tile_value_pos(&'a self, pos: &TilemapPosition) -> Option<u32> {
+        self.get_tile_value(pos.tile_x, pos.tile_y, pos.tile_z)
+    }
 }
 
 struct TileChunkPosition {
@@ -88,7 +92,19 @@ pub struct TilemapPosition {
     pub tile_z: u32,
 
     //Tile relative
-    pub offset: V2f
+    pub offset: V2f,
+}
+
+impl TilemapPosition {
+    pub fn centerd_pos(tile_x: u32, tile_y: u32, tile_z: u32) -> TilemapPosition {
+        TilemapPosition {
+            tile_x: tile_x,
+            tile_y: tile_y,
+            tile_z: tile_z,
+
+            offset: V2f { x: 0.0, y: 0.0 },
+        }
+    }
 }
 
 pub fn canonicalize_coord(tilemap: &TileMap, tile: &mut u32, tile_offset: &mut f32) {

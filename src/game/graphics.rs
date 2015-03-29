@@ -152,6 +152,15 @@ pub struct Bitmap<'a> {
     memory: &'a [u32],
 }
 
+fn rotate_left(value: u32, mut amount: i32) -> u32 {
+    if amount < 0 {
+        amount += 32;
+    }
+
+    debug_assert!(amount < 25 && amount >= 0);
+    value.rotate_left(amount as u32)
+}
+
 #[cfg(not(ndebug))]
 //Note: This function only loads a specific fileformat and is not generic.
 //only bottom up AABBGGRR Bitmaps
@@ -170,20 +179,22 @@ pub fn debug_load_bitmap(read_func: PlatformReadEntireFileT, context: &ThreadCon
                         result.contents.offset(header.bitmap_offset as isize) as *mut u32, 
                         (header.width * header.height) as usize) 
                     };
+        let red_mask = header.red_mask;
+        let blue_mask = header.blue_mask;
+        let green_mask = header.green_mask;
+        let alpha_mask = !(red_mask | green_mask | blue_mask);
 
-        let alpha_mask = !(header.red_mask | header.green_mask | header.blue_mask);
-
-        let red_shift = header.red_mask.trailing_zeros();
-        let blue_shift = header.blue_mask.trailing_zeros();
-        let green_shift = header.green_mask.trailing_zeros();
-        let alpha_shift = alpha_mask.trailing_zeros();
+        let alpha_shift = 24 - alpha_mask.trailing_zeros() as i32;
+        let red_shift = 16 - red_mask.trailing_zeros() as i32;
+        let green_shift = 8 - green_mask.trailing_zeros() as i32;
+        let blue_shift = 0 - blue_mask.trailing_zeros() as i32;
 
         //Shift bits according to masks
         for pixel in pixels.iter_mut() {
-            *pixel = (((*pixel >> alpha_shift) & 0xFF) << 24) |
-                     (((*pixel >> red_shift) & 0xFF) << 16) |
-                     (((*pixel >> green_shift) & 0xFF) << 8) |
-                     ((*pixel >> blue_shift) & 0xFF);
+            *pixel = rotate_left(*pixel & red_mask, red_shift) |
+                     rotate_left(*pixel & green_mask, green_shift) |
+                     rotate_left(*pixel & blue_mask, blue_shift) |
+                     rotate_left(*pixel & alpha_mask, alpha_shift)
         }
 
         Some(Bitmap{

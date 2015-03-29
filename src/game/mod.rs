@@ -530,7 +530,7 @@ fn move_player<'a>(entity: &mut Entity, mut acc: V2f,
         } else {
             entity.face_direction = 2;
         }
-    } else if entity.velocity.x.abs() < entity.velocity.y.abs() {
+    } else if entity.velocity.x != 0.0 && entity.velocity.y != 0.0 {
         if entity.velocity.y > 0.0 {
             entity.face_direction = 1;
         } else {

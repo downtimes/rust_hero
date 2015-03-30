@@ -96,13 +96,13 @@ pub struct TilemapPosition {
 }
 
 impl TilemapPosition {
-    pub fn centerd_pos(tile_x: u32, tile_y: u32, tile_z: u32) -> TilemapPosition {
+    pub fn centered_pos(tile_x: u32, tile_y: u32, tile_z: u32) -> TilemapPosition {
         TilemapPosition {
             tile_x: tile_x,
             tile_y: tile_y,
             tile_z: tile_z,
 
-            offset: V2f { x: 0.0, y: 0.0 },
+            offset: V2f{ x: 0.0, y: 0.0 },
         }
     }
 }
@@ -151,9 +151,13 @@ pub fn substract(tilemap: &TileMap, a: &TilemapPosition, b: &TilemapPosition) ->
     }
 }
 
+pub fn is_tile_value_empty(value: u32) -> bool {
+    value != 1
+}
+
 pub fn is_tilemap_point_empty<'a>(tilemap: &'a TileMap<'a>, position: &TilemapPosition) -> bool {
     match tilemap.get_tile_value(position.tile_x, position.tile_y, position.tile_z) {
-        Some(value) => value != 1,
+        Some(value) => is_tile_value_empty(value),
         None => false,
     }
 }

@@ -1,6 +1,6 @@
 use std::mem;
+use std::cmp;
 
-#[allow(unused_imports)]
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input, ReadFileResult};
 use common::{ThreadContext, MAX_CONTROLLERS};
 
@@ -10,7 +10,7 @@ mod memory;
 mod random;
 mod math;
 
-use self::tilemap::{TileMap, substract, is_tilemap_point_empty};
+use self::tilemap::{TileMap, substract, is_tilemap_point_empty, is_tile_value_empty};
 use self::tilemap::{TilemapDifference, TilemapPosition, on_same_tile};
 use self::memory::MemoryArena;
 use self::math::V2f;
@@ -339,8 +339,7 @@ pub extern fn update_and_render(context: &ThreadContext,
                     let center = V2f{ x: screen_center_x - meters_to_pixel * cam_pos.offset.x
                                            + rel_column as f32 * tile_side_pixels as f32,
                                        y: screen_center_y + meters_to_pixel * cam_pos.offset.y
-                                           - rel_row as f32 * tile_side_pixels as f32,
-                                    };
+                                           - rel_row as f32 * tile_side_pixels as f32, };
 
                     let tile_side_pixels_v = V2f{ x: tile_side_pixels as f32,
                                                   y: tile_side_pixels as f32, };
@@ -414,9 +413,9 @@ fn add_player<'a>(state: &'a mut GameState, c_index: usize) {
 fn move_player<'a>(entity: &mut Entity, mut acc: V2f, 
                    world: &'a World<'a>, delta_t: f32) {
 
-    //Diagonal correction. replace with vector length resize when available
-    if acc.x != 0.0 && acc.y != 0.0 {
-        acc = acc * 0.707106781187;
+    //Diagonal correction.
+    if acc.length_sq() > 1.0 {
+        acc = acc.normalize();
     }
 
     let entity_speed = 50.0; // m/s^2
@@ -431,9 +430,9 @@ fn move_player<'a>(entity: &mut Entity, mut acc: V2f,
     let old_position = entity.position;
     let mut new_position = entity.position;
     // new_pos = 1/2*a*t^2 + v*t + old_pos;
-    let player_delta = acc * 0.5 * delta_t.powi(2) 
+    let entity_delta = acc * 0.5 * delta_t.powi(2) 
                        + entity.velocity * delta_t;
-    new_position.offset = player_delta + new_position.offset;
+    new_position.offset = entity_delta + new_position.offset;
 
     // new_velocity = a*t + old_velocity;
     entity.velocity = acc * delta_t + entity.velocity;
@@ -484,33 +483,43 @@ fn move_player<'a>(entity: &mut Entity, mut acc: V2f,
         entity.velocity = entity.velocity - r * 
             math::dot(r, entity.velocity) * 1.0;
     }
-    //            let tile_side_meters_v = V2f { x: tilemap.tile_side_meters, 
-    //                                           y: tilemap.tile_side_meters };
-    //
-    //            let min_tile_x = 0;
-    //            let min_tile_y = 0;
-    //            let max_tile_x = 0;
-    //            let max_tile_y = 0;
-    //
-    //            let mut best_point = state.player_position;
-    //            let mut best_distance_sq = player_delta.length_sq();
-    //            let tile_z = state.player_position.tile_z; 
-    //            for x in min_tile_x..max_tile_x + 1 {
-    //                for y in min_tile_y..max_tile_y + 1 {
-    //                    if let Some(value) = world.tilemap.get_tile_value(x, y, tile_z)  {
-    //                        match value {
-    //                            0 => {
-    //                                let min_corner = tile_side_meters_v * -0.5;
-    //                                let max_corner = tile_side_meters_v * 0.5;
-    //                                let TilemapDifference{ dx, dy, dz: _ } = 
-    //                                    substract(tilemap, test_tile_p, new_positon);
-    //                                let test_p = closest_point_in_rect(min_corner, max_corner);
-    //                            },
-    //                            _ => {},
-    //                        }
-    //                    }
-    //                }
-    //            }
+
+    let tile_side_meters_v = V2f { x: world.tilemap.tile_side_meters, 
+                                   y: world.tilemap.tile_side_meters };
+
+    let min_tile_x = cmp::min(old_position.tile_x as i32, 
+                              new_position.tile_x as i32);
+    let min_tile_y = cmp::min(old_position.tile_y as i32, 
+                              new_position.tile_y as i32);
+    let max_tile_x = cmp::max(old_position.tile_x as i32,
+                              new_position.tile_x as i32);
+    let max_tile_y = cmp::max(old_position.tile_y as i32, 
+                              new_position.tile_y as i32);
+
+    let mut t_min = 1.0;
+    let tile_z = entity.position.tile_z; 
+    for x in min_tile_x..max_tile_x + 1{
+        for y in min_tile_y..max_tile_y + 1 {
+            let test_position = TilemapPosition::centered_pos(x as u32, y as u32, tile_z);
+            if let Some(value) = world.tilemap.get_tile_value(test_position)  {
+                match is_tile_value_empty(value) {
+                    false => {
+                        let min_corner = tile_side_meters_v * -0.5;
+                        let max_corner = tile_side_meters_v * 0.5;
+
+                        let TilemapDifference{ dx, dy, dz:_} = 
+                            substract(world.tilemap, &test_position, &new_position);
+
+                        let rel = V2f { x: dx, y: dy };
+                        test_wall(min_corner.x, min_corner.y, max_corner.y,
+                                  rel.x, entity_delta.x);
+                    },
+                    _ => {},
+                }
+            }
+        }
+    }
+
     //trigger stuff if we change tiles
     if !on_same_tile(&old_position, &entity.position) {
         let tile_value = world.tilemap.get_tile_value_pos(&entity.position);

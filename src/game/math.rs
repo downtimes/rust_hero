@@ -11,6 +11,19 @@ impl V2f {
     pub fn length_sq(&self) -> f32 {
         dot(*self, *self)
     }
+
+    pub fn length(&self) -> f32 {
+        let val = self.length_sq();
+        val.sqrt()
+    }
+
+    pub fn normalize(&self) -> V2f {
+        let length = self.length();
+        V2f {
+            x: self.x / length,
+            y: self.y / length,
+        }
+    }
 }
 
 pub fn dot(a: V2f, b: V2f) -> f32 {

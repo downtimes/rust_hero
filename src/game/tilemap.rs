@@ -133,6 +133,8 @@ impl TilemapPosition {
     }
 }
 
+//TODO: Caution when wrapping around the difference gets too large to represent
+//can be 31 bits difference and we can only represent 24 (float)
 pub struct TilemapDifference {
     pub dx: f32,
     pub dy: f32,

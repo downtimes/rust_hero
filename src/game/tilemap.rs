@@ -166,6 +166,7 @@ pub fn is_tile_value_empty(value: u32) -> bool {
     value != 1
 }
 
+#[allow(dead_code)]
 pub fn is_tilemap_point_empty<'a>(tilemap: &'a TileMap<'a>, position: &TilemapPosition) -> bool {
     match tilemap.get_tile_value(position.tile_x, position.tile_y, position.tile_z) {
         Some(value) => is_tile_value_empty(value),

@@ -360,11 +360,7 @@ pub extern fn update_and_render(context: &ThreadContext,
                 x: screen_center_x + meters_to_pixel * dx,
                 y: screen_center_y - meters_to_pixel * dy,
             };
-            let entity_dim_half_x = V2f{ 
-                x: 0.5 * entity.dim.x, 
-                y: entity.dim.y,
-            };
-            let entity_top_left = entity_groundpoint - entity_dim_half_x * meters_to_pixel;
+            let entity_top_left = entity_groundpoint - entity.dim * 0.5 * meters_to_pixel;
             let entity_bottom_right = entity_top_left + entity.dim * meters_to_pixel;
             graphics::draw_rect(video_buffer, 
                                 entity_top_left, entity_bottom_right,
@@ -399,8 +395,8 @@ fn add_player<'a>(state: &'a mut GameState, c_index: usize) {
     state.entity_count += 1;
 
     debug_assert!(entity.exists == false);
-    entity.dim = V2f{ x: 0.75 * state.world.tilemap.tile_side_meters, 
-                      y: state.world.tilemap.tile_side_meters };
+    entity.dim = V2f{ x: 1.0, 
+                      y: 0.5 };
     entity.exists = true;
     entity.position.tile_x = 3;
     entity.position.tile_y = 3;
@@ -430,70 +426,93 @@ fn move_player<'a>(entity: &mut Entity, mut acc: V2f,
 
     //Copy old player Position before we handle input 
     let old_position = entity.position;
-    let entity_delta = acc * 0.5 * delta_t.powi(2) 
+    let mut entity_delta = acc * 0.5 * delta_t.powi(2) 
                        + entity.velocity * delta_t;
     entity.velocity = acc * delta_t + entity.velocity;
 
-    let mut new_position = old_position.offset(entity_delta, world.tilemap);
+    let new_position = entity.position.offset(entity_delta, world.tilemap);
 
-    let tile_side_meters_v = V2f { x: world.tilemap.tile_side_meters, 
-                                   y: world.tilemap.tile_side_meters };
-    
+    let entity_tile_dim = V2f { x: (entity.dim.x / world.tilemap.tile_side_meters).ceil(),
+                                y: (entity.dim.y / world.tilemap.tile_side_meters).ceil(), };
 
-    let min_tile_x = cmp::min(old_position.tile_x as i32, 
-                              new_position.tile_x as i32);
-    let min_tile_y = cmp::min(old_position.tile_y as i32, 
-                              new_position.tile_y as i32);
-    let max_tile_x = cmp::max(old_position.tile_x as i32,
-                              new_position.tile_x as i32) + 1;
-    let max_tile_y = cmp::max(old_position.tile_y as i32, 
-                              new_position.tile_y as i32) + 1;
+    let min_tile_x = cmp::min(entity.position.tile_x as i32, 
+                              new_position.tile_x as i32) 
+                     - entity_tile_dim.x as i32;
+    let min_tile_y = cmp::min(entity.position.tile_y as i32, 
+                              new_position.tile_y as i32) 
+                     - entity_tile_dim.y as i32;
+    let max_tile_x = cmp::max(entity.position.tile_x as i32,
+                              new_position.tile_x as i32) 
+                     + entity_tile_dim.x as i32 + 1;
+    let max_tile_y = cmp::max(entity.position.tile_y as i32, 
+                              new_position.tile_y as i32) 
+                     + entity_tile_dim.y as i32 + 1;
 
-    let mut t_min = 1.0;
-    let tile_z = entity.position.tile_z; 
-    for y in min_tile_y..max_tile_y {
-        for x in min_tile_x..max_tile_x {
-            let test_position = TilemapPosition::centered_pos(x as u32, y as u32, tile_z);
-            if let Some(value) = world.tilemap.get_tile_value_pos(&test_position)  {
-                match is_tile_value_empty(value) {
-                    false => {
-                        let min_corner = tile_side_meters_v * -0.5;
-                        let max_corner = tile_side_meters_v * 0.5;
+    let mut t_remaining = 1.0;
+    //try the collission detection multiple times to se if we can move with
+    //a corrected velocity
+    for _ in 0..4 {
+        let mut t_min = 1.0;
+        let mut wall_normal = V2f{ x: 0.0, y: 0.0 };
+        let tile_z = entity.position.tile_z; 
+        for y in min_tile_y..max_tile_y {
+            for x in min_tile_x..max_tile_x {
+                let test_position = TilemapPosition::centered_pos(x as u32, y as u32, tile_z);
+                if let Some(value) = world.tilemap.get_tile_value_pos(&test_position)  {
+                    match is_tile_value_empty(value) {
+                        false => {
+                            //Minkowski Sum
+                            let diameter = V2f { x: entity.dim.x + world.tilemap.tile_side_meters, 
+                                                 y: entity.dim.y + world.tilemap.tile_side_meters };
+        
+                            let min_corner = diameter * -0.5;
+                            let max_corner = diameter * 0.5;
 
-                        let TilemapDifference{ dx, dy, dz:_} = 
-                            substract(world.tilemap, &old_position, &test_position);
-                        let rel = V2f { x: dx, y: dy };
+                            let TilemapDifference{ dx, dy, dz:_} = 
+                                substract(world.tilemap, &entity.position, &test_position);
+                            let rel = V2f { x: dx, y: dy };
 
-                        //check against the 4 tilemap walls
-                        if let Some(t_res) = 
-                            test_wall(max_corner.x, min_corner.y, max_corner.y,
-                                      rel.x, rel.y, entity_delta.x, entity_delta.y) {
-                            t_min = if t_res < t_min { t_res } else { t_min };
-                        }
-                        if let Some(t_res) = 
-                            test_wall(min_corner.x, min_corner.y, max_corner.y,
-                                      rel.x, rel.y, entity_delta.x, entity_delta.y) {
-                            t_min = if t_res < t_min { t_res } else { t_min };
-                        }
-                        if let Some(t_res) = 
-                            test_wall(max_corner.y, min_corner.x, max_corner.x,
-                                      rel.y, rel.x, entity_delta.y, entity_delta.x) {
-                            t_min = if t_res < t_min { t_res } else { t_min };
-                        }
-                        if let Some(t_res) = 
-                            test_wall(min_corner.y, min_corner.x, max_corner.x,
-                                      rel.y, rel.x, entity_delta.y, entity_delta.x) {
-                            t_min = if t_res < t_min { t_res } else { t_min };
-                        }
-                    },
-                    _ => {},
+                            //check against the 4 tilemap walls
+                            if test_wall(max_corner.x, min_corner.y, max_corner.y,
+                                          rel.x, rel.y, entity_delta.x, 
+                                          entity_delta.y, &mut t_min) {
+                                wall_normal = V2f{ x: 1.0, y: 0.0 };
+                            }
+                            if test_wall(min_corner.x, min_corner.y, max_corner.y,
+                                          rel.x, rel.y, entity_delta.x, 
+                                          entity_delta.y, &mut t_min) {
+                                wall_normal = V2f{ x: -1.0, y: 0.0 };
+                            }
+                            if test_wall(max_corner.y, min_corner.x, max_corner.x,
+                                          rel.y, rel.x, entity_delta.y,
+                                          entity_delta.x, &mut t_min) {
+                                wall_normal = V2f{ x: 0.0, y: 1.0 };
+                            }
+                            if test_wall(min_corner.y, min_corner.x, max_corner.x,
+                                          rel.y, rel.x, entity_delta.y,
+                                          entity_delta.x, &mut t_min) {
+                                wall_normal = V2f{ x: 0.0, y: -1.0 };
+                            }
+                        },
+                        _ => {},
+                    }
                 }
             }
         }
+        
+        entity.position =  entity.position.offset(entity_delta * t_min, world.tilemap);
+        entity.velocity = entity.velocity - wall_normal * math::dot(entity.velocity, wall_normal);
+        entity_delta = entity_delta - wall_normal * math::dot(entity_delta, wall_normal);
+
+        t_remaining -= t_min * t_remaining;
+
+        //We walked as far as we want to
+        if t_remaining <= 0.0 {
+            break;
+        }
     }
 
-    new_position = old_position.offset(entity_delta * t_min, world.tilemap);
-    entity.position = new_position;
+
 
     //trigger stuff if we change tiles
     if !on_same_tile(&old_position, &entity.position) {
@@ -524,21 +543,25 @@ fn move_player<'a>(entity: &mut Entity, mut acc: V2f,
 }
 
 fn test_wall(wall_value: f32, min_ortho: f32, max_ortho: f32, 
-             rel_x: f32, rel_y: f32, delta_x: f32, delta_y: f32) -> Option<f32> {
-     let t_epsilon = 0.0001;
-     if delta_x == 0.0 {
-         return None;
+             rel_x: f32, rel_y: f32, delta_x: f32, delta_y: f32,
+             t_min: &mut f32) -> bool {
+     let t_epsilon = 0.00001;
+     if delta_x != 0.0 {
+         let t_res = (wall_value - rel_x) / delta_x;
+         if t_res >= 0.0 && t_res < *t_min {
+             let y = rel_y + t_res * delta_y;
+             if min_ortho <= y && y <= max_ortho {
+                 if t_res - t_epsilon < 0.0 {
+                     *t_min = 0.0;
+                     return true;
+                 }  else {
+                     *t_min = t_res - t_epsilon;
+                     return true;
+                 }
+             }
+         }
      }
-     let t_res = (wall_value - rel_x) / delta_x;
-     let y = rel_y + t_res * delta_y;
-     if min_ortho <= y && y <= max_ortho && t_res >= 0.0 {
-         if t_res - t_epsilon < 0.0 {
-             return Some(0.0);
-         } else {
-             return Some(t_res);
-        }
-     }
-     None
+     return false
 }
 
 struct HeroBitmaps<'a> {

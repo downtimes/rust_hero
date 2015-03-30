@@ -402,11 +402,13 @@ fn add_player<'a>(state: &'a mut GameState, c_index: usize) {
     entity.dim = V2f{ x: 0.75 * state.world.tilemap.tile_side_meters, 
                       y: state.world.tilemap.tile_side_meters };
     entity.exists = true;
-    entity.position.offset.x = 0.5;
-    entity.position.offset.y = 0.5;
     entity.position.tile_x = 3;
     entity.position.tile_y = 3;
     entity.position.tile_z = 0;
+    entity.position = entity.position.offset(V2f{ x: 0.5, y: 0.5},
+                                            state.world.tilemap);
+    entity.position.offset.x = 0.5;
+    entity.position.offset.y = 0.5;
 }
            
 
@@ -428,14 +430,11 @@ fn move_player<'a>(entity: &mut Entity, mut acc: V2f,
 
     //Copy old player Position before we handle input 
     let old_position = entity.position;
-    let mut new_position = old_position;
-
     let entity_delta = acc * 0.5 * delta_t.powi(2) 
                        + entity.velocity * delta_t;
     entity.velocity = acc * delta_t + entity.velocity;
 
-    new_position.offset = entity_delta + new_position.offset;
-    new_position.recanonicalize(world.tilemap);
+    let mut new_position = old_position.offset(entity_delta, world.tilemap);
 
     let tile_side_meters_v = V2f { x: world.tilemap.tile_side_meters, 
                                    y: world.tilemap.tile_side_meters };
@@ -493,9 +492,7 @@ fn move_player<'a>(entity: &mut Entity, mut acc: V2f,
         }
     }
 
-    new_position = old_position;
-    new_position.offset = entity_delta * t_min + old_position.offset;
-    new_position.recanonicalize(world.tilemap);
+    new_position = old_position.offset(entity_delta * t_min, world.tilemap);
     entity.position = new_position;
 
     //trigger stuff if we change tiles

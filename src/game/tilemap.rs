@@ -86,6 +86,8 @@ pub struct TileChunk<'a> {
 }
 
 #[derive(Copy)]
+//TODO: add a reference to a Tilemap here so we don't have to pass it for 
+//move calculations?
 pub struct TilemapPosition {
     pub tile_x: u32,
     pub tile_y: u32,
@@ -131,10 +133,17 @@ impl TilemapPosition {
         canonicalize_coord(tilemap, &mut self.tile_x, &mut self.offset.x);
         canonicalize_coord(tilemap, &mut self.tile_y, &mut self.offset.y);
     }
+
+    pub fn offset(self, d: V2f, tilemap: &TileMap) -> TilemapPosition {
+        let mut res = self; 
+        res.offset = res.offset + d;
+        res.recanonicalize(tilemap);
+        res
+    }
 }
 
 //TODO: Caution when wrapping around the difference gets too large to represent
-//can be 31 bits difference and we can only represent 24 (float)
+//exactly can be 31 bits difference and we can only represent 24 (float)
 pub struct TilemapDifference {
     pub dx: f32,
     pub dy: f32,

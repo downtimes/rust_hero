@@ -119,7 +119,7 @@ pub fn canonicalize_coord(tilemap: &TileMap, tile: &mut u32, tile_offset: &mut f
         *tile_offset -= offset * tilemap.tile_side_meters;
         //TODO: the rounding makes problems for us here. we might round back
         //to the tile we came from so the assertion fires
-        //substract epsilon when tile_offset > tilemap.tile_side_meters?
+        //subtract epsilon when tile_offset > tilemap.tile_side_meters?
         //TODO: reinstate the macro!
         //debug_assert!(*tile_offset >= -0.5 * tilemap.tile_side_meters, "tile_offset {}", *tile_offset);
 //        debug_assert!(*tile_offset <= 0.5 * tilemap.tile_side_meters, 
@@ -150,7 +150,7 @@ pub struct TilemapDifference {
     pub dz: f32,
 }
 
-pub fn substract(tilemap: &TileMap, a: &TilemapPosition, b: &TilemapPosition) -> TilemapDifference {
+pub fn subtract(tilemap: &TileMap, a: &TilemapPosition, b: &TilemapPosition) -> TilemapDifference {
     let d_tile_x = tilemap.tile_side_meters * (a.tile_x as f32 - b.tile_x as f32);
     let d_tile_y = tilemap.tile_side_meters * (a.tile_y as f32 - b.tile_y as f32);
     let d_tile_z = tilemap.tile_side_meters * (a.tile_z as f32 - b.tile_z as f32);

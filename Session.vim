@@ -29,9 +29,9 @@ vmap [% [%m'gv``
 vmap ]% ]%m'gv``
 vmap a% [%v]%
 nmap gx <Plug>NetrwBrowseX
-nmap <S-Insert> "+gP
-nnoremap <C-Tab> w
 nnoremap <C-F4> c
+nnoremap <C-Tab> w
+nmap <S-Insert> "+gP
 nnoremap <silent> <Plug>NetrwBrowseX :call netrw#NetrwBrowseX(expand("<cWORD>"),0)
 onoremap <C-F4> c
 vnoremap <C-F4> c
@@ -65,6 +65,7 @@ set fileencodings=ucs-bom,utf-8,default,latin1
 set guifont=Liberation_Mono:h10:cANSI
 set helplang=de
 set history=50
+set hlsearch
 set ignorecase
 set incsearch
 set keymodel=startsel,stopsel
@@ -89,8 +90,8 @@ if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
 endif
 set shortmess=aoO
 badd +49 Session.vim
-badd +1231 src\win32.rs
-badd +134 src\game\mod.rs
+badd +664 src\win32.rs
+badd +375 src\game\mod.rs
 badd +37 src\ffi\mod.rs
 badd +165 src\ffi\direct_sound.rs
 badd +4 D:\WinWorkspace\rust_hero\src\main.rs
@@ -102,6 +103,8 @@ badd +1 src\linux.rs
 badd +5 build.bat
 badd +29 src\game\memory.rs
 badd +2 src\game\random.rs
+badd +115 src\game\graphics.rs
+badd +34 src\game\math.rs
 args src\win32.rs
 edit src\game\mod.rs
 set splitbelow splitright
@@ -234,15 +237,15 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 44 - ((26 * winheight(0) + 29) / 58)
+let s:l = 616 - ((33 * winheight(0) + 29) / 58)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-44
-normal! 045|
+616
+normal! 074|
 wincmd w
 argglobal
-edit src\game\mod.rs
+edit src\game\math.rs
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
 onoremap <buffer> <silent> [[ :call rust#Jump('o', 'Back')
@@ -254,7 +257,7 @@ nnoremap <buffer> <silent> ]] :call rust#Jump('n', 'Forward')
 setlocal keymap=
 setlocal noarabic
 setlocal autoindent
-setlocal balloonexpr=netrw#NetrwBalloonHelp()
+setlocal balloonexpr=
 setlocal nobinary
 setlocal bufhidden=
 setlocal buflisted
@@ -354,12 +357,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 164 - ((43 * winheight(0) + 23) / 47)
+let s:l = 40 - ((34 * winheight(0) + 23) / 47)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-164
-normal! 056|
+40
+normal! 0
 wincmd w
 argglobal
 enew

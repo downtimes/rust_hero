@@ -58,8 +58,8 @@ pub fn draw_bitmap_aligned_alpha(buffer: &mut VideoBuffer, bitmap: &Bitmap,
     top_left.x = top_left.x - align_x as f32;
     let mut min_y = top_left.y.round() as isize;
     let mut min_x = top_left.x.round() as isize;
-    let mut max_x = (top_left.x + bitmap.width as f32).round() as isize;
-    let mut max_y = (top_left.y + bitmap.height as f32).round() as isize;
+    let mut max_x = min_x + bitmap.width as isize;
+    let mut max_y = min_y + bitmap.height as isize;
 
     let mut source_offset_x = 0;
     if min_x < 0 {

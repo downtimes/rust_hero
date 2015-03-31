@@ -1,6 +1,43 @@
 use std::ops;
 
-#[derive(Copy, Default)]
+#[derive(Copy)]
+pub struct Rectf {
+    pub min: V2f,
+    pub max: V2f,
+}
+
+impl Rectf {
+    pub fn new(min: V2f, max: V2f) -> Rectf {
+        Rectf {
+            min: min,
+            max: max,
+        }
+    }
+
+    pub fn min_dim(min: V2f, dim: V2f) -> Rectf {
+        Rectf {
+            min: min,
+            max: min + dim,
+        }
+    }
+
+    pub fn center_dim(center: V2f, dim: V2f) -> Rectf {
+        Rectf {
+            min: center - dim * 0.5,
+            max: center + dim * 0.5,
+        }
+    }
+
+    pub fn p_inside(&self, p: V2f) -> bool {
+        p.x >= self.min.x &&
+        p.y >= self.min.y &&
+        p.x < self.max.x &&
+        p.y < self.max.y
+    }
+}
+
+
+#[derive(Copy, Default, PartialEq)]
 pub struct V2f { 
     pub x: f32,
     pub y: f32,

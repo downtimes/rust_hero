@@ -51,9 +51,9 @@ pub fn draw_rect(buffer: &mut VideoBuffer, real_min: V2f,
 
 //TODO: see how to do this crazy blit with iterators to be more idiomatic rust!
 //Something with iter.zip!
-pub fn draw_bitmap_aligned(buffer: &mut VideoBuffer, bitmap: &Bitmap,
-                           mut top_left: V2f,
-                           align_x: i32, align_y: i32)  {
+pub fn draw_bitmap_aligned_alpha(buffer: &mut VideoBuffer, bitmap: &Bitmap,
+                                 mut top_left: V2f,
+                                 align_x: i32, align_y: i32, alpha: f32) {
     top_left.y = top_left.y - align_y as f32;
     top_left.x = top_left.x - align_x as f32;
     let mut min_y = top_left.y.round() as isize;
@@ -90,7 +90,7 @@ pub fn draw_bitmap_aligned(buffer: &mut VideoBuffer, bitmap: &Bitmap,
 
         for _ in min_x..max_x {
             unsafe { 
-                let a = (*source >> 24) as f32 / 255.0;
+                let a = ((*source >> 24) as f32 / 255.0) * alpha;
                 let sr = (*source >> 16) & 0xFF;
                 let sg = (*source >> 8) & 0xFF;
                 let sb = *source  & 0xFF;
@@ -116,6 +116,11 @@ pub fn draw_bitmap_aligned(buffer: &mut VideoBuffer, bitmap: &Bitmap,
             source_row = source_row.offset(-(bitmap.width as isize));
         }
     }
+}
+pub fn draw_bitmap_aligned(buffer: &mut VideoBuffer, bitmap: &Bitmap,
+                           top_left: V2f,
+                           align_x: i32, align_y: i32)  {
+    draw_bitmap_aligned_alpha(buffer, bitmap, top_left, align_x, align_y, 1.0);
 }
 
 pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {

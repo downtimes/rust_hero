@@ -12,8 +12,8 @@ mod memory;
 mod random;
 mod math;
 
-use self::tilemap::{TileMap, subtract, is_tile_value_empty};
-use self::tilemap::{TilemapDifference, TilemapPosition, on_same_tile};
+use self::tilemap::{TileMap, subtract};
+use self::tilemap::{TilemapDifference, TilemapPosition};
 use self::memory::MemoryArena;
 use self::math::V2f;
 
@@ -47,6 +47,9 @@ pub extern fn update_and_render(context: &ThreadContext,
         state.test_bitmap = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                               context, "test/test_background.bmp").unwrap();
 
+        state.shadow = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
+                              context, "test/test_hero_shadow.bmp").unwrap();
+        
         state.hero_bitmaps[0].head = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                               context, "test/test_hero_right_head.bmp").unwrap();
         state.hero_bitmaps[0].torso = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
@@ -241,13 +244,6 @@ pub extern fn update_and_render(context: &ThreadContext,
             debug_assert!((abs_tile_z as usize) < tilemap.tilechunk_count_z);
         }
 
-        //TODO: move this from the Heap into our own memory region!
-        for index in 0..MAX_ENTITIES {
-            state.hf_entities[index] = Rc::new(RefCell::new(Default::default()));
-            state.lf_entities[index] = Rc::new(RefCell::new(Default::default()));
-            state.dorm_entities[index] = Rc::new(RefCell::new(Default::default()));
-        }
-
         game_memory.initialized = true;
     }
 
@@ -277,6 +273,13 @@ pub extern fn update_and_render(context: &ThreadContext,
                 if controller.move_right.ended_down {
                     acc.x = 1.0;
                 }
+
+                if controller.action_up.ended_down {
+                    println!("action up");
+                    let entity = get_entity(state, Residence::High, e_index);
+                    let mut hf_entity = entity.hf.borrow_mut();
+                    hf_entity.dz = 3.0;
+                }
             }
 
             move_player(e_index, acc, state, input.delta_t);
@@ -295,31 +298,36 @@ pub extern fn update_and_render(context: &ThreadContext,
     let meters_to_pixel = tile_side_pixels as f32 / world.tilemap.tile_side_meters;
 
 
+    let mut entity_offset_for_frame = Default::default();
     
     //Adjust the camera to look at the right room
     if state.camera_follows_entity_index.is_some() {
         let cam_entity_idx = state.camera_follows_entity_index.unwrap();
         let camera_entity = get_entity(state, Residence::High, cam_entity_idx);
-        let cam_pos = &mut state.camera_position;
-        let dorm = camera_entity.dorm.borrow();
-        cam_pos.tile_z = dorm.tile_position.tile_z;
+        let hf =camera_entity.hf.borrow();
+        let old_cam_pos = state.camera_position;
+        {
+            let cam_pos = &mut state.camera_position;
+            cam_pos.tile_z = hf.tile_z;
 
-        let tilemap = &state.world.tilemap;
-        //TODO: FIX THIS
-        let TilemapDifference { dx, dy, dz: _ } = 
-            subtract(tilemap, &dorm.tile_position, cam_pos);
+            let tilemap = &state.world.tilemap;
 
-        if dx > 9.0 * tilemap.tile_side_meters {
-            cam_pos.tile_x += 17;
-        } else if dx < -(9.0 * tilemap.tile_side_meters) {
-            cam_pos.tile_x -= 17;
+            if hf.position.x > 9.0 * tilemap.tile_side_meters {
+                cam_pos.tile_x += 17;
+            } else if hf.position.x < -(9.0 * tilemap.tile_side_meters) {
+                cam_pos.tile_x -= 17;
+            }
+
+            if hf.position.y > 5.0 * tilemap.tile_side_meters {
+                cam_pos.tile_y += 9;
+            } else if hf.position.y < -(5.0 * tilemap.tile_side_meters) {
+                cam_pos.tile_y -= 9;
+            }
         }
 
-        if dy > 5.0 * tilemap.tile_side_meters {
-            cam_pos.tile_y += 9;
-        } else if dy < -(5.0 * tilemap.tile_side_meters) {
-            cam_pos.tile_y -= 9;
-        }
+        let TilemapDifference{ dx, dy, dz:_ } = 
+            subtract(state.world.tilemap, &state.camera_position, &old_cam_pos);
+        entity_offset_for_frame = V2f{ x: -dx, y: -dy };
     }
 
     //Clear the screen to pink! And start rendering
@@ -367,31 +375,50 @@ pub extern fn update_and_render(context: &ThreadContext,
 
 
     for index in 0..state.entity_count {
-        let residence = &state.entity_residence[index];
+        let residence = state.entity_residence[index];
         match residence {
-             &Residence::High => {
-                let entity = state.hf_entities[index].borrow();
-                let dorm_part = state.dorm_entities[index].borrow();
+             Residence::High => {
+                let mut entity = state.hf_entities[index].borrow_mut();
+                //let dorm_part = state.dorm_entities[index].borrow();
+                
+                entity.position = entity.position + entity_offset_for_frame;
+
+                //TODO: move out just temp code
+                let acc = -9.81;
+                entity.z += acc * 0.5 * input.delta_t.powi(2) 
+                                   + entity.dz * input.delta_t;
+                entity.dz = acc * input.delta_t + entity.dz;
+                if entity.z < 0.0 {
+                    entity.z = 0.0;
+                }
 
                 let entity_groundpoint = V2f{
                     x: screen_center_x + meters_to_pixel * entity.position.x,
                     y: screen_center_y - meters_to_pixel * entity.position.y,
                 };
-                let entity_top_left = entity_groundpoint - dorm_part.dim * 0.5 * meters_to_pixel;
-                let entity_bottom_right = entity_top_left + dorm_part.dim * meters_to_pixel;
-                graphics::draw_rect(video_buffer, 
-                                    entity_top_left, entity_bottom_right,
-                                    1.0, 1.0, 0.0);
+                let entity_airpoint = V2f {
+                    x: entity_groundpoint.x,
+                    y: entity_groundpoint.y - meters_to_pixel * entity.z,
+                };
 
+                let z_alpha =
+                    if entity.z > 1.0 {
+                        0.0
+                    } else {
+                        1.0 - entity.z * 0.8
+                    };
                 let hero_bitmaps = &state.hero_bitmaps[entity.face_direction];
+                graphics::draw_bitmap_aligned_alpha(video_buffer, &state.shadow,
+                                                    entity_groundpoint, hero_bitmaps.align_x,
+                                                    hero_bitmaps.align_y, z_alpha);
                 graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.torso,
-                                              entity_groundpoint, hero_bitmaps.align_x,
+                                              entity_airpoint, hero_bitmaps.align_x,
                                               hero_bitmaps.align_y);
                 graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.cape,
-                                              entity_groundpoint, hero_bitmaps.align_x,
+                                              entity_airpoint, hero_bitmaps.align_x,
                                               hero_bitmaps.align_y);
                 graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.head,
-                                              entity_groundpoint, hero_bitmaps.align_x,
+                                              entity_airpoint, hero_bitmaps.align_x,
                                               hero_bitmaps.align_y);
             },
             _ => {},
@@ -402,8 +429,19 @@ pub extern fn update_and_render(context: &ThreadContext,
 
 // ======== End of the public interface =========
 
-fn get_entity(state: &GameState, res: Residence, index: usize) -> Entity {
+fn get_entity(state: &mut GameState, res: Residence, index: usize) -> Entity {
     debug_assert!(index < state.entity_count);
+
+    match &state.entity_residence[index] {
+        &Residence::High => {
+        },
+        _ => {
+            if res == Residence::High {
+                change_entity_residence(state, index, res);
+            }
+        },
+    }
+
     Entity {
         residence: res,
         dorm: state.dorm_entities[index].clone(),
@@ -417,7 +455,7 @@ fn add_entity<'a>(state: &'a mut GameState) -> usize {
 
     state.entity_count += 1;
 
-    state.entity_residence[index] = Residence::Dormant;
+    //TODO: move this from the Heap into our own memory region!
     state.dorm_entities[index] = Rc::new(RefCell::new(Default::default()));
     state.hf_entities[index] = Rc::new(RefCell::new(Default::default()));
     state.lf_entities[index] = Rc::new(RefCell::new(Default::default()));
@@ -431,55 +469,62 @@ fn add_player<'a>(state: &'a mut GameState, e_index: usize) {
     }
     let entity = get_entity(state, Residence::Dormant, e_index);
     {
-        let hf_entity = entity.hf.borrow_mut();
         let mut dorm_entity = entity.dorm.borrow_mut();
-
-
-        state.entity_count += 1;
 
         dorm_entity.dim = V2f{ x: 1.0, 
                                y: 0.5 };
         dorm_entity.tile_position.tile_x = 3;
         dorm_entity.tile_position.tile_y = 3;
         dorm_entity.tile_position.tile_z = 0;
+        dorm_entity.collides = true;
     }
 
-    change_entity_residence(state, entity, Residence::High);
+    change_entity_residence(state, e_index, Residence::High);
 }
 
-fn change_entity_residence<'a>(state: &GameState, entity: Entity, res: Residence) {
+fn change_entity_residence<'a>(state: &mut GameState, e_index: usize, res: Residence) {
+
     match res {
         Residence::High => {
-            match entity.residence {
-                Residence::High => {},
+            match state.entity_residence[e_index] {
+                Residence::High => {
+                },
                 _ => {
-                    //map to camera space
+                    let dorm_entity = state.dorm_entities[e_index].borrow();
+                    let mut hf_entity = state.hf_entities[e_index].borrow_mut();
+                    let TilemapDifference{ dx, dy, dz:_ } =
+                        subtract(state.world.tilemap, &dorm_entity.tile_position, &state.camera_position); 
+                    hf_entity.position = V2f{ x: dx, y: dy };
+                    hf_entity.velocity = Default::default();
+                    hf_entity.tile_z = dorm_entity.tile_position.tile_z;
+                    hf_entity.face_direction = 0;
                 },
             }
         },
         _ => {
         },
     }
+
+    state.entity_residence[e_index] = res;
 }
            
 
 fn move_player<'a>(entity_index: usize, mut acc: V2f, 
                    state: &'a mut GameState<'a>, delta_t: f32) {
     let entity = get_entity(state, Residence::High, entity_index);
-    let tilemap = &state.world.tilemap;
 
     //Diagonal correction.
     if acc.length_sq() > 1.0 {
         acc = acc.normalize();
     }
 
-    let entity_speed = 50.0; // m/s^2
+    let entity_speed = 15.0; // m/s^2
 
     acc = acc * entity_speed;
 
     let mut hf_entity = entity.hf.borrow_mut();
     //friction force currently just by rule of thumb;
-    acc = acc - hf_entity.velocity * 8.0;
+    acc = acc - hf_entity.velocity * 13.0;
 
 
     //Copy old player Position before we handle input 
@@ -487,27 +532,6 @@ fn move_player<'a>(entity_index: usize, mut acc: V2f,
                        + hf_entity.velocity * delta_t;
     hf_entity.velocity = acc * delta_t + hf_entity.velocity;
 
-    let new_position = hf_entity.position + entity_delta; 
-
-
-/*
-
-    let entity_tile_dim = V2f { x: (entity.dim.x / world.tilemap.tile_side_meters).ceil(),
-                                y: (entity.dim.y / world.tilemap.tile_side_meters).ceil(), };
-
-    let min_tile_x = cmp::min(entity.position.tile_x as i32, 
-                              new_position.tile_x as i32) 
-                     - entity_tile_dim.x as i32;
-    let min_tile_y = cmp::min(entity.position.tile_y as i32, 
-                              new_position.tile_y as i32) 
-                     - entity_tile_dim.y as i32;
-    let max_tile_x = cmp::max(entity.position.tile_x as i32,
-                              new_position.tile_x as i32) 
-                     + entity_tile_dim.x as i32 + 1;
-    let max_tile_y = cmp::max(entity.position.tile_y as i32, 
-                              new_position.tile_y as i32) 
-                     + entity_tile_dim.y as i32 + 1;
-*/
 
     let mut t_remaining = 1.0;
     //try the collission detection multiple times to see if we can move with
@@ -539,21 +563,25 @@ fn move_player<'a>(entity_index: usize, mut acc: V2f,
                              rel.x, rel.y, entity_delta.x, 
                              entity_delta.y, &mut t_min) {
                     wall_normal = V2f{ x: 1.0, y: 0.0 };
+                    hit_e_index = Some(e_index);
                 }
                 if test_wall(min_corner.x, min_corner.y, max_corner.y,
                              rel.x, rel.y, entity_delta.x, 
                              entity_delta.y, &mut t_min) {
                     wall_normal = V2f{ x: -1.0, y: 0.0 };
+                    hit_e_index = Some(e_index);
                 }
                 if test_wall(max_corner.y, min_corner.x, max_corner.x,
                              rel.y, rel.x, entity_delta.y,
                              entity_delta.x, &mut t_min) {
                     wall_normal = V2f{ x: 0.0, y: 1.0 };
+                    hit_e_index = Some(e_index);
                 }
                 if test_wall(min_corner.y, min_corner.x, max_corner.x,
                              rel.y, rel.x, entity_delta.y,
                              entity_delta.x, &mut t_min) {
                     wall_normal = V2f{ x: 0.0, y: -1.0 };
+                    hit_e_index = Some(e_index);
                 }
             }
         }
@@ -596,7 +624,7 @@ fn move_player<'a>(entity_index: usize, mut acc: V2f,
 fn test_wall(wall_value: f32, min_ortho: f32, max_ortho: f32, 
              rel_x: f32, rel_y: f32, delta_x: f32, delta_y: f32,
              t_min: &mut f32) -> bool {
-     let t_epsilon = 0.00001;
+     let t_epsilon = 0.001;
      if delta_x != 0.0 {
          let t_res = (wall_value - rel_x) / delta_x;
          if t_res >= 0.0 && t_res < *t_min {
@@ -648,10 +676,14 @@ struct HfEntity {
     velocity: V2f,
     tile_z: u32,
     face_direction: usize,
+
+    z: f32,
+    dz: f32,
 }
 
 //NOTE: The order is important here. If High == 0 then this will crash
 //at startup because we don't initalize the entities
+#[derive(PartialEq, Eq, Copy)]
 enum Residence {
     NonExistent,
     Low,
@@ -678,6 +710,7 @@ struct GameState<'a> {
     hf_entities: [Rc<RefCell<HfEntity>>; MAX_ENTITIES],
 
     test_bitmap: graphics::Bitmap<'a>,
+    shadow: graphics::Bitmap<'a>,
     hero_bitmaps: [HeroBitmaps<'a>; 4],
 } 
 

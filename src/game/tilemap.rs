@@ -67,7 +67,7 @@ impl<'a> TileMap<'a> {
         }
     }
 
-    pub fn get_tile_value_pos(&'a self, pos: &TilemapPosition) -> Option<u32> {
+    fn get_tile_value_pos(&'a self, pos: &TilemapPosition) -> Option<u32> {
         self.get_tile_value(pos.tile_x, pos.tile_y, pos.tile_z)
     }
 }

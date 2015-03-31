@@ -1237,7 +1237,7 @@ fn main() {
     let mut counter_frequency: i64 = 0;
     unsafe { QueryPerformanceFrequency(&mut counter_frequency); }
 
-//    let mut last_cycles = sizerinsics::__rdtsc();
+    let mut last_cycles = sizerinsics::__rdtsc();
 
     let mut last_counter: i64 = get_wall_clock();
     let mut flip_wall_clock: i64 = 0;
@@ -1271,172 +1271,172 @@ fn main() {
         process_mouse_input(&window, new_input);
 
         if !window.pause {
-        process_xinput(XInputGetState,
-                       &mut new_input.controllers[1..], 
-                       &old_input.controllers[1..]);
+            process_xinput(XInputGetState,
+                           &mut new_input.controllers[1..], 
+                           &old_input.controllers[1..]);
 
-        let mut video_buf = VideoBuffer {
-            memory: unsafe { slice::from_raw_parts_mut(window.backbuffer.memory as *mut u32, 
-                                 (window.backbuffer.size/BYTES_PER_PIXEL) as usize) },
-            width: window.backbuffer.width as usize,
-            height: window.backbuffer.height as usize,
-            pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as usize,
-        };
-
-        if replay.is_recording() {
-            log_input(&replay, new_input);
-        }
-
-        if replay.is_replaying() {
-            override_input(&mut replay, new_input);
-        }
-
-        (game.update_and_render)(&thread_context,
-                                 &mut game_memory,
-                                 new_input,
-                                 &mut video_buf);
-
-        let from_begin_to_audio = get_seconds_elapsed(flip_wall_clock, get_wall_clock(),
-                                                       counter_frequency);
-        let mut play_cursor: DWORD = 0;
-        let mut write_cursor: DWORD = 0;
-
-        if unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
-                     (sound_output.sound_buffer, 
-                      &mut play_cursor,
-                      &mut write_cursor) == DS_OK } {
-
-            if !sound_is_valid {
-                sound_output.byte_index = write_cursor; 
-                sound_is_valid = true;
-            }
-
-            let sound_buffer_size = sound_output.get_buffer_size(); 
-            let byte_to_lock = sound_output.byte_index % sound_buffer_size; 
-
-            let safe_write_cursor = 
-                if write_cursor < play_cursor {
-                    write_cursor + sound_output.safety_bytes + sound_buffer_size
-                } else {
-                    write_cursor + sound_output.safety_bytes
-                };
-            debug_assert!(safe_write_cursor >= play_cursor);
-
-            let expected_sound_bytes_per_frame = SOUND_BYTES_PER_SECOND / game_refresh_rate as u32;
-            let seconds_to_flip = 
-                if target_seconds_per_frame > from_begin_to_audio {
-                    target_seconds_per_frame - from_begin_to_audio
-                } else {
-                    0.0f32
-                };
-            let expected_bytes_to_flip = (expected_sound_bytes_per_frame as f32 * 
-                                        (seconds_to_flip / target_seconds_per_frame)) as DWORD;
-            let expected_frame_boundary_byte = play_cursor + expected_bytes_to_flip;
-            let audio_card_not_latent = safe_write_cursor < expected_frame_boundary_byte;
-
-            //The division with BYTES_PER_SAMPLE as well as the multiplication afterwards
-            //are for the fact that we need a multiple of 4 to be sample aligned
-            //because we calculated the expected_bytes_to_flip exactly it may
-            //not be 4byte aligned so we do the alignment here!
-            let target_cursor = 
-                if audio_card_not_latent {
-                    (((expected_frame_boundary_byte + expected_sound_bytes_per_frame) 
-                        / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE)
-                    % sound_buffer_size
-                } else {
-                    (((write_cursor + expected_sound_bytes_per_frame + sound_output.safety_bytes) 
-                        / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE)
-                     % sound_buffer_size
-                };
-
-            let bytes_to_write = 
-                if byte_to_lock > target_cursor {
-                    sound_buffer_size - byte_to_lock + target_cursor
-                } else {
-                    target_cursor - byte_to_lock
-                };
-
-            let mut sound_buf = SoundBuffer {
-                samples: &mut sound_samples[..bytes_to_write as usize/
-                                                    mem::size_of::<i16>()],
-                samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,
+            let mut video_buf = VideoBuffer {
+                memory: unsafe { slice::from_raw_parts_mut(window.backbuffer.memory as *mut u32, 
+                                     (window.backbuffer.size/BYTES_PER_PIXEL) as usize) },
+                width: window.backbuffer.width as usize,
+                height: window.backbuffer.height as usize,
+                pitch: (window.backbuffer.pitch/BYTES_PER_PIXEL) as usize,
             };
 
-            (game.get_sound_samples)(&thread_context,
+            if replay.is_recording() {
+                log_input(&replay, new_input);
+            }
+
+            if replay.is_replaying() {
+                override_input(&mut replay, new_input);
+            }
+
+            (game.update_and_render)(&thread_context,
                                      &mut game_memory,
-                                     &mut sound_buf);
+                                     new_input,
+                                     &mut video_buf);
 
-            fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
-
-        } else {
-            sound_is_valid = false;
-        }
-
-        let mut seconds_elapsed_for_work = get_seconds_elapsed(last_counter,
-                                                               get_wall_clock(),
-                                                               counter_frequency);
-        if seconds_elapsed_for_work < target_seconds_per_frame {
-            while seconds_elapsed_for_work < target_seconds_per_frame {
-                if window.timer_fine_resolution {
-                    let sleep_ms = (1000.0 * (target_seconds_per_frame 
-                                              - seconds_elapsed_for_work) - 1.0f32) as DWORD;
-                    if sleep_ms > 0 {
-                        unsafe { Sleep(sleep_ms); }
-                    }
-                }
-                seconds_elapsed_for_work = get_seconds_elapsed(last_counter,
-                                                               get_wall_clock(),
-                                                               counter_frequency);
-            }
-        } else {
-            //TODO: missed frame time we have to put out a log
-        }
-
-        let end_counter = get_wall_clock();
-
-        let (width, height) = get_client_dimensions(window.handle).unwrap();
-
-        {
-            let context = unsafe { GetDC(window.handle) };
-            if context.is_null() {
-                panic!("DC for the Window not available!");
-            }
-            blit_buffer_to_window(context, &window.backbuffer, width, height);
-            unsafe { ReleaseDC(window.handle, context); }
-        }
-
-        flip_wall_clock = get_wall_clock();
-
-        if cfg!(not(ndebug)) {
+            let from_begin_to_audio = get_seconds_elapsed(flip_wall_clock, get_wall_clock(),
+                                                           counter_frequency);
             let mut play_cursor: DWORD = 0;
             let mut write_cursor: DWORD = 0;
+
             if unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
                          (sound_output.sound_buffer, 
                           &mut play_cursor,
                           &mut write_cursor) == DS_OK } {
-                last_time_markers[last_time_marker_index].flip_play_cursor = play_cursor;
-                last_time_markers[last_time_marker_index].flip_write_cursor = write_cursor;
 
-                last_time_marker_index += 1;
-                if last_time_marker_index >= last_time_markers.len()  {
-                    last_time_marker_index = 0;
+                if !sound_is_valid {
+                    sound_output.byte_index = write_cursor; 
+                    sound_is_valid = true;
+                }
+
+                let sound_buffer_size = sound_output.get_buffer_size(); 
+                let byte_to_lock = sound_output.byte_index % sound_buffer_size; 
+
+                let safe_write_cursor = 
+                    if write_cursor < play_cursor {
+                        write_cursor + sound_output.safety_bytes + sound_buffer_size
+                    } else {
+                        write_cursor + sound_output.safety_bytes
+                    };
+                debug_assert!(safe_write_cursor >= play_cursor);
+
+                let expected_sound_bytes_per_frame = SOUND_BYTES_PER_SECOND / game_refresh_rate as u32;
+                let seconds_to_flip = 
+                    if target_seconds_per_frame > from_begin_to_audio {
+                        target_seconds_per_frame - from_begin_to_audio
+                    } else {
+                        0.0f32
+                    };
+                let expected_bytes_to_flip = (expected_sound_bytes_per_frame as f32 * 
+                                            (seconds_to_flip / target_seconds_per_frame)) as DWORD;
+                let expected_frame_boundary_byte = play_cursor + expected_bytes_to_flip;
+                let audio_card_not_latent = safe_write_cursor < expected_frame_boundary_byte;
+
+                //The division with BYTES_PER_SAMPLE as well as the multiplication afterwards
+                //are for the fact that we need a multiple of 4 to be sample aligned
+                //because we calculated the expected_bytes_to_flip exactly it may
+                //not be 4byte aligned so we do the alignment here!
+                let target_cursor = 
+                    if audio_card_not_latent {
+                        (((expected_frame_boundary_byte + expected_sound_bytes_per_frame) 
+                            / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE)
+                        % sound_buffer_size
+                    } else {
+                        (((write_cursor + expected_sound_bytes_per_frame + sound_output.safety_bytes) 
+                            / BYTES_PER_SAMPLE) * BYTES_PER_SAMPLE)
+                         % sound_buffer_size
+                    };
+
+                let bytes_to_write = 
+                    if byte_to_lock > target_cursor {
+                        sound_buffer_size - byte_to_lock + target_cursor
+                    } else {
+                        target_cursor - byte_to_lock
+                    };
+
+                let mut sound_buf = SoundBuffer {
+                    samples: &mut sound_samples[..bytes_to_write as usize/
+                                                        mem::size_of::<i16>()],
+                    samples_per_second: SOUND_BYTES_PER_SECOND / BYTES_PER_SAMPLE,
+                };
+
+                (game.get_sound_samples)(&thread_context,
+                                         &mut game_memory,
+                                         &mut sound_buf);
+
+                fill_sound_output(&mut sound_output, byte_to_lock, bytes_to_write, &sound_buf);
+
+            } else {
+                sound_is_valid = false;
+            }
+
+            let mut seconds_elapsed_for_work = get_seconds_elapsed(last_counter,
+                                                                   get_wall_clock(),
+                                                                   counter_frequency);
+            if seconds_elapsed_for_work < target_seconds_per_frame {
+                while seconds_elapsed_for_work < target_seconds_per_frame {
+                    if window.timer_fine_resolution {
+                        let sleep_ms = (1000.0 * (target_seconds_per_frame 
+                                                  - seconds_elapsed_for_work) - 1.0f32) as DWORD;
+                        if sleep_ms > 0 {
+                            unsafe { Sleep(sleep_ms); }
+                        }
+                    }
+                    seconds_elapsed_for_work = get_seconds_elapsed(last_counter,
+                                                                   get_wall_clock(),
+                                                                   counter_frequency);
+                }
+            } else {
+                //TODO: missed frame time we have to put out a log
+            }
+
+            let end_counter = get_wall_clock();
+
+            let (width, height) = get_client_dimensions(window.handle).unwrap();
+
+            {
+                let context = unsafe { GetDC(window.handle) };
+                if context.is_null() {
+                    panic!("DC for the Window not available!");
+                }
+                blit_buffer_to_window(context, &window.backbuffer, width, height);
+                unsafe { ReleaseDC(window.handle, context); }
+            }
+
+            flip_wall_clock = get_wall_clock();
+
+            if cfg!(not(ndebug)) {
+                let mut play_cursor: DWORD = 0;
+                let mut write_cursor: DWORD = 0;
+                if unsafe { ((*(*sound_output.sound_buffer).lpVtbl).GetCurrentPosition)
+                             (sound_output.sound_buffer, 
+                              &mut play_cursor,
+                              &mut write_cursor) == DS_OK } {
+                    last_time_markers[last_time_marker_index].flip_play_cursor = play_cursor;
+                    last_time_markers[last_time_marker_index].flip_write_cursor = write_cursor;
+
+                    last_time_marker_index += 1;
+                    if last_time_marker_index >= last_time_markers.len()  {
+                        last_time_marker_index = 0;
+                    }
                 }
             }
+
+            let ms_per_frame = 1000.0 * get_seconds_elapsed(last_counter,
+                                                            end_counter,
+                                                            counter_frequency);
+            let fps: f32 = 1000.0 / ms_per_frame;
+            let display_cicles = sizerinsics::__rdtsc();
+            let mc_per_second = (display_cicles - last_cycles) as f32/ (1000.0 * 1000.0);
+
+            println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
+
+            mem::swap(new_input, old_input);
+
+            last_counter = end_counter;
+            last_cycles = sizerinsics::__rdtsc();
         }
-
-//        let ms_per_frame = 1000.0 * get_seconds_elapsed(last_counter,
-//                                                        end_counter,
-//                                                        counter_frequency);
-//        let fps: f32 = 1000.0 / ms_per_frame;
-//        let display_cicles = sizerinsics::__rdtsc();
-//        let mc_per_second = (display_cicles - last_cycles) as f32/ (1000.0 * 1000.0);
-//
-//        println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
-
-        mem::swap(new_input, old_input);
-
-        last_counter = end_counter;
-//        last_cycles = sizerinsics::__rdtsc();
-    }
     }
 }

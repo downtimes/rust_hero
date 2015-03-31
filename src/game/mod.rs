@@ -640,11 +640,13 @@ struct HfEntity {
     face_direction: usize,
 }
 
+//NOTE: The order is important here. If High == 0 then this will crash
+//at startup because we don't initalize the entities
 enum Residence {
-    High,
+    NonExistent,
     Low,
     Dormant,
-    NonExistent,
+    High,
 }
 
 const MAX_ENTITIES: usize = 256;

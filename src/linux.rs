@@ -711,7 +711,7 @@ fn main() {
         let mut running = true;
         while running {
 
-            new_input.delta_time = target_seconds_per_frame;
+            new_input.delta_t = target_seconds_per_frame;
             
             let new_write_time = get_last_write_time(&game_so_string);
             if compare_file_time(&game.write_time, &new_write_time) != 0 {

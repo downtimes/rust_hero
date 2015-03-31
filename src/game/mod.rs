@@ -241,6 +241,13 @@ pub extern fn update_and_render(context: &ThreadContext,
             debug_assert!((abs_tile_z as usize) < tilemap.tilechunk_count_z);
         }
 
+        //TODO: move this from the Heap into our own memory region!
+        for index in 0..MAX_ENTITIES {
+            state.hf_entities[index] = Rc::new(RefCell::new(Default::default()));
+            state.lf_entities[index] = Rc::new(RefCell::new(Default::default()));
+            state.dorm_entities[index] = Rc::new(RefCell::new(Default::default()));
+        }
+
         game_memory.initialized = true;
     }
 
@@ -272,8 +279,7 @@ pub extern fn update_and_render(context: &ThreadContext,
                 }
             }
 
-            let entity = get_entity(state, Residence::High, e_index);
-            move_player(entity, acc, state, input.delta_t);
+            move_player(e_index, acc, state, input.delta_t);
         } else {
             if controller.start.ended_down {
                 let e_index = add_entity(state);
@@ -360,7 +366,7 @@ pub extern fn update_and_render(context: &ThreadContext,
     }
 
 
-    for index in 0..MAX_ENTITIES {
+    for index in 0..state.entity_count {
         let residence = &state.entity_residence[index];
         match residence {
              &Residence::High => {
@@ -425,7 +431,7 @@ fn add_player<'a>(state: &'a mut GameState, e_index: usize) {
     }
     let entity = get_entity(state, Residence::Dormant, e_index);
     {
-        let hf_entity = entity.dorm.borrow_mut();
+        let hf_entity = entity.hf.borrow_mut();
         let mut dorm_entity = entity.dorm.borrow_mut();
 
 
@@ -457,8 +463,9 @@ fn change_entity_residence<'a>(state: &GameState, entity: Entity, res: Residence
 }
            
 
-fn move_player<'a>(entity: Entity, mut acc: V2f, 
+fn move_player<'a>(entity_index: usize, mut acc: V2f, 
                    state: &'a mut GameState<'a>, delta_t: f32) {
+    let entity = get_entity(state, Residence::High, entity_index);
     let tilemap = &state.world.tilemap;
 
     //Diagonal correction.
@@ -510,7 +517,10 @@ fn move_player<'a>(entity: Entity, mut acc: V2f,
         let mut wall_normal = Default::default();
         let mut hit_e_index = None;
 
-        for e_index in 0..MAX_ENTITIES {
+        for e_index in 0..state.entity_count {
+            if e_index == entity_index {
+                continue;
+            }
             let dorm_entity = entity.dorm.borrow();
             let test_entity = get_entity(state, Residence::High, e_index);
             let hf_test_entity = test_entity.hf.borrow();

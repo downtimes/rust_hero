@@ -85,7 +85,7 @@ pub struct TileChunk<'a> {
     pub tiles: &'a mut [u32]
 }
 
-#[derive(Copy)]
+#[derive(Copy, Default)]
 //TODO: add a reference to a Tilemap here so we don't have to pass it for 
 //move calculations?
 pub struct TilemapPosition {

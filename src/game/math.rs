@@ -1,6 +1,6 @@
 use std::ops;
 
-#[derive(Copy)]
+#[derive(Copy, Default)]
 pub struct V2f { 
     pub x: f32,
     pub y: f32,

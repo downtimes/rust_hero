@@ -1,6 +1,7 @@
 use std::mem;
 use std::default::Default;
-use std::cmp;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input};
 use common::{ThreadContext, MAX_CONTROLLERS};
@@ -294,12 +295,13 @@ pub extern fn update_and_render(context: &ThreadContext,
         let cam_entity_idx = state.camera_follows_entity_index.unwrap();
         let camera_entity = get_entity(state, Residence::High, cam_entity_idx);
         let cam_pos = &mut state.camera_position;
-        cam_pos.tile_z = camera_entity.dorm.tile_position.tile_z;
+        let dorm = camera_entity.dorm.borrow();
+        cam_pos.tile_z = dorm.tile_position.tile_z;
 
         let tilemap = &state.world.tilemap;
         //TODO: FIX THIS
         let TilemapDifference { dx, dy, dz: _ } = 
-            subtract(tilemap, &camera_entity.dorm.tile_position, cam_pos);
+            subtract(tilemap, &dorm.tile_position, cam_pos);
 
         if dx > 9.0 * tilemap.tile_side_meters {
             cam_pos.tile_x += 17;
@@ -362,8 +364,8 @@ pub extern fn update_and_render(context: &ThreadContext,
         let residence = &state.entity_residence[index];
         match residence {
              &Residence::High => {
-                let entity = &state.hf_entities[index];
-                let dorm_part = &state.dorm_entities[index];
+                let entity = state.hf_entities[index].borrow();
+                let dorm_part = state.dorm_entities[index].borrow();
 
                 let entity_groundpoint = V2f{
                     x: screen_center_x + meters_to_pixel * entity.position.x,
@@ -394,13 +396,13 @@ pub extern fn update_and_render(context: &ThreadContext,
 
 // ======== End of the public interface =========
 
-fn get_entity<'a>(state: &'a mut GameState, res: Residence, index: usize) -> Entity<'a> {
+fn get_entity(state: &GameState, res: Residence, index: usize) -> Entity {
     debug_assert!(index < state.entity_count);
     Entity {
         residence: res,
-        dorm: &mut state.dorm_entities[index],
-        lf: &mut state.lf_entities[index],
-        hf: &mut state.hf_entities[index],
+        dorm: state.dorm_entities[index].clone(),
+        lf: state.lf_entities[index].clone(),
+        hf: state.hf_entities[index].clone(),
     }
 }
 
@@ -410,9 +412,9 @@ fn add_entity<'a>(state: &'a mut GameState) -> usize {
     state.entity_count += 1;
 
     state.entity_residence[index] = Residence::Dormant;
-    state.dorm_entities[index] = Default::default();
-    state.hf_entities[index] = Default::default();
-    state.lf_entities[index] = Default::default();
+    state.dorm_entities[index] = Rc::new(RefCell::new(Default::default()));
+    state.hf_entities[index] = Rc::new(RefCell::new(Default::default()));
+    state.lf_entities[index] = Rc::new(RefCell::new(Default::default()));
 
     index
 }
@@ -421,33 +423,35 @@ fn add_player<'a>(state: &'a mut GameState, e_index: usize) {
     if state.camera_follows_entity_index.is_none() {
         state.camera_follows_entity_index = Some(e_index);
     }
-    let mut entity = get_entity(state, Residence::Dormant, e_index);
-    let hf_entity = &mut entity.hf;
-    let dorm_entity = &mut entity.dorm;
+    let entity = get_entity(state, Residence::Dormant, e_index);
+    {
+        let hf_entity = entity.dorm.borrow_mut();
+        let mut dorm_entity = entity.dorm.borrow_mut();
 
 
-    state.entity_count += 1;
+        state.entity_count += 1;
 
-    dorm_entity.dim = V2f{ x: 1.0, 
-                      y: 0.5 };
-    dorm_entity.tile_position.tile_x = 3;
-    dorm_entity.tile_position.tile_y = 3;
-    dorm_entity.tile_position.tile_z = 0;
+        dorm_entity.dim = V2f{ x: 1.0, 
+                               y: 0.5 };
+        dorm_entity.tile_position.tile_x = 3;
+        dorm_entity.tile_position.tile_y = 3;
+        dorm_entity.tile_position.tile_z = 0;
+    }
 
-    change_entity_residence(state, &mut entity, Residence::High);
+    change_entity_residence(state, entity, Residence::High);
 }
 
-fn change_entity_residence<'a>(state: &GameState, entity: &mut Entity, res: Residence) {
+fn change_entity_residence<'a>(state: &GameState, entity: Entity, res: Residence) {
     match res {
         Residence::High => {
-            if entity.residence != Residence::High {
-                //map to camera space
+            match entity.residence {
+                Residence::High => {},
+                _ => {
+                    //map to camera space
+                },
             }
         },
         _ => {
-            if entity.residence == Residence::Dormant {
-                //map to tile_space
-            }
         },
     }
 }
@@ -466,16 +470,17 @@ fn move_player<'a>(entity: Entity, mut acc: V2f,
 
     acc = acc * entity_speed;
 
+    let mut hf_entity = entity.hf.borrow_mut();
     //friction force currently just by rule of thumb;
-    acc = acc - entity.hf.velocity * 8.0;
+    acc = acc - hf_entity.velocity * 8.0;
 
 
     //Copy old player Position before we handle input 
     let mut entity_delta = acc * 0.5 * delta_t.powi(2) 
-                       + entity.hf.velocity * delta_t;
-    entity.hf.velocity = acc * delta_t + entity.hf.velocity;
+                       + hf_entity.velocity * delta_t;
+    hf_entity.velocity = acc * delta_t + hf_entity.velocity;
 
-    let new_position = entity.hf.position + entity_delta; 
+    let new_position = hf_entity.position + entity_delta; 
 
 
 /*
@@ -506,15 +511,18 @@ fn move_player<'a>(entity: Entity, mut acc: V2f,
         let mut hit_e_index = None;
 
         for e_index in 0..MAX_ENTITIES {
+            let dorm_entity = entity.dorm.borrow();
             let test_entity = get_entity(state, Residence::High, e_index);
-            if test_entity.dorm.collides {
+            let hf_test_entity = test_entity.hf.borrow();
+            let dorm_test_entity = test_entity.dorm.borrow();
+            if dorm_test_entity.collides {
                 //Minkowski Sum
-                let diameter = V2f { x: test_entity.dorm.dim.x + entity.dorm.dim.x, 
-                                     y: test_entity.dorm.dim.y + entity.dorm.dim.y};
+                let diameter = V2f { x: dorm_test_entity.dim.x + dorm_entity.dim.x, 
+                                     y: dorm_test_entity.dim.y + dorm_entity.dim.y};
 
                 let min_corner = diameter * -0.5;
                 let max_corner = diameter * 0.5;
-                let rel = entity.hf.position - test_entity.hf.position;
+                let rel = hf_entity.position - hf_test_entity.position;
 
                 //check against the 4 entity walls
                 if test_wall(max_corner.x, min_corner.y, max_corner.y,
@@ -540,16 +548,17 @@ fn move_player<'a>(entity: Entity, mut acc: V2f,
             }
         }
 
-        entity.hf.position = entity.hf.position + entity_delta * t_min;
+        hf_entity.position = hf_entity.position + entity_delta * t_min;
         if hit_e_index.is_some() {
-            entity.hf.velocity = entity.hf.velocity 
-                - wall_normal * math::dot(entity.hf.velocity, wall_normal);
+            hf_entity.velocity = hf_entity.velocity 
+                - wall_normal * math::dot(hf_entity.velocity, wall_normal);
             entity_delta = entity_delta - wall_normal * math::dot(entity_delta, wall_normal);
             t_remaining -= t_min * t_remaining;
 
             let hit_entity = get_entity(state, Residence::Dormant, hit_e_index.unwrap());
-            let tile_z = entity.hf.tile_z as i32  + hit_entity.dorm.d_tile_z;
-            entity.hf.tile_z = tile_z as u32;
+            let dorm_hit = hit_entity.dorm.borrow();
+            let tile_z = hf_entity.tile_z as i32  + dorm_hit.d_tile_z;
+            hf_entity.tile_z = tile_z as u32;
         }
 
         //We walked as far as we want to
@@ -559,17 +568,17 @@ fn move_player<'a>(entity: Entity, mut acc: V2f,
     }
 
     //adjust facing direction depending on velocity
-    if entity.hf.velocity.x.abs() > entity.hf.velocity.y.abs() {
-        if entity.hf.velocity.x > 0.0 {
-            entity.hf.face_direction = 0;
+    if hf_entity.velocity.x.abs() > hf_entity.velocity.y.abs() {
+        if hf_entity.velocity.x > 0.0 {
+            hf_entity.face_direction = 0;
         } else {
-            entity.hf.face_direction = 2;
+            hf_entity.face_direction = 2;
         }
-    } else if entity.hf.velocity.x != 0.0 && entity.hf.velocity.y != 0.0 {
-        if entity.hf.velocity.y > 0.0 {
-            entity.hf.face_direction = 1;
+    } else if hf_entity.velocity.x != 0.0 && hf_entity.velocity.y != 0.0 {
+        if hf_entity.velocity.y > 0.0 {
+            hf_entity.face_direction = 1;
         } else {
-            entity.hf.face_direction = 3;
+            hf_entity.face_direction = 3;
         }
     }
 }
@@ -605,11 +614,11 @@ struct HeroBitmaps<'a> {
     align_y: i32
 }
 
-struct Entity<'a> {
+struct Entity {
     residence: Residence,
-    dorm: &'a mut DormEntity,
-    lf: &'a mut LfEntity,
-    hf: &'a mut HfEntity,
+    dorm: Rc<RefCell<DormEntity>>,
+    lf: Rc<RefCell<LfEntity>>,
+    hf: Rc<RefCell<HfEntity>>,
 }
 
 #[derive(Default)]
@@ -652,9 +661,9 @@ struct GameState<'a> {
     player_index_for_controller: [Option<usize>; MAX_CONTROLLERS],
     entity_count: usize,
     entity_residence: [Residence; MAX_ENTITIES],
-    dorm_entities: [DormEntity; MAX_ENTITIES],
-    lf_entities: [LfEntity; MAX_ENTITIES],
-    hf_entities: [HfEntity; MAX_ENTITIES],
+    dorm_entities: [Rc<RefCell<DormEntity>>; MAX_ENTITIES],
+    lf_entities: [Rc<RefCell<LfEntity>>; MAX_ENTITIES],
+    hf_entities: [Rc<RefCell<HfEntity>>; MAX_ENTITIES],
 
     test_bitmap: graphics::Bitmap<'a>,
     hero_bitmaps: [HeroBitmaps<'a>; 4],

@@ -243,14 +243,14 @@ pub extern fn update_and_render(context: &ThreadContext,
             debug_assert!((abs_tile_z as usize) < state.world.tilemap.tilechunk_count_z);
         }
 
-        let new_position = TilemapPosition{tile_x: 17/2, tile_y: 9/2, tile_z: 0,
-                                           offset: Default::default()};
-        set_camera(state, &new_position);
-
         //TODO: initialize the hf_entities array!
         for i in 0..MAX_HIGH_ENTITIES {
             state.hf_entities[i] = Rc::new(RefCell::new(Default::default()));
         }
+
+        let new_position = TilemapPosition{tile_x: 17/2, tile_y: 9/2, tile_z: 0,
+                                           offset: Default::default()};
+        set_camera(state, &new_position);
 
         game_memory.initialized = true;
     }
@@ -287,7 +287,6 @@ pub extern fn update_and_render(context: &ThreadContext,
             {
                 let mut hf_entity = entity.hf.borrow_mut();
                 if controller.action_up.ended_down {
-                    println!("action up");
                     hf_entity.dz = 3.0;
                 }
             }
@@ -419,15 +418,17 @@ fn set_camera(state: &mut GameState, new_position: &TilemapPosition) {
     let min_tile_y = 0;//(new_position.tile_y as i32 - tile_span_y as i32 / 2) as u32;
     let max_tile_y = (new_position.tile_y as i32 + tile_span_y as i32 / 2) as u32;
     for index in 0..state.lf_entity_count {
-        let test_ent = get_lf_entity(state, index).unwrap();
-        let lf = test_ent.borrow();
-
-        if lf.hf_index.is_none() && 
-           lf.tile_position.tile_z == new_position.tile_z &&
-           lf.tile_position.tile_x >= min_tile_x &&
-           lf.tile_position.tile_x <= max_tile_x &&
-           lf.tile_position.tile_y >= min_tile_y &&
-           lf.tile_position.tile_y <= max_tile_y {
+        let (hf_index, tile_position) =  {
+            let test_ent = get_lf_entity(state, index).unwrap();
+            let lf = test_ent.borrow();
+            (lf.hf_index, lf.tile_position)  
+        };
+        if hf_index.is_none() && 
+           tile_position.tile_z == new_position.tile_z &&
+           tile_position.tile_x >= min_tile_x &&
+           tile_position.tile_x <= max_tile_x &&
+           tile_position.tile_y >= min_tile_y &&
+           tile_position.tile_y <= max_tile_y {
 
             make_high_frequency(state, index);
         }
@@ -518,15 +519,10 @@ fn offset_and_check_frequency_by_area(state: &mut GameState, offset: V2f,
                                       bounds: Rectf) {
     let mut to_remove = [None; MAX_HIGH_ENTITIES];
     for index in 0..state.hf_entity_count {
-        let check_position = {
+        let (lf_index, check_position) = {
             let mut hf = state.hf_entities[index].borrow_mut();
             hf.position = hf.position + offset;
-            hf.position
-        };
-
-        let lf_index = {
-            let hf = state.hf_entities[index].borrow_mut();
-            hf.lf_index
+            (hf.lf_index, hf.position)
         };
 
         if !bounds.p_inside(check_position) {
@@ -567,6 +563,8 @@ fn make_high_frequency(state: &mut GameState, lf_index: usize) {
     }
 }
 
+//TODO: The mapping in low frequency crashes because of double borrow in the
+//first line. needs fixin!
 fn make_low_frequency(state: &mut GameState, lf_index: usize) {
     let mut lf = state.lf_entities[lf_index].borrow_mut();
     if lf.hf_index.is_some() {

@@ -11,7 +11,7 @@ mod random;
 mod math;
 
 use self::world::{World, subtract, map_into_world_space};
-use self::world::{WorldDifference, WorldPosition};
+use self::world::{WorldDifference, WorldPosition, world_pos_from_tile};
 use self::memory::MemoryArena;
 use self::math::{V2f, Rectf};
 
@@ -92,18 +92,7 @@ pub extern fn update_and_render(context: &ThreadContext,
 
         state.world = state.world_arena.push_struct();
 
-        
-        {
-            let world = &mut state.world;
-
-            const CHUNK_SHIFT: u32 = 4;
-            const CHUNK_DIM: usize = 1 << CHUNK_SHIFT;
-
-            world.tile_side_meters = 1.4;
-            world.chunk_shift = CHUNK_SHIFT;
-            world.chunk_mask = (CHUNK_DIM as u32 - 1) as i32;
-            world.chunk_dim = CHUNK_DIM;
-        }
+        state.world.initialize();
 
         //Generating a random maze
         let tiles_per_screen_x = 17;
@@ -123,7 +112,7 @@ pub extern fn update_and_render(context: &ThreadContext,
 
         let mut abs_tile_z = screen_base_z;
 
-        for _ in 0..2 {
+        for _ in 0..2000 {
 
             let random_choice = random::NUMBERS[rand_index] % 2;
               //  if door_up || door_down {
@@ -230,10 +219,10 @@ pub extern fn update_and_render(context: &ThreadContext,
             }
         }
 
-        let new_position = WorldPosition{tile_x: screen_base_x*tiles_per_screen_x + 17/2, 
-                                           tile_y: screen_base_y*tiles_per_screen_y + 9/2,
-                                           tile_z: screen_base_z,
-                                           offset: Default::default()};
+        let new_position = world_pos_from_tile(state.world,
+                                               screen_base_x*tiles_per_screen_x + 17/2, 
+                                               screen_base_y*tiles_per_screen_y + 9/2,
+                                               screen_base_z);
         set_camera(state, &new_position);
 
         game_memory.initialized = true;
@@ -289,27 +278,6 @@ pub extern fn update_and_render(context: &ThreadContext,
 
     //Adjust the camera to look at the right position
     if state.camera_follows_entity_index.is_some() {
-//        let mut new_cam_pos = state.camera_position;
-//        {
-//            let cam_entity_idx = state.camera_follows_entity_index.unwrap();
-//            let camera_entity = get_hf_entity(state, cam_entity_idx).unwrap();
-//            let hf = camera_entity.get_hf();
-//            new_cam_pos.tile_z = hf.tile_z;
-//            let tilemap = &state.world.tilemap;
-//
-//            if hf.position.x > 9.0 * tilemap.tile_side_meters {
-//                new_cam_pos.tile_x += 17;
-//            } else if hf.position.x < -(9.0 * tilemap.tile_side_meters) {
-//                new_cam_pos.tile_x -= 17;
-//            }
-//
-//            if hf.position.y > 5.0 * tilemap.tile_side_meters {
-//                new_cam_pos.tile_y += 9;
-//            } else if hf.position.y < -(5.0 * tilemap.tile_side_meters) {
-//                new_cam_pos.tile_y -= 9;
-//            }
-//        }
-
         let new_cam_pos; 
         {
             let entity_idx = state.camera_follows_entity_index.unwrap();
@@ -402,25 +370,26 @@ fn set_camera(state: &mut GameState, new_position: &WorldPosition) {
 
     offset_and_check_frequency_by_area(state, entity_offset_for_frame, high_frequency_bounds);
 
-    let min_tile_x = new_position.tile_x - tile_span_x;
-    let max_tile_x = new_position.tile_x + tile_span_x;
-    let min_tile_y = new_position.tile_y - tile_span_y;
-    let max_tile_y = new_position.tile_y + tile_span_y;
-    for index in 0..state.lf_entity_count {
-        let (hf_index, tile_position) =  {
-            let lf = get_lf_entity(state, index).unwrap();
-            (lf.hf_index, lf.tile_position)  
-        };
-        if hf_index.is_none() && 
-           tile_position.tile_z == new_position.tile_z &&
-           tile_position.tile_x >= min_tile_x &&
-           tile_position.tile_x <= max_tile_x &&
-           tile_position.tile_y >= min_tile_y &&
-           tile_position.tile_y <= max_tile_y {
-
-            make_high_frequency(state, index);
-        }
-    }
+    //TODO: Needs to be spatialy now!
+//    let min_chunk_x = new_position.chunk_x - tile_span_x;
+//    let max_chunk_x = new_position.chunk_x + tile_span_x;
+//    let min_chunk_y = new_position.chunk_y - tile_span_y;
+//    let max_chunk_y = new_position.chunk_y + tile_span_y;
+//    for index in 0..state.lf_entity_count {
+//        let (hf_index, tile_position) =  {
+//            let lf = get_lf_entity(state, index).unwrap();
+//            (lf.hf_index, lf.tile_position)  
+//        };
+//        if hf_index.is_none() && 
+//           tile_position.chunk_z == new_position.chunk_z &&
+//           tile_position.chunk_x >= min_chunk_x &&
+//           tile_position.chunk_x <= max_chunk_x &&
+//           tile_position.chunk_y >= min_chunk_y &&
+//           tile_position.chunk_y <= max_chunk_y {
+//
+//            make_high_frequency(state, index);
+//        }
+//    }
 }
 
 fn get_lf_entity<'a>(state: &'a mut GameState, index: u32) -> Option<&'a mut LfEntity> {
@@ -459,7 +428,6 @@ fn add_lf_entity(state: &mut GameState, etype: EntityType) -> u32 {
         tile_position: Default::default(),
         dim: Default::default(),
         collides: false,
-        d_tile_z: 0,
 
         hf_index: None,
     };
@@ -472,15 +440,14 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32,
     let e_index = add_lf_entity(state, EntityType::Wall);
 
     let tile_side_meters = state.world.tile_side_meters;
-    {
-        let lf_entity = get_lf_entity(state, e_index).unwrap();
-        lf_entity.dim = V2f{ x: tile_side_meters, 
-                             y: tile_side_meters, };
-        lf_entity.tile_position.tile_x = abs_tile_x;
-        lf_entity.tile_position.tile_y = abs_tile_y;
-        lf_entity.tile_position.tile_z = abs_tile_z;
-        lf_entity.collides = true;
-    }
+    
+    let pos = world_pos_from_tile(state.world, abs_tile_x, 
+                                  abs_tile_y, abs_tile_z);
+    let lf_entity = get_lf_entity(state, e_index).unwrap();
+    lf_entity.dim = V2f{ x: tile_side_meters, 
+        y: tile_side_meters, };
+    lf_entity.tile_position = pos;
+    lf_entity.collides = true;
 
     e_index
 }
@@ -541,7 +508,7 @@ fn make_high_frequency(state: &mut GameState, lf_index: u32) {
                 subtract(state.world, &lf.tile_position, &state.camera_position); 
             hf.position = V2f{ x: dx, y: dy };
             hf.velocity = Default::default();
-            hf.tile_z = lf.tile_position.tile_z;
+            hf.chunk_z = lf.tile_position.chunk_z;
             hf.face_direction = 0;
             hf.lf_index = lf_index;
 
@@ -651,11 +618,6 @@ fn move_player(entity: Entity, mut acc: V2f,
             entity_delta = target_pos - hf_entity.position;
             entity_delta = entity_delta - wall_normal * math::dot(entity_delta, wall_normal);
 
-            let hf_hit_entity = &state.hf_entities[hit_hf_e_index.unwrap() as usize];
-            let lf_hit_entity = &state.lf_entities[hf_hit_entity.lf_index as usize];
-
-            let tile_z = hf_entity.tile_z as i32  + lf_hit_entity.d_tile_z;
-            hf_entity.tile_z = tile_z;
         }
     }
 
@@ -748,7 +710,6 @@ struct LfEntity {
     tile_position: WorldPosition,
     dim: V2f,
     collides: bool,
-    d_tile_z: i32,
 
     hf_index: Option<u32>,
 }
@@ -757,8 +718,8 @@ struct LfEntity {
 struct HfEntity {
     position: V2f, //This position is relative to the camera
     velocity: V2f,
-    tile_z: i32,
     face_direction: u32,
+    chunk_z: i32,
 
     z: f32,
     dz: f32,

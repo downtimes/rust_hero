@@ -1,7 +1,5 @@
 use std::mem;
 use std::default::Default;
-use std::rc::Rc;
-use std::cell::RefCell;
 
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input};
 use common::{ThreadContext, MAX_CONTROLLERS};
@@ -236,11 +234,6 @@ pub extern fn update_and_render(context: &ThreadContext,
             }
         }
 
-        //TODO: initialize the hf_entities array!
-        for i in 0..MAX_HIGH_ENTITIES {
-            state.hf_entities[i] = Rc::new(RefCell::new(Default::default()));
-        }
-
         let new_position = TilemapPosition{tile_x: screen_base_x*tiles_per_screen_x + 17/2, 
                                            tile_y: screen_base_y*tiles_per_screen_y + 9/2,
                                            tile_z: screen_base_z,
@@ -280,7 +273,7 @@ pub extern fn update_and_render(context: &ThreadContext,
 
             let entity = get_hf_entity(state, e_index).unwrap();
             {
-                let mut hf_entity = entity.hf.borrow_mut();
+                let hf_entity = entity.get_hf();
                 if controller.action_up.ended_down {
                     hf_entity.dz = 3.0;
                 }
@@ -304,7 +297,7 @@ pub extern fn update_and_render(context: &ThreadContext,
         {
             let cam_entity_idx = state.camera_follows_entity_index.unwrap();
             let camera_entity = get_hf_entity(state, cam_entity_idx).unwrap();
-            let hf = camera_entity.hf.borrow();
+            let hf = camera_entity.get_hf();
             new_cam_pos.tile_z = hf.tile_z;
             let tilemap = &state.world.tilemap;
 
@@ -334,8 +327,8 @@ pub extern fn update_and_render(context: &ThreadContext,
     let screen_center_y = 0.5 * video_buffer.height as f32;
 
     for index in 0..state.hf_entity_count {
-        let mut entity = state.hf_entities[index].borrow_mut();
-        let lf = state.lf_entities[entity.lf_index].borrow();
+        let entity = &mut state.hf_entities[index];
+        let lf = &state.lf_entities[entity.lf_index];
         //let lf_part = state.lf_entities[index].borrow();
         //TODO: move out just temp code
         let acc = -9.81;
@@ -399,11 +392,11 @@ fn set_camera(state: &mut GameState, new_position: &TilemapPosition) {
     state.camera_position = *new_position;
     let entity_offset_for_frame = V2f{ x: -dx, y: -dy };
 
-    let tile_span_x = 17 * 3;
-    let tile_span_y = 9 * 3;
+    let tile_span_x = 17 * 2;
+    let tile_span_y = 9 * 2;
     let tiles_in_work_set = V2f { x: tile_span_x as f32, y: tile_span_y as f32};
     let camera_in_bounds = Rectf::center_dim(Default::default(), 
-                                             tiles_in_work_set * state.world.tilemap.tile_side_meters);
+                                             tiles_in_work_set * 2.0 * state.world.tilemap.tile_side_meters);
 
     offset_and_check_frequency_by_area(state, entity_offset_for_frame, camera_in_bounds);
 
@@ -413,8 +406,7 @@ fn set_camera(state: &mut GameState, new_position: &TilemapPosition) {
     let max_tile_y = new_position.tile_y + tile_span_y;
     for index in 0..state.lf_entity_count {
         let (hf_index, tile_position) =  {
-            let test_ent = get_lf_entity(state, index).unwrap();
-            let lf = test_ent.borrow();
+            let lf = get_lf_entity(state, index).unwrap();
             (lf.hf_index, lf.tile_position)  
         };
         if hf_index.is_none() && 
@@ -429,9 +421,9 @@ fn set_camera(state: &mut GameState, new_position: &TilemapPosition) {
     }
 }
 
-fn get_lf_entity(state: &GameState, index: usize) -> Option<Rc<RefCell<LfEntity>>> {
+fn get_lf_entity<'a>(state: &'a mut GameState, index: usize) -> Option<&'a mut LfEntity> {
     if index < state.lf_entity_count {
-        Some(state.lf_entities[index].clone())
+        Some(&mut state.lf_entities[index])
     } else {
         None
     }
@@ -441,11 +433,11 @@ fn get_hf_entity(state: &mut GameState, index: usize) -> Option<Entity> {
     
     if index < state.lf_entity_count {
         make_high_frequency(state, index);
-        let lf = state.lf_entities[index].clone();
-        let hf = state.hf_entities[lf.borrow().hf_index.unwrap()].clone();
+        let lf = &mut state.lf_entities[index];
+        let hf = &mut state.hf_entities[lf.hf_index.unwrap()];
         Some(Entity {
-                lf: lf,
-                hf: hf,
+                lf: lf as *mut LfEntity,
+                hf: hf as *mut HfEntity,
             })
     } else {
         None
@@ -459,9 +451,15 @@ fn add_lf_entity(state: &mut GameState, etype: EntityType) -> usize {
     state.lf_entity_count += 1;
 
     //TODO: move this from the Heap into our own memory region!
-    state.lf_entities[index] = Rc::new(RefCell::new(Default::default()));
-    let mut lf = state.lf_entities[index].borrow_mut();
-    lf.etype = etype;
+    state.lf_entities[index] = LfEntity {
+        etype: etype,
+        tile_position: Default::default(),
+        dim: Default::default(),
+        collides: false,
+        d_tile_z: 0,
+
+        hf_index: None,
+    };
 
     index
 }
@@ -470,12 +468,11 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32,
                   abs_tile_z: i32) -> usize {
     let e_index = add_lf_entity(state, EntityType::Wall);
 
-    let lf = get_lf_entity(state, e_index).unwrap();
+    let tile_side_meters = state.world.tilemap.tile_side_meters;
     {
-        let mut lf_entity = lf.borrow_mut();
-
-        lf_entity.dim = V2f{ x: state.world.tilemap.tile_side_meters, 
-                               y: state.world.tilemap.tile_side_meters, };
+        let lf_entity = get_lf_entity(state, e_index).unwrap();
+        lf_entity.dim = V2f{ x: tile_side_meters, 
+                             y: tile_side_meters, };
         lf_entity.tile_position.tile_x = abs_tile_x;
         lf_entity.tile_position.tile_y = abs_tile_y;
         lf_entity.tile_position.tile_z = abs_tile_z;
@@ -491,14 +488,12 @@ fn add_player(state: &mut GameState) -> usize {
     if state.camera_follows_entity_index.is_none() {
         state.camera_follows_entity_index = Some(e_index);
     }
-
-    let lf = get_lf_entity(state, e_index).unwrap();
+    let pos = state.camera_position;
     {
-        let mut lf_entity = lf.borrow_mut();
-
+        let lf_entity = get_lf_entity(state, e_index).unwrap();
         lf_entity.dim = V2f{ x: 1.0, 
                                y: 0.5 };
-        lf_entity.tile_position = state.camera_position;
+        lf_entity.tile_position = pos;
         lf_entity.collides = true;
     }
 
@@ -512,7 +507,7 @@ fn offset_and_check_frequency_by_area(state: &mut GameState, offset: V2f,
     let mut to_remove = [None; MAX_HIGH_ENTITIES];
     for index in 0..state.hf_entity_count {
         let (lf_index, check_position) = {
-            let mut hf = state.hf_entities[index].borrow_mut();
+            let hf = &mut state.hf_entities[index];
             hf.position = hf.position + offset;
             (hf.lf_index, hf.position)
         };
@@ -532,13 +527,13 @@ fn offset_and_check_frequency_by_area(state: &mut GameState, offset: V2f,
 
 fn make_high_frequency(state: &mut GameState, lf_index: usize) {
 
-    let mut lf = state.lf_entities[lf_index].borrow_mut();
+    let lf = &mut state.lf_entities[lf_index];
     if lf.hf_index.is_none() {
         if state.hf_entity_count < state.hf_entities.len() {
             let hf_index = state.hf_entity_count;
             state.hf_entity_count += 1;
 
-            let mut hf = state.hf_entities[hf_index].borrow_mut();
+            let hf = &mut state.hf_entities[hf_index];
             let TilemapDifference{ dx, dy, dz:_ } =
                 subtract(state.world.tilemap, &lf.tile_position, &state.camera_position); 
             hf.position = V2f{ x: dx, y: dy };
@@ -555,17 +550,16 @@ fn make_high_frequency(state: &mut GameState, lf_index: usize) {
 }
 
 fn make_low_frequency(state: &mut GameState, lf_index: usize) {
-    let mut lf = state.lf_entities[lf_index].borrow_mut();
-    if lf.hf_index.is_some() {
-        let hf_index = lf.hf_index.unwrap();
-        if hf_index != state.hf_entity_count - 1 {
-            state.hf_entities[hf_index] = state.hf_entities[state.hf_entity_count - 1].clone();
-            let old_last = state.hf_entities[hf_index].borrow();
-            let mut lf_to_last = state.lf_entities[old_last.lf_index].borrow_mut();
-            lf_to_last.hf_index = Some(hf_index);
+    let hf_index = state.lf_entities[lf_index].hf_index;
+    if hf_index.is_some() {
+        let index = hf_index.unwrap();
+        if index != state.hf_entity_count - 1 {
+            state.hf_entities[index] = state.hf_entities[state.hf_entity_count - 1];
+            let old_last_lf_index = state.hf_entities[index].lf_index;
+            let lf_to_old_last = get_lf_entity(state, old_last_lf_index).unwrap();
+            lf_to_old_last.hf_index = hf_index;
         }
-
-        lf.hf_index = None;
+        state.lf_entities[lf_index].hf_index = None;
         state.hf_entity_count -= 1;
     }
 }
@@ -582,7 +576,7 @@ fn move_player<'a>(entity: Entity, mut acc: V2f,
 
     acc = acc * entity_speed;
 
-    let mut hf_entity = entity.hf.borrow_mut();
+    let hf_entity = entity.get_hf();
     //friction force currently just by rule of thumb;
     acc = acc - hf_entity.velocity * 13.0;
 
@@ -603,13 +597,13 @@ fn move_player<'a>(entity: Entity, mut acc: V2f,
         
         let target_pos = hf_entity.position + entity_delta;
 
-        let lf_entity = entity.lf.borrow();
+        let lf_entity = entity.get_lf();
         for e_index in 0..state.hf_entity_count {
             if e_index == lf_entity.hf_index.unwrap() {
                 continue;
             }
-            let hf_test_entity = state.hf_entities[e_index].borrow();
-            let lf_test_entity = state.lf_entities[hf_test_entity.lf_index].borrow();
+            let hf_test_entity = &state.hf_entities[e_index];
+            let lf_test_entity = &state.lf_entities[hf_test_entity.lf_index];
             if lf_test_entity.collides {
                 //Minkowski Sum
                 let diameter = V2f { x: lf_test_entity.dim.x + lf_entity.dim.x, 
@@ -654,8 +648,8 @@ fn move_player<'a>(entity: Entity, mut acc: V2f,
             entity_delta = target_pos - hf_entity.position;
             entity_delta = entity_delta - wall_normal * math::dot(entity_delta, wall_normal);
 
-            let hf_hit_entity = state.hf_entities[hit_hf_e_index.unwrap()].borrow();
-            let lf_hit_entity = state.lf_entities[hf_hit_entity.lf_index].borrow();
+            let hf_hit_entity = &state.hf_entities[hit_hf_e_index.unwrap()];
+            let lf_hit_entity = &state.lf_entities[hf_hit_entity.lf_index];
 
             let tile_z = hf_entity.tile_z as i32  + lf_hit_entity.d_tile_z;
             hf_entity.tile_z = tile_z;
@@ -723,8 +717,18 @@ impl Default for EntityType {
 }
 
 struct Entity {
-    lf: Rc<RefCell<LfEntity>>,
-    hf: Rc<RefCell<HfEntity>>,
+    lf: *mut LfEntity,
+    hf: *mut HfEntity,
+}
+
+impl Entity {
+    fn get_hf(&self) -> &mut HfEntity {
+        unsafe { mem::transmute(self.hf) }
+    }
+
+    fn get_lf(&self) -> &mut LfEntity {
+        unsafe { mem::transmute(self.lf) }
+    }
 }
 
 #[derive(Default, Copy)]
@@ -738,7 +742,7 @@ struct LfEntity {
     hf_index: Option<usize>,
 }
 
-#[derive(Default)]
+#[derive(Default, Copy)]
 struct HfEntity {
     position: V2f, //This position is relative to the camera
     velocity: V2f,
@@ -765,8 +769,8 @@ struct GameState<'a> {
 
     lf_entity_count: usize,
     hf_entity_count: usize,
-    lf_entities: [Rc<RefCell<LfEntity>>; 4096],
-    hf_entities: [Rc<RefCell<HfEntity>>; MAX_HIGH_ENTITIES],
+    lf_entities: [LfEntity; 4096],
+    hf_entities: [HfEntity; MAX_HIGH_ENTITIES],
 
     test_bitmap: graphics::Bitmap<'a>,
     shadow: graphics::Bitmap<'a>,

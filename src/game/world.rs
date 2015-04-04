@@ -18,8 +18,8 @@ pub fn world_pos_from_tile(world: &World, tile_x: i32, tile_y: i32, tile_z: i32)
         chunk_x: chunk_x,
         chunk_y: chunk_y,
         chunk_z: tile_z,
-        offset: V2f{x: (tile_x - (chunk_x * TILES_PER_CHUNK)) as f32 * world.tile_side_meters,
-                    y: (tile_y - (chunk_y * TILES_PER_CHUNK)) as f32 * world.tile_side_meters},
+        offset: V2f{x: (tile_x % TILES_PER_CHUNK) as f32 * world.tile_side_meters,
+                    y: (tile_y % TILES_PER_CHUNK) as f32 * world.tile_side_meters},
     }
 }
 
@@ -62,16 +62,14 @@ impl World {
         if old_pos.is_some() && are_in_same_chunk(self, old_pos.unwrap(), new_pos) {
             //Do nothing because we are already in the right spot 
         } else {
-            let mut free_block = None;
             if old_pos.is_some() {
-                let first_free = self.first_free;
                 let pos = old_pos.unwrap();
                 let chunk = self.get_chunk(pos.chunk_x, pos.chunk_y, pos.chunk_z, None);
                 debug_assert!(chunk.is_some());
                 
                 let mut move_e_index = 0;
                 let mut block_lf_index = 0;
-                let mut block_number = 0;
+                let mut block_number: i32 = 0;
                 if chunk.is_some() {
                     let ch = chunk.unwrap();
 
@@ -96,8 +94,8 @@ impl World {
                                             = unsafe { mem::transmute(first_block.next.unwrap()) };
                                         *first_block = *next_block;
                                         //put the block in the freelist
-                                        next_block.next = first_free;
-                                        free_block = Some(next_block as *mut EntityBlock);
+                                        next_block.next = self.first_free;
+                                        self.first_free = Some(next_block as *mut EntityBlock);
                                     }
                                 }
 
@@ -116,32 +114,26 @@ impl World {
                     }
 
                     //After the fact walk again and write the copied value to the now empty slot
-                    let mut block = first_block;
-                    for _ in 0..block_number {
-                        block = unsafe { mem::transmute(block.next.unwrap()) };
+                    if block_number >= 0 {
+                        let mut block = first_block;
+                        for _ in 0..block_number {
+                            block = unsafe { mem::transmute(block.next.unwrap()) };
+                        }
+                        block.lf_entities[block_lf_index] = move_e_index;
                     }
-                    block.e_count -= 1;
-                    block.lf_entities[block_lf_index] = move_e_index;
                 }
             }
 
-            if free_block.is_some() {
-                self.first_free = free_block;
-            }
-
-            free_block = self.first_free;
-            if free_block.is_some() {
-                self.first_free = unsafe { (*free_block.unwrap()).next };
-            }
-
+            //Now start inserting the entity in the new Block
             let chunk = self.get_chunk(new_pos.chunk_x, new_pos.chunk_y, new_pos.chunk_z,
                                        Some(arena)).unwrap();
             let block = &mut chunk.first_block;
             if block.e_count as usize == block.lf_entities.len() {
                 //Make new block to store it
                 let old_block = 
-                    if free_block.is_some() {
-                        let ptr = free_block.unwrap();
+                    if self.first_free.is_some() {
+                        let ptr = self.first_free.unwrap();
+                        self.first_free = unsafe { (*ptr).next };
                         unsafe { mem::transmute(ptr) }
                     } else {
                         arena.push_struct::<EntityBlock>()
@@ -156,8 +148,11 @@ impl World {
         }
     }
 
+    //NOTE: THIS FUNCTION DECOUPLES THE LIFETIME OF THE CHUNK FROM THE GAMESTATE!
+    //Be carefull that you don't get the same chunk two times and modifie them
+    //it's asumed that you will not alias.
     pub fn get_chunk(&mut self, chunk_x: i32, chunk_y: i32, 
-                     chunk_z: i32, arena: Option<&mut MemoryArena>) -> Option<&mut Chunk> {
+                     chunk_z: i32, arena: Option<&mut MemoryArena>) -> Option<&'static mut Chunk> {
 
         debug_assert!(chunk_x > -WORLD_BORDER_CHUNKS);
         debug_assert!(chunk_y > -WORLD_BORDER_CHUNKS);
@@ -183,7 +178,7 @@ impl World {
                    chunk_z == chunk_val.chunk_z {
 
                     //found it so we can return it!
-                    result = Some(chunk_val);
+                    result = Some(chunk_val.decouple());
                     break;
                 }
 
@@ -196,7 +191,7 @@ impl World {
                         new_chunk.chunk_y = chunk_y;
                         new_chunk.chunk_z = chunk_z;
                         new_chunk.next = None;
-                        result = Some(new_chunk);
+                        result = Some(new_chunk.decouple());
                         chunk_val.next = Some(new_chunk as *mut Chunk);
                     }
                     break;
@@ -212,7 +207,7 @@ impl World {
                     chunk_z: chunk_z,
                     next: None,
             });
-            result = Some(first_chunk.as_mut().unwrap());
+            result = Some(first_chunk.as_mut().unwrap().decouple());
         }
         
         result
@@ -246,6 +241,14 @@ pub struct Chunk {
     pub chunk_z: i32,
 
     pub next: Option<*mut Chunk>,
+}
+
+impl Chunk {
+    pub fn decouple(&mut self) -> &'static mut Chunk {
+        unsafe { 
+            mem::transmute(self as *mut Chunk) 
+        }
+    }
 }
 
 #[derive(Copy, Default)]

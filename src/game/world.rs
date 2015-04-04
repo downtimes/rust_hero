@@ -4,7 +4,7 @@ use std::i32;
 use std::default::Default;
 
 use super::memory::MemoryArena;
-use super::math::V2f;
+use super::math::V2;
 
 //TODO: Think about this number
 const WORLD_BORDER_CHUNKS: i32 = (i32::MAX/64);
@@ -18,8 +18,8 @@ pub fn world_pos_from_tile(world: &World, tile_x: i32, tile_y: i32, tile_z: i32)
         chunk_x: chunk_x,
         chunk_y: chunk_y,
         chunk_z: tile_z,
-        offset: V2f{x: (tile_x % TILES_PER_CHUNK) as f32 * world.tile_side_meters,
-                    y: (tile_y % TILES_PER_CHUNK) as f32 * world.tile_side_meters},
+        offset: V2{x: (tile_x % TILES_PER_CHUNK) as f32 * world.tile_side_meters,
+                   y: (tile_y % TILES_PER_CHUNK) as f32 * world.tile_side_meters},
     }
 }
 
@@ -30,7 +30,7 @@ fn get_hash(tile_chunk_x: i32, tile_chunk_y: i32, tile_chunk_z: i32) -> u32 {
     .overflowing_add((tile_chunk_z.overflowing_mul(3)).0).0 as u32
 }
 
-pub fn map_into_world_space(world: &World, world_pos: &WorldPosition, rel_pos: &V2f) -> WorldPosition {
+pub fn map_into_world_space(world: &World, world_pos: &WorldPosition, rel_pos: &V2<f32>) -> WorldPosition {
 
     let mut pos = *world_pos;
     pos.offset = pos.offset + *rel_pos;
@@ -260,7 +260,7 @@ pub struct WorldPosition {
     pub chunk_z: i32,
 
     //chunk relative
-    pub offset: V2f,
+    pub offset: V2<f32>,
 }
 
 pub fn are_in_same_chunk(world: &World, pos1: &WorldPosition, pos2: &WorldPosition) -> bool {
@@ -277,7 +277,7 @@ impl WorldPosition {
             chunk_y: chunk_y,
             chunk_z: chunk_z,
 
-            offset: V2f{ x: 0.0, y: 0.0 },
+            offset: V2{ x: 0.0, y: 0.0 },
         }
     }
 }
@@ -287,7 +287,7 @@ fn is_canonical(world: &World, rel: f32) -> bool {
     (rel <= 0.5*world.chunk_side_meters)
 }
 
-fn is_canonical_v(world: &World, offset: V2f) -> bool {
+fn is_canonical_v(world: &World, offset: V2<f32>) -> bool {
     is_canonical(world, offset.x) &&
     is_canonical(world, offset.y) 
 }

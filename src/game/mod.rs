@@ -13,7 +13,7 @@ mod math;
 use self::world::{World, subtract, map_into_world_space};
 use self::world::{WorldDifference, WorldPosition, world_pos_from_tile};
 use self::memory::MemoryArena;
-use self::math::{V2f, Rectf};
+use self::math::{V2, Rect};
 
 // ============= The public interface ===============
 //Has to be very low latency!
@@ -235,13 +235,13 @@ pub extern fn update_and_render(context: &ThreadContext,
 
         if let Some(e_index) = state.player_index_for_controller[c_index] {
             //in m/s^2
-            let mut acc = V2f { x: 0.0, y: 0.0 };
+            let mut acc = V2{ x: 0.0, y: 0.0 };
 
             //Analog movement
             if controller.is_analog() {
                 let avg_x = controller.average_x.unwrap_or_default();
                 let avg_y = controller.average_y.unwrap_or_default();
-                acc = V2f { x: avg_x, y: avg_y };
+                acc = V2{ x: avg_x, y: avg_y };
 
             //Digital movement
             } else {
@@ -290,7 +290,7 @@ pub extern fn update_and_render(context: &ThreadContext,
     }
 
     //Clear the screen to grey And start rendering
-    let buffer_dim = V2f{ x: video_buffer.width as f32, y: video_buffer.height as f32 };
+    let buffer_dim = V2{ x: video_buffer.width as f32, y: video_buffer.height as f32 };
     graphics::draw_rect(video_buffer, Default::default(), buffer_dim, 
                         0.5, 0.5, 0.5);
 
@@ -312,11 +312,11 @@ pub extern fn update_and_render(context: &ThreadContext,
             entity.z = 0.0;
         }
 
-        let entity_groundpoint = V2f{
+        let entity_groundpoint = V2{
             x: screen_center_x + meters_to_pixel * entity.position.x,
             y: screen_center_y - meters_to_pixel * entity.position.y,
         };
-        let entity_airpoint = V2f {
+        let entity_airpoint = V2{
             x: entity_groundpoint.x,
             y: entity_groundpoint.y - meters_to_pixel * entity.z,
         };
@@ -327,7 +327,7 @@ pub extern fn update_and_render(context: &ThreadContext,
             } else {
                 1.0 - entity.z * 0.8
             };
-        let entity_dim = V2f{ x: meters_to_pixel * lf.dim.x, 
+        let entity_dim = V2{ x: meters_to_pixel * lf.dim.x, 
                               y: meters_to_pixel * lf.dim.y };
         let top_left = entity_groundpoint - entity_dim * 0.5;
         let bottom_right = top_left + entity_dim;
@@ -366,12 +366,12 @@ fn set_camera(state: &mut GameState, new_position: &WorldPosition) {
     let WorldDifference{ dx, dy, .. } = 
         subtract(state.world, new_position, &state.camera_position);
     state.camera_position = *new_position;
-    let entity_offset_for_frame = V2f{ x: -dx, y: -dy };
+    let entity_offset_for_frame = V2{ x: -dx, y: -dy };
 
     let tile_span_x = 17 * 3;
     let tile_span_y = 9 * 3;
-    let tiles_in_work_set = V2f { x: tile_span_x as f32, y: tile_span_y as f32};
-    let high_frequency_bounds = Rectf::center_dim(Default::default(), 
+    let tiles_in_work_set = V2{ x: tile_span_x as f32, y: tile_span_y as f32};
+    let high_frequency_bounds = Rect::center_dim(Default::default(), 
                                 tiles_in_work_set * state.world.tile_side_meters);
 
     offset_and_check_frequency_by_area(state, entity_offset_for_frame, high_frequency_bounds);
@@ -465,8 +465,8 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32,
     let tile_side_meters = state.world.tile_side_meters;
     
     let lf_entity = get_lf_entity(state, e_index).unwrap();
-    lf_entity.dim = V2f{ x: tile_side_meters, 
-                         y: tile_side_meters, };
+    lf_entity.dim = V2{ x: tile_side_meters, 
+                        y: tile_side_meters, };
     lf_entity.collides = true;
 
     e_index
@@ -483,8 +483,8 @@ fn add_player(state: &mut GameState) -> u32 {
 
     {
         let lf_entity = get_lf_entity(state, e_index).unwrap();
-        lf_entity.dim = V2f{ x: 1.0, 
-                             y: 0.5 };
+        lf_entity.dim = V2{ x: 1.0, 
+                            y: 0.5 };
         lf_entity.collides = true;
     }
 
@@ -493,8 +493,8 @@ fn add_player(state: &mut GameState) -> u32 {
     e_index
 }
 
-fn offset_and_check_frequency_by_area(state: &mut GameState, offset: V2f, 
-                                      bounds: Rectf) {
+fn offset_and_check_frequency_by_area(state: &mut GameState, offset: V2<f32>, 
+                                      bounds: Rect<f32>) {
     let mut to_remove = [None; MAX_HIGH_ENTITIES];
     for index in 0..state.hf_entity_count as usize {
         let (lf_index, check_position) = {
@@ -516,14 +516,14 @@ fn offset_and_check_frequency_by_area(state: &mut GameState, offset: V2f,
     }
 }
 
-fn get_camspace_p(state: &GameState, lf_index: u32) -> V2f {
+fn get_camspace_p(state: &GameState, lf_index: u32) -> V2<f32> {
     let lf = &state.lf_entities[lf_index as usize];
     let WorldDifference{ dx, dy, .. } =
         subtract(state.world, &lf.world_position, &state.camera_position); 
-    V2f{ x: dx, y: dy }
+    V2{ x: dx, y: dy }
 }
 
-fn make_high_frequency_pos(state: &mut GameState, lf_index: u32, camspace_p: V2f) {
+fn make_high_frequency_pos(state: &mut GameState, lf_index: u32, camspace_p: V2<f32>) {
     let lf = &mut state.lf_entities[lf_index as usize];
     if lf.hf_index.is_none() {
         if (state.hf_entity_count as usize) < state.hf_entities.len() {
@@ -564,7 +564,7 @@ fn make_low_frequency(state: &mut GameState, lf_index: u32) {
     }
 }
 
-fn move_player(entity: Entity, mut acc: V2f, 
+fn move_player(entity: Entity, mut acc: V2<f32>, 
                    state: &mut GameState, delta_t: f32) {
 
     //Diagonal correction.
@@ -606,8 +606,8 @@ fn move_player(entity: Entity, mut acc: V2f,
             let lf_test_entity = &state.lf_entities[hf_test_entity.lf_index as usize];
             if lf_test_entity.collides {
                 //Minkowski Sum
-                let diameter = V2f { x: lf_test_entity.dim.x + lf_entity.dim.x, 
-                                     y: lf_test_entity.dim.y + lf_entity.dim.y};
+                let diameter = V2{ x: lf_test_entity.dim.x + lf_entity.dim.x, 
+                                   y: lf_test_entity.dim.y + lf_entity.dim.y};
 
                 let min_corner = diameter * -0.5;
                 let max_corner = diameter * 0.5;
@@ -617,25 +617,25 @@ fn move_player(entity: Entity, mut acc: V2f,
                 if test_wall(max_corner.x, min_corner.y, max_corner.y,
                              rel.x, rel.y, entity_delta.x, 
                              entity_delta.y, &mut t_min) {
-                    wall_normal = V2f{ x: 1.0, y: 0.0 };
+                    wall_normal = V2{ x: 1.0, y: 0.0 };
                     hit_hf_e_index = lf_test_entity.hf_index;
                 }
                 if test_wall(min_corner.x, min_corner.y, max_corner.y,
                              rel.x, rel.y, entity_delta.x, 
                              entity_delta.y, &mut t_min) {
-                    wall_normal = V2f{ x: -1.0, y: 0.0 };
+                    wall_normal = V2{ x: -1.0, y: 0.0 };
                     hit_hf_e_index = lf_test_entity.hf_index;
                 }
                 if test_wall(max_corner.y, min_corner.x, max_corner.x,
                              rel.y, rel.x, entity_delta.y,
                              entity_delta.x, &mut t_min) {
-                    wall_normal = V2f{ x: 0.0, y: 1.0 };
+                    wall_normal = V2{ x: 0.0, y: 1.0 };
                     hit_hf_e_index = lf_test_entity.hf_index;
                 }
                 if test_wall(min_corner.y, min_corner.x, max_corner.x,
                              rel.y, rel.x, entity_delta.y,
                              entity_delta.x, &mut t_min) {
-                    wall_normal = V2f{ x: 0.0, y: -1.0 };
+                    wall_normal = V2{ x: 0.0, y: -1.0 };
                     hit_hf_e_index = lf_test_entity.hf_index;
                 }
             }
@@ -744,7 +744,7 @@ impl Entity {
 struct LfEntity {
     etype: EntityType,
     world_position: WorldPosition,
-    dim: V2f,
+    dim: V2<f32>,
     collides: bool,
 
     hf_index: Option<u32>,
@@ -752,8 +752,8 @@ struct LfEntity {
 
 #[derive(Default, Copy)]
 struct HfEntity {
-    position: V2f, //This position is relative to the camera
-    velocity: V2f,
+    position: V2<f32>, //This position is relative to the camera
+    velocity: V2<f32>,
     face_direction: u32,
     chunk_z: i32,
 

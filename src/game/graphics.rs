@@ -3,10 +3,10 @@ use common::PlatformReadEntireFileT;
 use std::mem;
 use std::slice;
 
-use super::math::V2f;
+use super::math::V2;
 
-pub fn draw_rect(buffer: &mut VideoBuffer, real_min: V2f,
-                 real_max: V2f, r: f32, g: f32, b: f32) {
+pub fn draw_rect(buffer: &mut VideoBuffer, real_min: V2<f32>,
+                 real_max: V2<f32>, r: f32, g: f32, b: f32) {
 
     let mut min_x = real_min.x.round() as isize;
     let mut max_x = real_max.x.round() as isize;
@@ -52,7 +52,7 @@ pub fn draw_rect(buffer: &mut VideoBuffer, real_min: V2f,
 //TODO: see how to do this crazy blit with iterators to be more idiomatic rust!
 //Something with iter.zip!
 pub fn draw_bitmap_aligned_alpha(buffer: &mut VideoBuffer, bitmap: &Bitmap,
-                                 mut top_left: V2f,
+                                 mut top_left: V2<f32>,
                                  align_x: i32, align_y: i32, alpha: f32) {
     top_left.y = top_left.y - align_y as f32;
     top_left.x = top_left.x - align_x as f32;
@@ -118,13 +118,13 @@ pub fn draw_bitmap_aligned_alpha(buffer: &mut VideoBuffer, bitmap: &Bitmap,
     }
 }
 pub fn draw_bitmap_aligned(buffer: &mut VideoBuffer, bitmap: &Bitmap,
-                           top_left: V2f,
+                           top_left: V2<f32>,
                            align_x: i32, align_y: i32)  {
     draw_bitmap_aligned_alpha(buffer, bitmap, top_left, align_x, align_y, 1.0);
 }
 
 pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {
-    draw_bitmap_aligned(buffer, bitmap, V2f{ x: x, y: y } , 0, 0);
+    draw_bitmap_aligned(buffer, bitmap, V2{ x: x, y: y } , 0, 0);
 }
 
 #[repr(C, packed)]

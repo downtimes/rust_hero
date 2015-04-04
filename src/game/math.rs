@@ -7,6 +7,19 @@ pub struct Rectf {
 }
 
 impl Rectf {
+    pub fn get_min(&self) -> V2f {
+        self.min
+    }
+
+    pub fn get_max(&self) -> V2f {
+        self.max
+    }
+
+    pub fn get_center(&self) -> V2f {
+        (self.min + self.max) * 0.5
+    }
+
+
     pub fn new(min: V2f, max: V2f) -> Rectf {
         Rectf {
             min: min,

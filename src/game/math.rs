@@ -34,16 +34,16 @@ impl<T> Rect<T> where V2<T>: ops::Add<Output=V2<T>>,
     }
 }
 
-impl Rect<f32> {
-   pub fn center_dim(center: V2<f32>, dim: V2<f32>) -> Rect<f32> {
-       Rect::<f32> {
-           min: center - dim * 0.5,
-           max: center + dim * 0.5,
+impl<T> Rect<T> where T: num::Float {
+   pub fn center_dim(center: V2<T>, dim: V2<T>) -> Rect<T> {
+       Rect::<T> {
+           min: center - dim * num::cast(0.5).unwrap(),
+           max: center + dim * num::cast(0.5).unwrap(),
        }
    }
 
-    pub fn get_center(&self) -> V2<f32> {
-        (self.min + self.max) * 0.5
+    pub fn get_center(&self) -> V2<T> {
+        (self.min + self.max) * num::cast(0.5).unwrap()
     }
 }
 

@@ -1,9 +1,15 @@
-use std::os;
+use std::env;
 
 fn main() {
-    let target = os::getenv("TARGET").unwrap();
-    if target.contains("windows") {
-        println!("cargo:rustc-flags=-l gdi32 -l winmm");
+    match env::var("TARGET") {
+        Ok(value) => {
+            if value.contains("windows") {
+                println!("cargo:rustc-link-lib=static=gdi32");
+                println!("cargo:rustc-link-lib=static=winmm");
+            } else if value.contains("linux") {
+                println!("cargo:rustc-link-lib=dylib=SDL2");
+            }
+        },
+        Err(_) => {},
     }
-    
 }

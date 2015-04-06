@@ -1,10 +1,8 @@
 #!/bin/sh
 
-rustc --crate-type=dylib --crate-name=game -g -C prefer-dynamic src/lib.rs && mv libgame.so target/libgame.so
-
-if [[ "$1" != "dll" ]]; then
-    rustc --crate-type=bin --crate-name=rust_hero -l SDL2 -l pthread -g src/main.rs && mv rust_hero target/rust_hero
-fi
+cargo build
+cp target/debug/rust_hero target/rust_hero
+cp src/target/debug/libgame* target/libgame.so
 
 if [[ "$1" == "run" ]]; then
 	pushd data

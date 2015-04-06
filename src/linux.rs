@@ -97,7 +97,7 @@ mod debug {
                                       });
                     } else {
                         println!("Reading the file contents failed! ({})", filename);
-                        platform_free_file_memory(context, memory, size);
+                        platform_free_file_memory(context, memory as *mut u8, size);
                     }
                 } else {
                     println!("Not enough memory could be optained!");
@@ -114,16 +114,16 @@ mod debug {
     }
 
     pub fn platform_free_file_memory(_context: &ThreadContext,
-                                     memory: *mut c_void,
+                                     memory: *mut u8,
                                      size: u32) {
         if !memory.is_null() {
-            unsafe { munmap(memory, size as u64); }
+            unsafe { munmap(memory as *mut c_void, size as u64); }
         }
     }
 
     pub fn platform_write_entire_file(_context: &ThreadContext,
                                       filename: &str, size: u32,
-                                      memory: *mut c_void) -> bool {
+                                      memory: *mut u8) -> bool {
         let mut result = false;
         let name = CString::new(filename).unwrap();
         let handle =
@@ -132,7 +132,7 @@ mod debug {
 
         if handle != -1 {
             let mut bytes_to_write = size;
-            let mut byte_to_write: *mut u8 = memory as *mut u8;
+            let mut byte_to_write: *mut u8 = memory;
 
             while bytes_to_write > 0 {
                 let bytes_written = unsafe { write(handle,

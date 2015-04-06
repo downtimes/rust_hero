@@ -95,16 +95,16 @@ pub mod debug {
     }
     
     pub fn platform_free_file_memory(_context: &ThreadContext, 
-                                     memory: *mut c_void,
+                                     memory: *mut u8,
                                      _size: u32) {
         if !memory.is_null() {
-            unsafe { VirtualFree(memory, 0, MEM_RELEASE); }
+            unsafe { VirtualFree(memory as *mut c_void, 0, MEM_RELEASE); }
         }
     }
 
     pub fn platform_write_entire_file(_context: &ThreadContext,
                                       filename: &str, size: DWORD,
-                                      memory: *mut c_void) -> bool {
+                                      memory: *mut u8) -> bool {
         debug_assert!(filename.len() <= MAX_PATH);
 
         let mut result = false;
@@ -117,7 +117,7 @@ pub mod debug {
 
         if handle != INVALID_HANDLE_VALUE {
             let mut bytes_written = 0;
-            if unsafe { WriteFile(handle, memory, size, 
+            if unsafe { WriteFile(handle, memory as *mut c_void, size, 
                                   &mut bytes_written, ptr::null_mut()) } != 0 {
 
                 result = bytes_written == size;

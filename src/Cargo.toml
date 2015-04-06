@@ -1,15 +1,12 @@
 [package]
-name = "rust_hero"
+name = "game"
 version = "0.0.1"
 authors = ["Michael Auracher <michael.auracher@gmail.com>"]
-build = "build.rs"
 
-[[bin]]
-name = "rust_hero"
-path = "src/main.rs"
-
-[dependencies.game]
-path = "src"
+[lib]
+name = "game"
+crate-type = ["dylib"]
+path = "libgame.rs"
 
 [profile.dev]
 opt-level = 0

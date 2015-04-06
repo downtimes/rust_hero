@@ -1,4 +1,3 @@
-use libc::{c_void};
 use std::default::Default;
 
 #[allow(dead_code)]
@@ -29,8 +28,8 @@ pub mod util {
 }
 
 pub type PlatformReadEntireFileT = fn(&ThreadContext, &str) -> Result<ReadFileResult, ()>;
-pub type PlatformFreeFileMemoryT = fn(&ThreadContext, *mut c_void, u32);
-pub type PlatformWriteEntireFileT = fn(&ThreadContext, &str, u32, *mut c_void) -> bool;
+pub type PlatformFreeFileMemoryT = fn(&ThreadContext, *mut u8, u32);
+pub type PlatformWriteEntireFileT = fn(&ThreadContext, &str, u32, *mut u8) -> bool;
 
 pub type GetSoundSamplesT = extern fn(&ThreadContext, &mut GameMemory, &mut SoundBuffer);
 pub type UpdateAndRenderT = extern fn(&ThreadContext, &mut GameMemory, &Input, &mut VideoBuffer);

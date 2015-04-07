@@ -1,4 +1,4 @@
-use std::num::wrapping::OverflowingOps;
+use std::num::Wrapping as w;
 use std::mem;
 use std::i32;
 use std::default::Default;
@@ -25,9 +25,13 @@ pub fn world_pos_from_tile(world: &World, tile_x: i32, tile_y: i32, tile_z: i32)
 
 //TODO: Better hash function for our use case
 fn get_hash(tile_chunk_x: i32, tile_chunk_y: i32, tile_chunk_z: i32) -> u32 {
-    ((tile_chunk_x.overflowing_mul(19).0)
-    .overflowing_add((tile_chunk_y.overflowing_mul(7)).0).0)
-    .overflowing_add((tile_chunk_z.overflowing_mul(3)).0).0 as u32
+    let x = w(tile_chunk_x);
+    let y = w(tile_chunk_y);
+    let z = w(tile_chunk_z);
+
+
+    let res = x * w(19) + y * w(7) + z * w(3);
+    res.0 as u32
 }
 
 pub fn map_into_world_space(world: &World, world_pos: &WorldPosition, rel_pos: &V2<f32>) -> WorldPosition {
@@ -214,7 +218,7 @@ impl World {
     }
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct EntityBlock {
     pub e_count: u32,
     pub lf_entities: [u32; 16],
@@ -251,7 +255,7 @@ impl Chunk {
     }
 }
 
-#[derive(Copy, Default)]
+#[derive(Copy, Clone, Default)]
 //TODO: add a reference to the world here so we don't have to pass it for 
 //move calculations?
 pub struct WorldPosition {

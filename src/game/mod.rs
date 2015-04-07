@@ -578,7 +578,7 @@ fn move_player(entity: Entity, mut acc: V2<f32>,
 
     let hf_entity = entity.get_hf();
     //friction force currently just by rule of thumb;
-    acc = acc - hf_entity.velocity * 13.0;
+    acc = acc - hf_entity.velocity * 10.0;
 
 
     //Copy old player Position before we handle input 
@@ -711,7 +711,7 @@ struct HeroBitmaps<'a> {
     align_y: i32
 }
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 enum EntityType {
     None,
     Hero,
@@ -740,7 +740,7 @@ impl Entity {
     }
 }
 
-#[derive(Default, Copy)]
+#[derive(Default, Copy, Clone)]
 struct LfEntity {
     etype: EntityType,
     world_position: WorldPosition,
@@ -750,7 +750,7 @@ struct LfEntity {
     hf_index: Option<u32>,
 }
 
-#[derive(Default, Copy)]
+#[derive(Default, Copy, Clone)]
 struct HfEntity {
     position: V2<f32>, //This position is relative to the camera
     velocity: V2<f32>,

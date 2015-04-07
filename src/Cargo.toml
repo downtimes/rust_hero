@@ -8,6 +8,9 @@ name = "game"
 crate-type = ["dylib"]
 path = "libgame.rs"
 
+[dependencies]
+num = "*"
+
 [profile.dev]
 opt-level = 0
 debug = true

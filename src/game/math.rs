@@ -1,7 +1,7 @@
 use std::ops;
-use std::num;
+use num;
 
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct Rect<T> {
     pub min: V2<T>,
     pub max: V2<T>,
@@ -37,13 +37,13 @@ impl<T> Rect<T> where V2<T>: ops::Add<Output=V2<T>>,
 impl<T> Rect<T> where T: num::Float {
    pub fn center_dim(center: V2<T>, dim: V2<T>) -> Rect<T> {
        Rect::<T> {
-           min: center - dim * num::cast(0.5).unwrap(),
-           max: center + dim * num::cast(0.5).unwrap(),
+           min: center - dim * num::traits::cast(0.5).unwrap(),
+           max: center + dim * num::traits::cast(0.5).unwrap(),
        }
    }
 
     pub fn get_center(&self) -> V2<T> {
-        (self.min + self.max) * num::cast(0.5).unwrap()
+        (self.min + self.max) * num::traits::cast(0.5).unwrap()
     }
 }
 
@@ -56,7 +56,7 @@ impl<T> Rect<T> where T: PartialOrd {
     }
 }
 
-#[derive(Copy, Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq)]
 pub struct V2<T> { 
     pub x: T,
     pub y: T,

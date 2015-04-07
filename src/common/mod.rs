@@ -54,13 +54,13 @@ pub struct SoundBuffer<'a> {
     pub samples_per_second: u32,
 }
 
-#[derive(Default, Copy)]
+#[derive(Default, Copy, Clone)]
 pub struct Button {
     pub ended_down: bool,
     pub half_transitions: u8,
 }
 
-#[derive(Default, Copy)]
+#[derive(Default, Copy, Clone)]
 pub struct ControllerInput {
     pub is_connected: bool,
 

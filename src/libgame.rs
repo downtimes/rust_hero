@@ -1,4 +1,4 @@
-#![feature(core)]
+extern crate num;
 
 mod common;
 pub mod game;

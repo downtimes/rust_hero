@@ -20,7 +20,7 @@ pub mod debug {
     use common::{ReadFileResult, ThreadContext};
     use common::util;
 
-    #[derive(Copy)]
+    #[derive(Copy, Clone)]
     pub struct SoundTimeMarker {
         pub flip_play_cursor: DWORD,
         pub flip_write_cursor: DWORD,
@@ -84,7 +84,7 @@ pub mod debug {
                                         contents: memory as *mut u8,
                                       });
                     } else {
-                        platform_free_file_memory(context, memory, size);
+                        platform_free_file_memory(context, memory as *mut u8, size);
                     }
                 }
             }
@@ -1071,8 +1071,7 @@ fn override_input(replay: &mut Replay, input: &mut Input) {
 
 //TODO: Looped live code editing is currently busted. Needs a fix
 //recording starts but playback crashes (infinite loop?)
-#[main]
-fn main() {
+pub fn winmain() {
     let (XInputGetState, _) = load_xinput_functions();
     
     let module_handle = unsafe { GetModuleHandleA(ptr::null()) };
@@ -1237,7 +1236,7 @@ fn main() {
     let mut counter_frequency: i64 = 0;
     unsafe { QueryPerformanceFrequency(&mut counter_frequency); }
 
-    let mut last_cycles = sizerinsics::__rdtsc();
+    let mut last_cycles = intrinsics::__rdtsc();
 
     let mut last_counter: i64 = get_wall_clock();
     let mut flip_wall_clock: i64 = 0;
@@ -1428,7 +1427,7 @@ fn main() {
                                                             end_counter,
                                                             counter_frequency);
             let fps: f32 = 1000.0 / ms_per_frame;
-            let display_cicles = sizerinsics::__rdtsc();
+            let display_cicles = intrinsics::__rdtsc();
             let mc_per_second = (display_cicles - last_cycles) as f32/ (1000.0 * 1000.0);
 
             println!("{:.2}ms/f, {:.2}f/s, {:.2}mc/s", ms_per_frame, fps, mc_per_second);
@@ -1436,7 +1435,7 @@ fn main() {
             mem::swap(new_input, old_input);
 
             last_counter = end_counter;
-            last_cycles = sizerinsics::__rdtsc();
+            last_cycles = intrinsics::__rdtsc();
         }
     }
 }

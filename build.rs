@@ -4,8 +4,8 @@ fn main() {
     match env::var("TARGET") {
         Ok(value) => {
             if value.contains("windows") {
-                println!("cargo:rustc-link-lib=static=gdi32");
-                println!("cargo:rustc-link-lib=static=winmm");
+                println!("cargo:rustc-link-lib=dylib=gdi32");
+                println!("cargo:rustc-link-lib=dylib=winmm");
             } else if value.contains("linux") {
                 println!("cargo:rustc-link-lib=dylib=SDL2");
             }

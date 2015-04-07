@@ -591,8 +591,7 @@ fn get_window_refresh_rate(window: *mut SDL_Window) -> c_int {
     }
 }
 
-#[main]
-fn main() {
+pub fn linuxmain() {
     if unsafe { SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER 
                         | SDL_INIT_AUDIO) != 0 } {
         panic!("SDL initialisation failed!");

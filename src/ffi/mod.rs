@@ -544,7 +544,7 @@ extern "system" {
 }
 
 #[inline(always)]
-pub mod sizerinsics {
+pub mod intrinsics {
     pub fn __rdtsc() -> u64 {
         let lower: u32;
         let higher: u32;

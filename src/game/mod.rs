@@ -379,20 +379,15 @@ fn set_camera(state: &mut GameState, new_position: &WorldPosition) {
     //TODO: Needs to be spatialy now!
     let min_p = map_into_world_space(state.world, new_position, &high_frequency_bounds.get_min()); 
     let max_p = map_into_world_space(state.world, new_position, &high_frequency_bounds.get_max());
-    for chunk_y in min_p.chunk_y..(max_p.chunk_y + 1) {
-        for chunk_x in min_p.chunk_x..(max_p.chunk_x + 1) {
-            let chunk = state.world.get_chunk(chunk_x, chunk_y, new_position.chunk_z, None);
-            if let Some(ch) = chunk {
-                for block in ch.first_block.iter() {
-                    for block_idx in 0..block.e_count as usize {
-                        let lf_index = block.lf_entities[block_idx];
-                        let hf_index = state.lf_entities[lf_index as usize].hf_index;
-                        if hf_index.is_none() {
-                            let cameraspace_p = get_camspace_p(state, lf_index);
-                            if high_frequency_bounds.p_inside(cameraspace_p) {
-                                make_high_frequency_pos(state, lf_index, cameraspace_p);
-                            }
-                        }
+    for ch in state.world.iter_spatially(min_p, max_p, new_position.chunk_z) {
+        for block in ch.first_block.iter() {
+            for block_idx in 0..block.e_count as usize {
+                let lf_index = block.lf_entities[block_idx];
+                let hf_index = state.lf_entities[lf_index as usize].hf_index;
+                if hf_index.is_none() {
+                    let cameraspace_p = get_camspace_p(state, lf_index);
+                    if high_frequency_bounds.p_inside(cameraspace_p) {
+                        make_high_frequency_pos(state, lf_index, cameraspace_p);
                     }
                 }
             }
@@ -639,7 +634,6 @@ fn move_player(entity: Entity, mut acc: V2<f32>,
                 - wall_normal * math::dot(hf_entity.velocity, wall_normal);
             entity_delta = target_pos - hf_entity.position;
             entity_delta = entity_delta - wall_normal * math::dot(entity_delta, wall_normal);
-
         }
     }
 

@@ -56,8 +56,54 @@ pub struct World {
     pub first_free: Option<*mut EntityBlock>,
 }
 
+pub struct IterChunk {
+    world: &'static mut World,
+    min_x: i32,
+    curr_x: i32,
+    curr_y: i32,
+    max_x: i32,
+    max_y: i32,
+    z: i32,
+}
+
+impl Iterator for IterChunk {
+    type Item = &'static Chunk;
+
+    fn next(&mut self) -> Option<&'static Chunk> {
+        if self.curr_x == self.max_x && self.curr_y == self.max_y {
+            None
+        } else {
+            let ch = self.world.get_chunk(self.curr_x, self.curr_y, self.z, None);
+            self.curr_x += 1;
+            if self.curr_x == self.max_x && self.curr_y != self.max_y {
+                self.curr_y += 1;
+                self.curr_x = self.min_x;
+            }
+
+            //if on this position there is no chunk iterate to the next position
+            //recursively
+            match ch {
+                None => self.next(),
+                Some(chunk) => Some(chunk),
+            }
+        }
+    }
+}
+
 
 impl World {
+    pub fn iter_spatially(&mut self, min_p: WorldPosition, max_p: WorldPosition, z: i32) -> IterChunk {
+        IterChunk {
+            world: unsafe { mem::transmute(self as *mut World) },
+            min_x: min_p.chunk_x,
+            curr_x: min_p.chunk_x,
+            curr_y: min_p.chunk_y,
+            max_x: max_p.chunk_x + 1,
+            max_y: max_p.chunk_y + 1,
+            z: z,
+        }
+    }
+
     pub fn initialize(&mut self) {
         self.tile_side_meters = 1.4;
         self.chunk_side_meters = TILES_PER_CHUNK as f32 * 1.4;
@@ -148,8 +194,9 @@ impl World {
         }
     }
 
+
     //NOTE: THIS FUNCTION DECOUPLES THE LIFETIME OF THE CHUNK FROM THE GAMESTATE!
-    //Be carefull that you don't get the same chunk two times and modifie them
+    //Be carefull that you don't get the same chunk two times and modify them.
     //it's asumed that you will not alias.
     pub fn get_chunk(&mut self, chunk_x: i32, chunk_y: i32, 
                      chunk_z: i32, arena: Option<&mut MemoryArena>) -> Option<&'static mut Chunk> {

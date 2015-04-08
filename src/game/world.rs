@@ -12,14 +12,25 @@ const TILES_PER_CHUNK: i32 = 16;
 
 pub fn world_pos_from_tile(world: &World, tile_x: i32, tile_y: i32, tile_z: i32) -> WorldPosition {
     //TODO: move to 3D
-    let chunk_x = tile_x / TILES_PER_CHUNK;
-    let chunk_y = tile_y / TILES_PER_CHUNK;
+    let mut chunk_x = tile_x / TILES_PER_CHUNK;
+    let mut chunk_y = tile_y / TILES_PER_CHUNK;
+
+    if tile_x < 0 {
+        chunk_x -= 1;
+    }
+
+    if tile_y < 0 {
+        chunk_y -= 1;
+    }
+
     WorldPosition {
         chunk_x: chunk_x,
         chunk_y: chunk_y,
         chunk_z: tile_z,
-        offset: V2{x: (tile_x % TILES_PER_CHUNK) as f32 * world.tile_side_meters,
-                   y: (tile_y % TILES_PER_CHUNK) as f32 * world.tile_side_meters},
+        offset: V2{x: (tile_x % TILES_PER_CHUNK) as f32 
+                        * world.tile_side_meters,
+                   y: (tile_y % TILES_PER_CHUNK) as f32 
+                        * world.tile_side_meters},
     }
 }
 

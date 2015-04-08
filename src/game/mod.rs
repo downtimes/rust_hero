@@ -1,6 +1,7 @@
 use std::mem;
 use num::traits::Float;
 use std::default::Default;
+use std::f32::consts::PI;
 
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input};
 use common::{ThreadContext, MAX_CONTROLLERS};
@@ -270,7 +271,12 @@ pub extern fn update_and_render(context: &ThreadContext,
                     hf_entity.dz = 3.0;
                 }
             }
-            move_player(entity, acc, state, input.delta_t);
+            let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
+                                ref mut world_arena, hf_entity_count,
+                                ref mut world, ref camera_position, .. } = state;
+            move_entity(&mut lf_entities[..], &mut hf_entities[..],
+                        hf_entity_count, world, world_arena, camera_position,
+                        entity, acc, input.delta_t);
         } else {
             if controller.start.ended_down {
                 let e_index = add_player(state);
@@ -305,9 +311,14 @@ pub extern fn update_and_render(context: &ThreadContext,
 
 
     for index in 0..state.hf_entity_count as usize{
+        let &mut GameState{ref shadow, ref tree, ref hero_bitmaps,
+                           ref mut hf_entities, ref mut lf_entities,
+                           hf_entity_count, ref mut world_arena, ref mut world,
+                           ref camera_position, ..} = state;
+
         let entity = {
-            let hf = &mut state.hf_entities[index];
-            let lf = &mut state.lf_entities[hf.lf_index as usize];
+            let hf = &mut hf_entities[index];
+            let lf = &mut lf_entities[hf.lf_index as usize];
 
             EntityMut {
                 lf_index: hf.lf_index,
@@ -315,8 +326,6 @@ pub extern fn update_and_render(context: &ThreadContext,
                 lf: lf as *mut LfEntity,
             }
         };
-        let &mut GameState{ref shadow, ref tree, ref hero_bitmaps, ..} = state;
-
         let hf = entity.get_hf();
         let lf = entity.get_lf();
 
@@ -351,7 +360,8 @@ pub extern fn update_and_render(context: &ThreadContext,
                                        hero_bitmaps.align, 1.0);
             },
             EntityType::Monster => {
-                update_monster(state, entity, input.delta_t); 
+                update_monster(&lf_entities[..], &hf_entities[..], 
+                                hf_entity_count, entity, input.delta_t);
                 piece_group.push_piece(shadow, V2{ x: 0.0, y: 0.0 }, 0.0,
                                        hero_bitmaps.align, z_alpha);
                 piece_group.push_piece(&hero_bitmaps.torso, V2{ x: 0.0, y: 0.0 }, 0.0,
@@ -364,11 +374,17 @@ pub extern fn update_and_render(context: &ThreadContext,
             },
 
             EntityType::Familiar => {
-                update_familiar(state, entity, input.delta_t);
+                update_familiar(&mut lf_entities[..], &mut hf_entities[..], 
+                                hf_entity_count, world, world_arena, 
+                                camera_position, entity, input.delta_t);
                 piece_group.push_piece(&shadow, V2{ x: 0.0, y: 0.0 }, 0.0, 
                                        hero_bitmaps.align, z_alpha);
-                piece_group.push_piece(&hero_bitmaps.head, V2{ x: 0.0, y: 0.0 }, 0.0,
-                                       hero_bitmaps.align, 1.0);
+                hf.tbob += input.delta_t;
+                if hf.tbob > 2.0 * PI {
+                    hf.tbob -= 2.0 * PI;
+                }
+                piece_group.push_piece(&hero_bitmaps.head, V2{ x: 0.0, y: 0.0 }, 
+                                       10.0 * (hf.tbob * 2.0).sin(), hero_bitmaps.align, 1.0);
             },
             _ => {
                 debug_assert!(true, "We forgot an important case!");
@@ -430,9 +446,14 @@ fn set_camera(state: &mut GameState, new_position: &WorldPosition) {
                 let lf_index = block.lf_entities[block_idx];
                 let hf_index = state.lf_entities[lf_index as usize].hf_index;
                 if hf_index.is_none() {
-                    let cameraspace_p = get_camspace_p(state, lf_index);
+                    let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
+                                        ref mut hf_entity_count, ref world,
+                                        ref camera_position, .. } = state;
+                    let cameraspace_p = get_camspace_p(world, &lf_entities[..],
+                                                       lf_index, camera_position);
                     if high_frequency_bounds.p_inside(cameraspace_p) {
-                        make_high_frequency_pos(state, lf_index, cameraspace_p);
+                        make_high_frequency_pos(&mut lf_entities[..], &mut hf_entities[..],
+                                                hf_entity_count, lf_index, cameraspace_p);
                     }
                 }
             }
@@ -448,10 +469,11 @@ fn get_lf_entity<'a>(state: &'a mut GameState, index: u32) -> Option<&'a mut LfE
     }
 }
 
-fn entity_from_hf(state: &GameState, hf_index: u32) -> Option<Entity> {
-    if hf_index < state.hf_entity_count {
-        let hf = &state.hf_entities[hf_index as usize];
-        let lf = &state.lf_entities[hf.lf_index as usize];
+fn entity_from_hf(lf_entities: &[LfEntity], hf_entities: &[HfEntity],
+                  hf_entity_count: u32, hf_index: u32) -> Option<Entity> {
+    if hf_index < hf_entity_count {
+        let hf = &hf_entities[hf_index as usize];
+        let lf = &lf_entities[hf.lf_index as usize];
         Some(Entity {
                 lf_index: hf.lf_index,
                 lf: lf as *const LfEntity,
@@ -465,10 +487,14 @@ fn entity_from_hf(state: &GameState, hf_index: u32) -> Option<Entity> {
 
 fn force_hf_entity(state: &mut GameState, index: u32) -> Option<EntityMut> {
     
-    if index < state.lf_entity_count {
-        make_high_frequency(state, index);
-        let lf = &mut state.lf_entities[index as usize];
-        let hf = &mut state.hf_entities[lf.hf_index.unwrap() as usize];
+    let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
+                        ref mut hf_entity_count, ref lf_entity_count,
+                        ref world, ref camera_position, .. } = state;
+    if index < *lf_entity_count {
+        make_high_frequency(&mut lf_entities[..], &mut hf_entities[..],
+                            hf_entity_count, world, camera_position, index);
+        let lf = &mut lf_entities[index as usize];
+        let hf = &mut hf_entities[lf.hf_index.unwrap() as usize];
         Some(EntityMut {
                 lf_index: index,
                 lf: lf as *mut LfEntity,
@@ -563,7 +589,11 @@ fn add_player(state: &mut GameState) -> u32 {
         state.camera_follows_entity_index = Some(e_index);
     }
 
-    make_high_frequency(state, e_index);
+    let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
+                        ref mut hf_entity_count, ref world, 
+                        ref camera_position, .. } = state;
+    make_high_frequency(&mut lf_entities[..], &mut hf_entities[..],
+                        hf_entity_count, world, camera_position, e_index);
 
     e_index
 }
@@ -591,21 +621,22 @@ fn offset_and_check_frequency_by_area(state: &mut GameState, offset: V2<f32>,
     }
 }
 
-fn get_camspace_p(state: &GameState, lf_index: u32) -> V2<f32> {
-    let lf = &state.lf_entities[lf_index as usize];
+fn get_camspace_p(world: &World, lf_entities: &[LfEntity], lf_index: u32, 
+                  camera_position: &WorldPosition) -> V2<f32> {
+    let lf = &lf_entities[lf_index as usize];
     let WorldDifference{ dx, dy, .. } =
-        subtract(state.world, &lf.world_position, &state.camera_position); 
+        subtract(world, &lf.world_position, camera_position); 
     V2{ x: dx, y: dy }
 }
 
-fn make_high_frequency_pos(state: &mut GameState, lf_index: u32, camspace_p: V2<f32>) {
-    let lf = &mut state.lf_entities[lf_index as usize];
+fn make_high_frequency_pos(lf_entities: &mut [LfEntity], hf_entities: &mut [HfEntity],
+                           hf_entity_count: &mut u32, lf_index: u32, camspace_p: V2<f32>) {
+    let lf = &mut lf_entities[lf_index as usize];
     if lf.hf_index.is_none() {
-        if (state.hf_entity_count as usize) < state.hf_entities.len() {
-            let hf_index = state.hf_entity_count as usize;
-            state.hf_entity_count += 1;
-
-            let hf = &mut state.hf_entities[hf_index];
+        let hf_index = *hf_entity_count as usize;
+        if hf_index < hf_entities.len() {
+            *hf_entity_count += 1;
+            let hf = &mut hf_entities[hf_index];
             hf.position = camspace_p;
             hf.velocity = Default::default();
             hf.chunk_z = lf.world_position.chunk_z;
@@ -619,9 +650,12 @@ fn make_high_frequency_pos(state: &mut GameState, lf_index: u32, camspace_p: V2<
     }
 }
 
-fn make_high_frequency(state: &mut GameState, lf_index: u32) {
-    let camspace_p = get_camspace_p(state, lf_index);
-    make_high_frequency_pos(state, lf_index, camspace_p);
+fn make_high_frequency(lf_entities: &mut [LfEntity], hf_entities: &mut [HfEntity],
+                       hf_entity_count: &mut u32, world: &World,
+                       camera_position: &WorldPosition, lf_index: u32) {
+    let camspace_p = get_camspace_p(world, lf_entities, lf_index, camera_position);
+    make_high_frequency_pos(lf_entities, hf_entities,
+                            hf_entity_count, lf_index, camspace_p);
 }
 
 fn make_low_frequency(state: &mut GameState, lf_index: u32) {
@@ -639,11 +673,14 @@ fn make_low_frequency(state: &mut GameState, lf_index: u32) {
     }
 }
 
-fn update_familiar(state: &mut GameState, entity: EntityMut, dt: f32) {
+fn update_familiar(lf_entities: &mut [LfEntity], hf_entities: &mut [HfEntity],
+                   hf_entity_count: u32, world: &mut World, world_arena: &mut MemoryArena,
+                   camera_position: &WorldPosition, entity: EntityMut, dt: f32) {
     let mut closest_hero_d_sq = 10.0.powi(2); //Maximum search range
     let mut closest_hero = None;
-    for hf_idx in 0..state.hf_entity_count {
-        let test_entity = entity_from_hf(state, hf_idx).unwrap();
+    for hf_idx in 0..hf_entity_count {
+        let test_entity = entity_from_hf(lf_entities, hf_entities, 
+                                         hf_entity_count, hf_idx).unwrap();
         //if we try to test ourselves, skip
         if test_entity.lf_index == entity.lf_index {
             continue;
@@ -651,7 +688,8 @@ fn update_familiar(state: &mut GameState, entity: EntityMut, dt: f32) {
 
         match test_entity.get_lf().etype {
             EntityType::Hero => {
-                let test_d_sq = (test_entity.get_hf().position - entity.get_hf().position).length_sq();
+                let test_d_sq = (test_entity.get_hf().position 
+                                 - entity.get_hf().position).length_sq();
                 if closest_hero_d_sq > test_d_sq {
                     closest_hero_d_sq = test_d_sq;
                     closest_hero = Some(test_entity);
@@ -661,15 +699,28 @@ fn update_familiar(state: &mut GameState, entity: EntityMut, dt: f32) {
         }
     }
 
+    let mut acc = V2{ x: 0.0, y: 0.0 };
     if let Some(hero) = closest_hero {
+        if closest_hero_d_sq > 0.1 {
+            let speed = 0.5;
+            let one_over_length = 1.0 / closest_hero_d_sq.sqrt();
+            acc = (hero.get_hf().position - entity.get_hf().position) 
+                    * one_over_length * speed;
+        }
     }
+
+    move_entity(lf_entities, hf_entities, hf_entity_count, world, world_arena,
+                camera_position, entity, acc, dt);
 }
 
-fn update_monster(state: &GameState, entity: EntityMut, dt: f32) {
+fn update_monster(lf_entities: &[LfEntity], hf_entities: &[HfEntity],
+                   hf_entity_count: u32, entity: EntityMut, dt: f32) {
 }
 
-fn move_player(entity: EntityMut, mut acc: V2<f32>, 
-               state: &mut GameState, delta_t: f32) {
+fn move_entity(lf_entities: &mut [LfEntity], hf_entities: &mut [HfEntity],
+               hf_entity_count: u32, world: &mut World, world_arena: &mut MemoryArena,
+               camera_position: &WorldPosition,
+               entity: EntityMut, mut acc: V2<f32>, delta_t: f32) {
 
     //Diagonal correction.
     if acc.length_sq() > 1.0 {
@@ -702,12 +753,12 @@ fn move_player(entity: EntityMut, mut acc: V2<f32>,
         let target_pos = hf_entity.position + entity_delta;
 
         let lf_entity = entity.get_lf();
-        for e_index in 0..state.hf_entity_count as usize {
+        for e_index in 0..hf_entity_count as usize {
             if e_index == lf_entity.hf_index.unwrap() as usize {
                 continue;
             }
-            let hf_test_entity = &state.hf_entities[e_index];
-            let lf_test_entity = &state.lf_entities[hf_test_entity.lf_index as usize];
+            let hf_test_entity = &hf_entities[e_index];
+            let lf_test_entity = &lf_entities[hf_test_entity.lf_index as usize];
             if lf_test_entity.collides {
                 //Minkowski Sum
                 let diameter = V2{ x: lf_test_entity.dim.x + lf_entity.dim.x, 
@@ -771,14 +822,11 @@ fn move_player(entity: EntityMut, mut acc: V2<f32>,
 
     //map high_entity back to the low entity
     let lf_entity = entity.get_lf();
-    let new_pos = map_into_world_space(&state.world, 
-                                       &state.camera_position, 
+    let new_pos = map_into_world_space(world, 
+                                       camera_position, 
                                        &hf_entity.position);
-    {
-        let &mut GameState{ ref mut world_arena, ref mut world, .. } = state;
-        world.change_entity_location(entity.lf_index, Some(&lf_entity.world_position),
-                                     &new_pos, world_arena);
-    }
+    world.change_entity_location(entity.lf_index, Some(&lf_entity.world_position),
+                                 &new_pos, world_arena);
     lf_entity.world_position = new_pos;
     
 }
@@ -912,6 +960,8 @@ struct HfEntity {
 
     z: f32,
     dz: f32,
+
+    tbob: f32,
 
     lf_index: u32,
 }

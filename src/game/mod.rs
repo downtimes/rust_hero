@@ -1,4 +1,5 @@
 use std::mem;
+use num::traits::Float;
 use std::default::Default;
 
 use common::{GameMemory, SoundBuffer, VideoBuffer, Input};
@@ -57,8 +58,7 @@ pub extern fn update_and_render(context: &ThreadContext,
                               context, "test/test_hero_right_torso.bmp").unwrap();
         state.hero_bitmaps[0].cape = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                               context, "test/test_hero_right_cape.bmp").unwrap();
-        state.hero_bitmaps[0].align_x = 72;
-        state.hero_bitmaps[0].align_y = 182;
+        state.hero_bitmaps[0].align = V2{ x: 72, y: 182 };
 
         state.hero_bitmaps[1].head = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                               context, "test/test_hero_back_head.bmp").unwrap();
@@ -66,8 +66,7 @@ pub extern fn update_and_render(context: &ThreadContext,
                               context, "test/test_hero_back_torso.bmp").unwrap();
         state.hero_bitmaps[1].cape = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                               context, "test/test_hero_back_cape.bmp").unwrap();
-        state.hero_bitmaps[1].align_x = 72;
-        state.hero_bitmaps[1].align_y = 182;
+        state.hero_bitmaps[1].align = V2{ x: 72, y: 182 };
 
         state.hero_bitmaps[2].head = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                               context, "test/test_hero_left_head.bmp").unwrap();
@@ -75,8 +74,7 @@ pub extern fn update_and_render(context: &ThreadContext,
                               context, "test/test_hero_left_torso.bmp").unwrap();
         state.hero_bitmaps[2].cape = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                               context, "test/test_hero_left_cape.bmp").unwrap();
-        state.hero_bitmaps[2].align_x = 72;
-        state.hero_bitmaps[2].align_y = 182;
+        state.hero_bitmaps[2].align = V2{ x: 72, y: 182 };
 
         state.hero_bitmaps[3].head = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                               context, "test/test_hero_front_head.bmp").unwrap();
@@ -84,8 +82,7 @@ pub extern fn update_and_render(context: &ThreadContext,
                               context, "test/test_hero_front_torso.bmp").unwrap();
         state.hero_bitmaps[3].cape = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                               context, "test/test_hero_front_cape.bmp").unwrap();
-        state.hero_bitmaps[3].align_x = 72;
-        state.hero_bitmaps[3].align_y = 182;
+        state.hero_bitmaps[3].align = V2{ x: 72, y: 182 };
 
 
         let game_state_size = mem::size_of::<GameState>();
@@ -222,11 +219,18 @@ pub extern fn update_and_render(context: &ThreadContext,
             }
         }
 
-        let new_position = world_pos_from_tile(state.world,
-                                               screen_base_x*tiles_per_screen_x + 17/2, 
-                                               screen_base_y*tiles_per_screen_y + 9/2,
-                                               screen_base_z);
-        set_camera(state, &new_position);
+        let cam_tile_x = screen_base_x*tiles_per_screen_x + 17/2;
+        let cam_tile_y = screen_base_y*tiles_per_screen_y + 9/2;
+        let cam_tile_z = screen_base_z;
+        let cam_position = world_pos_from_tile(state.world,
+                                               cam_tile_x, 
+                                               cam_tile_y,
+                                               cam_tile_z);
+        //drop a test monster & familiar
+        add_monster(state, cam_tile_x + 2, cam_tile_y + 2, cam_tile_z);
+        add_familiar(state, cam_tile_x - 2, cam_tile_y + 2, cam_tile_z);
+
+        set_camera(state, &cam_position);
 
         game_memory.initialized = true;
     }
@@ -259,7 +263,7 @@ pub extern fn update_and_render(context: &ThreadContext,
                 }
             }
 
-            let entity = get_hf_entity(state, e_index).unwrap();
+            let entity = force_hf_entity(state, e_index).unwrap();
             {
                 let hf_entity = entity.get_hf();
                 if controller.action_up.ended_down {
@@ -289,7 +293,7 @@ pub extern fn update_and_render(context: &ThreadContext,
         set_camera(state, &new_cam_pos);
     }
 
-    //Clear the screen to grey And start rendering
+    //Clear the screen to grey and start rendering
     let buffer_dim = V2{ x: video_buffer.width as f32, y: video_buffer.height as f32 };
     graphics::draw_rect(video_buffer, Default::default(), buffer_dim, 
                         0.5, 0.5, 0.5);
@@ -299,62 +303,103 @@ pub extern fn update_and_render(context: &ThreadContext,
     let screen_center_x = 0.5 * video_buffer.width as f32;
     let screen_center_y = 0.5 * video_buffer.height as f32;
 
-    for index in 0..state.hf_entity_count as usize {
-        let entity = &mut state.hf_entities[index];
-        let lf = &state.lf_entities[entity.lf_index as usize];
 
-        //TODO: move out just temp code
-        let acc = -9.81;
-        entity.z += acc * 0.5 * input.delta_t.powi(2) 
-                           + entity.dz * input.delta_t;
-        entity.dz = acc * input.delta_t + entity.dz;
-        if entity.z < 0.0 {
-            entity.z = 0.0;
-        }
+    for index in 0..state.hf_entity_count as usize{
+        let entity = {
+            let hf = &mut state.hf_entities[index];
+            let lf = &mut state.lf_entities[hf.lf_index as usize];
 
-        let entity_groundpoint = V2{
-            x: screen_center_x + meters_to_pixel * entity.position.x,
-            y: screen_center_y - meters_to_pixel * entity.position.y,
+            EntityMut {
+                lf_index: hf.lf_index,
+                hf: hf as *mut HfEntity,
+                lf: lf as *mut LfEntity,
+            }
         };
-        let entity_airpoint = V2{
-            x: entity_groundpoint.x,
-            y: entity_groundpoint.y - meters_to_pixel * entity.z,
-        };
+        let &mut GameState{ref shadow, ref tree, ref hero_bitmaps, ..} = state;
 
+        let hf = entity.get_hf();
+        let lf = entity.get_lf();
+
+        //TODO: is the alpha from the previous frame needs to be after 
+        //updates
         let z_alpha =
-            if entity.z > 1.0 {
+            if hf.z > 1.0 {
                 0.0
             } else {
-                1.0 - entity.z * 0.8
+                1.0 - hf.z * 0.8
             };
-        let entity_dim = V2{ x: meters_to_pixel * lf.dim.x, 
-                              y: meters_to_pixel * lf.dim.y };
-        let top_left = entity_groundpoint - entity_dim * 0.5;
-        let bottom_right = top_left + entity_dim;
+
+        let hero_bitmaps = &hero_bitmaps[hf.face_direction as usize];
+        let mut piece_group = EntityPieceGroup {
+            count: 0,
+            pieces: [None, None, None, None, None, None, None, None],
+        };
 
         match lf.etype {
             EntityType::Hero =>  {
-                let hero_bitmaps = &state.hero_bitmaps[entity.face_direction as usize];
-                graphics::draw_bitmap_aligned_alpha(video_buffer, &state.shadow,
-                                                    entity_groundpoint, hero_bitmaps.align_x,
-                                                    hero_bitmaps.align_y, z_alpha);
-                graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.torso,
-                                              entity_airpoint, hero_bitmaps.align_x,
-                                              hero_bitmaps.align_y);
-                graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.cape,
-                                              entity_airpoint, hero_bitmaps.align_x,
-                                              hero_bitmaps.align_y);
-                graphics::draw_bitmap_aligned(video_buffer, &hero_bitmaps.head,
-                                              entity_airpoint, hero_bitmaps.align_x,
-                                              hero_bitmaps.align_y);
+                piece_group.push_piece(shadow,
+                                       V2{ x: 0.0, y: 0.0 }, 0.0,
+                                       hero_bitmaps.align, z_alpha);
+                piece_group.push_piece(&hero_bitmaps.torso,
+                                       V2{ x: 0.0, y: 0.0 }, 0.0,
+                                       hero_bitmaps.align, 1.0);
+                piece_group.push_piece(&hero_bitmaps.cape,
+                                       V2{ x: 0.0, y: 0.0 }, 0.0, 
+                                       hero_bitmaps.align, 1.0);
+                piece_group.push_piece(&hero_bitmaps.head,
+                                       V2{ x: 0.0, y: 0.0 }, 0.0, 
+                                       hero_bitmaps.align, 1.0);
+            },
+            EntityType::Monster => {
+                update_monster(state, entity, input.delta_t); 
+                piece_group.push_piece(shadow, V2{ x: 0.0, y: 0.0 }, 0.0,
+                                       hero_bitmaps.align, z_alpha);
+                piece_group.push_piece(&hero_bitmaps.torso, V2{ x: 0.0, y: 0.0 }, 0.0,
+                                       hero_bitmaps.align, 1.0);
+            },
+
+            EntityType::Wall => {
+                piece_group.push_piece(tree, V2{ x: 0.0, y: 0.0 }, 0.0,
+                                       V2{ x: 40, y: 80}, 1.0);
+            },
+
+            EntityType::Familiar => {
+                update_familiar(state, entity, input.delta_t);
+                piece_group.push_piece(&shadow, V2{ x: 0.0, y: 0.0 }, 0.0, 
+                                       hero_bitmaps.align, z_alpha);
+                piece_group.push_piece(&hero_bitmaps.head, V2{ x: 0.0, y: 0.0 }, 0.0,
+                                       hero_bitmaps.align, 1.0);
             },
             _ => {
-//                graphics::draw_rect(video_buffer, top_left, bottom_right,
-//                                    1.0, 1.0, 0.0);
-                graphics::draw_bitmap_aligned(video_buffer, &state.tree,
-                                              entity_airpoint, 40,
-                                              80);
+                debug_assert!(true, "We forgot an important case!");
             },
+        }
+
+        let gravity = -9.81;
+        hf.z += gravity * 0.5 * input.delta_t.powi(2) 
+                           + hf.dz * input.delta_t;
+        hf.dz = gravity * input.delta_t + hf.dz;
+        if hf.z < 0.0 {
+            hf.z = 0.0;
+        }
+
+        let entity_groundpoint = V2{
+            x: screen_center_x + meters_to_pixel * hf.position.x,
+            y: screen_center_y - meters_to_pixel * hf.position.y,
+        };
+        let entity_airpoint = V2{
+            x: entity_groundpoint.x,
+            y: entity_groundpoint.y - meters_to_pixel * hf.z,
+        };
+
+        for index in 0..piece_group.count as usize {
+            let piece = piece_group.pieces[index].as_ref().unwrap();
+            let piece_point = V2 {
+                x: entity_airpoint.x + piece.offset.x,
+                y: entity_airpoint.y + piece.offset.y + piece.offset_z,
+            };
+            graphics::draw_bitmap_alpha(video_buffer, piece.bitmap,
+                                        piece_point, piece.alpha);
         }
     }
 }
@@ -403,13 +448,28 @@ fn get_lf_entity<'a>(state: &'a mut GameState, index: u32) -> Option<&'a mut LfE
     }
 }
 
-fn get_hf_entity(state: &mut GameState, index: u32) -> Option<Entity> {
+fn entity_from_hf(state: &GameState, hf_index: u32) -> Option<Entity> {
+    if hf_index < state.hf_entity_count {
+        let hf = &state.hf_entities[hf_index as usize];
+        let lf = &state.lf_entities[hf.lf_index as usize];
+        Some(Entity {
+                lf_index: hf.lf_index,
+                lf: lf as *const LfEntity,
+                hf: hf as *const HfEntity,
+            })
+    } else {
+        None
+    }
+}
+
+
+fn force_hf_entity(state: &mut GameState, index: u32) -> Option<EntityMut> {
     
     if index < state.lf_entity_count {
         make_high_frequency(state, index);
         let lf = &mut state.lf_entities[index as usize];
         let hf = &mut state.hf_entities[lf.hf_index.unwrap() as usize];
-        Some(Entity {
+        Some(EntityMut {
                 lf_index: index,
                 lf: lf as *mut LfEntity,
                 hf: hf as *mut HfEntity,
@@ -419,7 +479,8 @@ fn get_hf_entity(state: &mut GameState, index: u32) -> Option<Entity> {
     }
 }
 
-fn add_lf_entity(state: &mut GameState, etype: EntityType, pos: WorldPosition) -> u32 {
+fn add_lf_entity<'a>(state: &'a mut GameState, etype: EntityType, 
+                     pos: WorldPosition) -> (u32, &'a mut LfEntity) {
     let index = state.lf_entity_count;
     debug_assert!((index as usize) < state.lf_entities.len());
 
@@ -439,7 +500,7 @@ fn add_lf_entity(state: &mut GameState, etype: EntityType, pos: WorldPosition) -
         world.change_entity_location(index, None, &pos, world_arena);
     }
 
-    index
+    (index, &mut state.lf_entities[index as usize])
 }
 
 fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32,
@@ -447,11 +508,10 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32,
 
     let pos = world_pos_from_tile(state.world, abs_tile_x, 
                                   abs_tile_y, abs_tile_z);
-    let e_index = add_lf_entity(state, EntityType::Wall, pos);
-
     let tile_side_meters = state.world.tile_side_meters;
-    
-    let lf_entity = get_lf_entity(state, e_index).unwrap();
+
+    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Wall, pos);
+
     lf_entity.dim = V2{ x: tile_side_meters, 
                         y: tile_side_meters, };
     lf_entity.collides = true;
@@ -459,20 +519,48 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32,
     e_index
 }
 
+fn add_monster(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32,
+               abs_tile_z: i32) -> u32 {
+    let pos = world_pos_from_tile(state.world, abs_tile_x, 
+                                  abs_tile_y, abs_tile_z);
+
+    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Monster, pos);
+
+    lf_entity.dim = V2{ x: 1.0, 
+                        y: 0.5 };
+    lf_entity.collides = true;
+
+    e_index
+}
+
+fn add_familiar(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32,
+               abs_tile_z: i32) -> u32 {
+    let pos = world_pos_from_tile(state.world, abs_tile_x, 
+                                  abs_tile_y, abs_tile_z);
+
+    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Familiar, pos);
+
+    lf_entity.dim = V2{ x: 1.0, 
+                        y: 0.5 };
+    lf_entity.collides = false;
+
+    e_index
+}
+
 fn add_player(state: &mut GameState) -> u32 {
-    let pos = state.camera_position;
-    
-    let e_index = add_lf_entity(state, EntityType::Hero, pos);
 
-    if state.camera_follows_entity_index.is_none() {
-        state.camera_follows_entity_index = Some(e_index);
-    }
+    let e_index = {
+        let pos = state.camera_position;
+        let (e_index, lf_entity) = add_lf_entity(state, EntityType::Hero, pos);
 
-    {
-        let lf_entity = get_lf_entity(state, e_index).unwrap();
         lf_entity.dim = V2{ x: 1.0, 
                             y: 0.5 };
         lf_entity.collides = true;
+        e_index
+    };
+
+    if state.camera_follows_entity_index.is_none() {
+        state.camera_follows_entity_index = Some(e_index);
     }
 
     make_high_frequency(state, e_index);
@@ -551,8 +639,37 @@ fn make_low_frequency(state: &mut GameState, lf_index: u32) {
     }
 }
 
-fn move_player(entity: Entity, mut acc: V2<f32>, 
-                   state: &mut GameState, delta_t: f32) {
+fn update_familiar(state: &mut GameState, entity: EntityMut, dt: f32) {
+    let mut closest_hero_d_sq = 10.0.powi(2); //Maximum search range
+    let mut closest_hero = None;
+    for hf_idx in 0..state.hf_entity_count {
+        let test_entity = entity_from_hf(state, hf_idx).unwrap();
+        //if we try to test ourselves, skip
+        if test_entity.lf_index == entity.lf_index {
+            continue;
+        }
+
+        match test_entity.get_lf().etype {
+            EntityType::Hero => {
+                let test_d_sq = (test_entity.get_hf().position - entity.get_hf().position).length_sq();
+                if closest_hero_d_sq > test_d_sq {
+                    closest_hero_d_sq = test_d_sq;
+                    closest_hero = Some(test_entity);
+                }
+            },
+            _ => {},
+        }
+    }
+
+    if let Some(hero) = closest_hero {
+    }
+}
+
+fn update_monster(state: &GameState, entity: EntityMut, dt: f32) {
+}
+
+fn move_player(entity: EntityMut, mut acc: V2<f32>, 
+               state: &mut GameState, delta_t: f32) {
 
     //Diagonal correction.
     if acc.length_sq() > 1.0 {
@@ -693,8 +810,7 @@ struct HeroBitmaps<'a> {
     torso: graphics::Bitmap<'a>,
     cape: graphics::Bitmap<'a>,
 
-    align_x: i32,
-    align_y: i32
+    align: V2<i32>,
 }
 
 #[derive(Copy, Clone)]
@@ -702,6 +818,8 @@ enum EntityType {
     None,
     Hero,
     Wall,
+    Monster,
+    Familiar,
 }
 
 impl Default for EntityType {
@@ -710,13 +828,62 @@ impl Default for EntityType {
     }
 }
 
+struct EntityPiece<'a> {
+    bitmap: &'a graphics::Bitmap<'a>,
+    offset: V2<f32>,
+    offset_z: f32,
+    alpha: f32,
+}
+
+struct EntityPieceGroup<'a> {
+    count: u32,
+    pieces: [Option<EntityPiece<'a>>; 8],
+}
+
+impl<'a> EntityPieceGroup<'a> {
+    fn push_piece(&mut self, bitmap: &'a graphics::Bitmap<'a>,
+                     offset: V2<f32>, offset_z: f32, align: V2<i32>,
+                     alpha: f32) {
+        debug_assert!((self.count as usize) < self.pieces.len());
+        let piece = &mut self.pieces[self.count as usize];
+        self.count += 1;
+        let align_float = V2{ x: align.x as f32, y: align.y as f32 };
+        *piece = Some(
+            EntityPiece {
+                bitmap: bitmap,
+                offset: offset - align_float,
+                offset_z: offset_z,
+                alpha: alpha,
+            }
+        );
+    }
+}
+
 struct Entity {
+    lf_index: u32,
+    lf: *const LfEntity,
+    hf: *const HfEntity,
+}
+
+impl Entity {
+    fn get_hf(&self) -> &HfEntity {
+        unsafe { mem::transmute(self.hf) }
+    }
+
+    fn get_lf(&self) -> &LfEntity {
+        unsafe { mem::transmute(self.lf) }
+    }
+}
+
+
+#[derive(Copy, Clone)]
+struct EntityMut {
     lf_index: u32,
     lf: *mut LfEntity,
     hf: *mut HfEntity,
 }
 
-impl Entity {
+impl EntityMut {
     fn get_hf(&self) -> &mut HfEntity {
         unsafe { mem::transmute(self.hf) }
     }

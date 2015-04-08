@@ -43,6 +43,9 @@ pub fn map_into_world_space(world: &World, world_pos: &WorldPosition, rel_pos: &
     pos
 }
 
+
+//TODO: Implement a way to iterate over chunks spatialy
+//with a simple iter(mincorner, maxcorner, z) or something
 pub struct World {
     pub tile_side_meters: f32,
     pub chunk_side_meters: f32,
@@ -71,59 +74,52 @@ impl World {
                 let chunk = self.get_chunk(pos.chunk_x, pos.chunk_y, pos.chunk_z, None);
                 debug_assert!(chunk.is_some());
                 
-                let mut move_e_index = 0;
-                let mut block_lf_index = 0;
-                let mut block_number: i32 = 0;
+                //pull entity out of the old slot
                 if chunk.is_some() {
                     let ch = chunk.unwrap();
 
-                    //We acutally copy every EntityBlock in this algorithm so that
-                    //we don't get aliasing. Look for better alternatives to implement this
-                    //more efficiently!
-                    //pull entity out of the old slot
-                    let mut read_block = ch.first_block;
                     let first_block = &mut ch.first_block;
-                    'find: loop {
 
-                        for index in 0..read_block.e_count as usize {
-                            if read_block.lf_entities[index] == lf_index {
-                                debug_assert!(first_block.e_count > 0);
-                                block_lf_index = index;
-                                first_block.e_count -= 1;
-                                move_e_index = first_block.lf_entities[first_block.e_count as usize];
-                                if first_block.e_count == 0 {
-                                    if first_block.next.is_some() {
-                                        block_number -= 1;
-                                        let next_block: &mut EntityBlock 
-                                            = unsafe { mem::transmute(first_block.next.unwrap()) };
-                                        *first_block = *next_block;
-                                        //put the block in the freelist
-                                        next_block.next = self.first_free;
-                                        self.first_free = Some(next_block as *mut EntityBlock);
-                                    }
-                                }
-
-                                break 'find;
-                            }
-                        }
-
-                        if read_block.next.is_none() {
-                            break 'find;
-                        } else {
-                            block_number += 1;
-                            read_block = *unsafe { mem::transmute::<*mut EntityBlock,
-                                                                    &mut EntityBlock>
-                                                    (read_block.next.unwrap()) };
+                    //in case the entity is in the first_block
+                    //NOTE: This is done seperately to avoid aliasing in the 
+                    //following loop because we could alias with our first_block
+                    //variable
+                    for index in 0..first_block.e_count as usize {
+                        if first_block.lf_entities[index] == lf_index {
+                            debug_assert!(first_block.e_count > 0);
+                            first_block.e_count -= 1;
+                            first_block.lf_entities[index] 
+                                = first_block.lf_entities[first_block.e_count as usize];
+                            maybe_remove_block(self, first_block);
                         }
                     }
 
-                    //After the fact walk again and write the copied value to the now empty slot
-                    if block_number >= 0 {
-                        let mut block = first_block;
-                        for _ in 0..block_number {
-                            block = unsafe { mem::transmute(block.next.unwrap()) };
+                    //in case it is in some of the consecutive blocks
+                    'find: for block in first_block.iter_mut().skip(1) {
+                        for index in 0..block.e_count as usize {
+                            if block.lf_entities[index] == lf_index {
+                                debug_assert!(first_block.e_count > 0);
+                                first_block.e_count -= 1;
+                                block.lf_entities[index] 
+                                    = first_block.lf_entities[first_block.e_count as usize];
+                                maybe_remove_block(self, first_block);
+
+                                //we have done our work no need to iterate over
+                                //any more of the blocks
+                                break 'find;
+                            }
                         }
-                        block.lf_entities[block_lf_index] = move_e_index;
+                    }
+                }
+
+                fn maybe_remove_block(world: &mut World, first_block: &mut EntityBlock) {
+                    if first_block.e_count == 0 && first_block.next.is_some() {
+                        let next_block: &mut EntityBlock 
+                            = unsafe { mem::transmute(first_block.next.unwrap()) };
+                        *first_block = *next_block;
+                        //put the block in the freelist
+                        next_block.next = world.first_free;
+                        world.first_free = Some(next_block as *mut EntityBlock);
                     }
                 }
             }
@@ -218,6 +214,40 @@ impl World {
     }
 }
 
+pub struct Iter(Option<*const EntityBlock>);
+pub struct IterMut(Option<*mut EntityBlock>);
+
+impl Iterator for Iter {
+    type Item = &'static EntityBlock;
+
+    fn next(&mut self) -> Option<&'static EntityBlock> {
+        match *self {
+            Iter(None) => None,
+            Iter(Some(ptr)) => unsafe {
+                match (*ptr).next {
+                    None => *self = Iter(None),
+                    Some(next_ptr) => *self = Iter(Some(next_ptr as *const EntityBlock)),
+                }
+                Some(mem::transmute(ptr))
+            },
+        }
+    }
+}
+
+impl Iterator for IterMut {
+    type Item = &'static mut EntityBlock;
+
+    fn next(&mut self) -> Option<&'static mut EntityBlock> {
+        match *self {
+            IterMut(None) => None,
+            IterMut(Some(ptr)) => unsafe {
+                *self = IterMut((*ptr).next); 
+                Some(mem::transmute(ptr))
+            }
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct EntityBlock {
     pub e_count: u32,
@@ -234,6 +264,16 @@ impl Default for EntityBlock {
 
             next: None,
         }
+    }
+}
+
+impl EntityBlock {
+    pub fn iter(&self) -> Iter {
+        Iter(Some(self as *const EntityBlock))
+    }
+
+    pub fn iter_mut(&mut self) -> IterMut {
+        IterMut(Some(self as *mut EntityBlock))
     }
 }
 

@@ -24,7 +24,7 @@ impl MemoryArena {
 
         let result_ptr = unsafe { self.base_ptr.offset(self.used as isize) };
         self.used += size;
-        
+
         unsafe { mem::transmute(result_ptr) }
     }
 

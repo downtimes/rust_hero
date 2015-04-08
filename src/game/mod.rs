@@ -383,8 +383,7 @@ fn set_camera(state: &mut GameState, new_position: &WorldPosition) {
         for chunk_x in min_p.chunk_x..(max_p.chunk_x + 1) {
             let chunk = state.world.get_chunk(chunk_x, chunk_y, new_position.chunk_z, None);
             if let Some(ch) = chunk {
-                let mut block = &ch.first_block;
-                loop {
+                for block in ch.first_block.iter() {
                     for block_idx in 0..block.e_count as usize {
                         let lf_index = block.lf_entities[block_idx];
                         let hf_index = state.lf_entities[lf_index as usize].hf_index;
@@ -395,14 +394,7 @@ fn set_camera(state: &mut GameState, new_position: &WorldPosition) {
                             }
                         }
                     }
-
-                    if block.next.is_none() {
-                        break
-                    } else {
-                        block = unsafe { mem::transmute(block.next.unwrap()) };
-                    }
                 }
-
             }
         }
     }

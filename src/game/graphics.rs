@@ -5,6 +5,14 @@ use std::slice;
 
 use super::math::V2;
 
+#[derive(Copy, Clone, Default, PartialEq)]
+pub struct Color {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
 pub fn draw_rect(buffer: &mut VideoBuffer, real_min: V2<f32>,
                  real_max: V2<f32>, r: f32, g: f32, b: f32) {
 

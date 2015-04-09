@@ -4,7 +4,7 @@ use std::i32;
 use std::default::Default;
 
 use super::memory::MemoryArena;
-use super::math::V2;
+use super::math::{V2, V3};
 
 //TODO: Think about this number
 const WORLD_BORDER_CHUNKS: i32 = (i32::MAX/64);
@@ -372,18 +372,6 @@ pub fn are_in_same_chunk(world: &World, pos1: &WorldPosition, pos2: &WorldPositi
     pos1.chunk_z == pos2.chunk_z
 }
 
-impl WorldPosition {
-    pub fn centered_chunk_pos(chunk_x: i32, chunk_y: i32, chunk_z: i32) -> WorldPosition {
-        WorldPosition {
-            chunk_x: chunk_x,
-            chunk_y: chunk_y,
-            chunk_z: chunk_z,
-
-            offset: V2{ x: 0.0, y: 0.0 },
-        }
-    }
-}
-
 fn is_canonical(world: &World, rel: f32) -> bool {
     (rel >= -0.5*world.chunk_side_meters) &&
     (rel <= 0.5*world.chunk_side_meters)
@@ -405,24 +393,17 @@ pub fn canonicalize_coord(world: &World, tile: &mut i32, tile_offset: &mut f32) 
         debug_assert!(is_canonical(world, *tile_offset));
 }
 
-//TODO: Caution when wrapping around the difference gets too large to represent
-//exactly can be 31 bits difference and we can only represent 24 (float)
-pub struct WorldDifference {
-    pub dx: f32,
-    pub dy: f32,
-    pub dz: f32,
-}
 
 //TODO: This function does not cope well if we are in the middle of the world
 //because of arithmetic underflow. Needs revision!!
-pub fn subtract(world: &World, a: &WorldPosition, b: &WorldPosition) -> WorldDifference {
+pub fn subtract(world: &World, a: &WorldPosition, b: &WorldPosition) -> V3<f32> {
     let d_tile_x = world.chunk_side_meters * (a.chunk_x as i32 - b.chunk_x as i32) as f32;
     let d_tile_y = world.chunk_side_meters * (a.chunk_y as i32 - b.chunk_y as i32) as f32;
     let d_tile_z = world.chunk_side_meters * (a.chunk_z as i32 - b.chunk_z as i32) as f32;
 
-    WorldDifference {
-        dx: d_tile_x + a.offset.x - b.offset.x, 
-        dy: d_tile_y + a.offset.y - b.offset.y,
-        dz: d_tile_z,
+    V3 {
+        x: d_tile_x + a.offset.x - b.offset.x, 
+        y: d_tile_y + a.offset.y - b.offset.y,
+        z: d_tile_z,
     }
 }

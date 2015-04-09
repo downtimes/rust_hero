@@ -57,15 +57,94 @@ impl<T> Rect<T> where T: PartialOrd {
 }
 
 #[derive(Copy, Clone, Default, PartialEq)]
+pub struct V3<T> { 
+    pub x: T,
+    pub y: T,
+    pub z: T,
+}
+
+impl<T> V3<T> where T: Copy + ops::Add<Output=T> + ops::Mul<Output=T> {
+    pub fn length_sq(&self) -> T {
+        dot_3(*self, *self)
+    }
+
+}
+
+impl<T> V3<T> where T: num::Float {
+    pub fn length(&self) -> T {
+        let val = self.length_sq();
+        val.sqrt()
+    }
+
+    pub fn normalize(&self) -> V3<T> {
+        let length = self.length();
+        V3 {
+            x: self.x / length,
+            y: self.y / length,
+            z: self.z / length,
+        }
+    }
+}
+
+impl<T> ops::Mul<T> for V3<T> where T: Copy + ops::Mul<Output=T> {
+    type Output = V3<T>;
+
+    fn mul(self, other: T) -> V3<T> {
+        V3::<T> {
+            x: self.x * other, 
+            y: self.y * other,
+            z: self.z * other,
+        }
+    }
+}
+
+
+impl<T> ops::Add<V3<T>> for V3<T> where T: ops::Add<Output=T>{
+    type Output = V3<T>;
+
+    fn add(self, other: V3<T>) -> V3<T> {
+        V3::<T> {
+            x: self.x + other.x, 
+            y: self.y + other.y,
+            z: self.z + other.z,
+        }
+    }
+}
+
+impl<T> ops::Sub<V3<T>> for V3<T> where T: ops::Sub<Output=T> {
+    type Output = V3<T>;
+
+    fn sub(self, other: V3<T>) -> V3<T> {
+        V3::<T> {
+            x: self.x - other.x, 
+            y: self.y - other.y,
+            z: self.z - other.z,
+        }
+    }
+}
+
+
+impl<T> ops::Neg for V3<T> where T: ops::Neg<Output=T> {
+    type Output = V3<T>;
+
+    fn neg(self) -> V3<T> {
+        V3::<T> {
+            x: -self.x, 
+            y: -self.y,
+            z: -self.z,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Default, PartialEq)]
 pub struct V2<T> { 
     pub x: T,
     pub y: T,
-
 }
 
 impl<T> V2<T> where T: Copy + ops::Add<Output=T> + ops::Mul<Output=T> {
     pub fn length_sq(&self) -> T {
-        dot(*self, *self)
+        dot_2(*self, *self)
     }
 
 }
@@ -85,7 +164,12 @@ impl<T> V2<T> where T: num::Float {
     }
 }
 
-pub fn dot<T>(a: V2<T>, b: V2<T>) -> T where T: ops::Add<Output=T>
+pub fn dot_3<T>(a: V3<T>, b: V3<T>) -> T where T: ops::Add<Output=T>
+                                                + ops::Mul<Output=T> {
+    a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+pub fn dot_2<T>(a: V2<T>, b: V2<T>) -> T where T: ops::Add<Output=T>
                                                 + ops::Mul<Output=T> {
     a.x * b.x + a.y * b.y
 }

@@ -88,7 +88,7 @@ pub struct SDL_GameController;
 pub struct SDL_Texture;
 
 #[repr(C)]
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct SDL_WindowEvent {
     pub _type: u32,
     pub timestamp: u32,
@@ -169,7 +169,7 @@ pub enum SDL_GameControllerButton {
 }
 
 #[repr(C)]
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub enum SDL_Scancode {
 	SDL_SCANCODE_UNKNOWN = 0,
 	SDL_SCANCODE_MAX = 512,
@@ -177,7 +177,7 @@ pub enum SDL_Scancode {
 
 
 #[repr(C)]
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct SDL_Keysym {
 	pub scancode: SDL_Scancode,
 	pub sym: SDL_Keycode,
@@ -186,7 +186,7 @@ pub struct SDL_Keysym {
 }
 
 #[repr(C)]
-#[derive(Copy)]
+#[derive(Copy, Clone)]
 pub struct SDL_KeyboardEvent {
 	pub _type: u32,
 	pub timestamp: u32,

@@ -31,8 +31,11 @@ pub type PlatformReadEntireFileT = fn(&ThreadContext, &str) -> Result<ReadFileRe
 pub type PlatformFreeFileMemoryT = fn(&ThreadContext, *mut u8, u32);
 pub type PlatformWriteEntireFileT = fn(&ThreadContext, &str, u32, *mut u8) -> bool;
 
-pub type GetSoundSamplesT = extern fn(&ThreadContext, &mut GameMemory, &mut SoundBuffer);
-pub type UpdateAndRenderT = extern fn(&ThreadContext, &mut GameMemory, &Input, &mut VideoBuffer);
+pub type GetSoundSamplesT = extern "C" fn(&ThreadContext, &mut GameMemory, &mut SoundBuffer);
+pub type UpdateAndRenderT = extern "C" fn(&ThreadContext,
+                                          &mut GameMemory,
+                                          &Input,
+                                          &mut VideoBuffer);
 
 #[allow(dead_code)]
 pub struct ReadFileResult {
@@ -41,7 +44,7 @@ pub struct ReadFileResult {
 }
 
 pub struct VideoBuffer<'a> {
-    //Buffer memory is assumed to be BB GG RR xx
+    // Buffer memory is assumed to be BB GG RR xx
     pub memory: &'a mut [u32],
     pub width: usize,
     pub height: usize,
@@ -49,7 +52,7 @@ pub struct VideoBuffer<'a> {
 }
 
 pub struct SoundBuffer<'a> {
-    //Samples memory is assumed to be two channels interleaved
+    // Samples memory is assumed to be two channels interleaved
     pub samples: &'a mut [i16],
     pub samples_per_second: u32,
 }
@@ -85,7 +88,7 @@ pub struct ControllerInput {
 }
 
 impl ControllerInput {
-    //need to allow dead code because the function is only used in exe
+    // need to allow dead code because the function is only used in exe
     #[allow(dead_code)]
     pub fn zero_half_transitions(&mut self) {
         self.move_up.half_transitions = 0;
@@ -102,7 +105,7 @@ impl ControllerInput {
         self.back.half_transitions = 0;
     }
 
-    //need to allow dead code because the function is only used in the dll
+    // need to allow dead code because the function is only used in the dll
     #[allow(dead_code)]
     pub fn is_analog(&self) -> bool {
         self.average_x.is_some() && self.average_y.is_some()
@@ -126,9 +129,9 @@ pub struct Input {
 
     pub delta_t: f32,
 
-    //TODO: see if it fits rustaceans better if we have an Option of
-    //ControllerInputs here?
-    //The 0 Controller is the keyboard all the others are possible joysticks
+    // TODO: see if it fits rustaceans better if we have an Option of
+    // ControllerInputs here?
+    // The 0 Controller is the keyboard all the others are possible joysticks
     pub controllers: [ControllerInput; MAX_CONTROLLERS],
 }
 
@@ -155,10 +158,9 @@ impl Default for Input {
 #[allow(dead_code)]
 pub struct GameMemory<'a> {
     pub initialized: bool,
-    pub permanent: &'a mut[u8], //REQUIRED to be zeroed
-    pub transient: &'a mut[u8], //REQUIRED to be zeroed
+    pub permanent: &'a mut [u8], // REQUIRED to be zeroed
+    pub transient: &'a mut [u8], // REQUIRED to be zeroed
     pub platform_read_entire_file: PlatformReadEntireFileT,
     pub platform_write_entire_file: PlatformWriteEntireFileT,
     pub platform_free_file_memory: PlatformFreeFileMemoryT,
 }
-

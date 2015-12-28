@@ -452,16 +452,10 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                     };
                     for idx in 0..lf.max_hitpoints as usize {
                         let hp = &lf.hitpoints[idx];
-                        let (r, g, b) = if hp.filled != 0 {
-                            (1.0, 0.0, 0.0)
+                        let color = if hp.filled != 0 {
+                            Color { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }
                         } else {
-                            (0.5, 0.5, 0.5)
-                        };
-                        let color = Color {
-                            r: r,
-                            g: g,
-                            b: b,
-                            a: 1.0,
+                            Color { r: 0.5, g: 0.5, b: 0.5, a: 1.0 }
                         };
                         piece_group.push_rect(hit_p, 0.0, 0.0, health_dim, color);
                         hit_p = hit_p + d_hit_p;

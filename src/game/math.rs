@@ -62,6 +62,53 @@ impl<T> Rect<T> where T: PartialOrd
 }
 
 #[derive(Copy, Clone, Default, PartialEq)]
+pub struct V4<T> {
+    pub x: T,
+    pub y: T,
+    pub z: T,
+    pub w: T,
+}
+
+impl<T> V4<T> where T: Copy {
+    #[allow(dead_code)]
+    pub fn xyz(&self) -> V3<T> {
+        V3 {
+            x: self.x,
+            y: self.y,
+            z: self.z,
+        }
+    }
+}
+
+impl<T> V4<T> where T: Copy + ops::Add<Output = T> + ops::Mul<Output = T>
+{
+    #[allow(dead_code)]
+    pub fn length_sq(&self) -> T {
+        dot_4(*self, *self)
+    }
+}
+
+impl<T> V4<T> where T: num::Float
+{
+    #[allow(dead_code)]
+    pub fn length(&self) -> T {
+        let val = self.length_sq();
+        val.sqrt()
+    }
+
+    #[allow(dead_code)]
+    pub fn normalize(&self) -> V4<T> {
+        let length = self.length();
+        V4 {
+            x: self.x / length,
+            y: self.y / length,
+            z: self.z / length,
+            w: self.w / length,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Default, PartialEq)]
 pub struct V3<T> {
     pub x: T,
     pub y: T,
@@ -176,6 +223,13 @@ impl<T> V2<T> where T: num::Float
             y: self.y / length,
         }
     }
+}
+
+#[allow(dead_code)]
+pub fn dot_4<T>(a: V4<T>, b: V4<T>) -> T
+    where T: ops::Add<Output = T> + ops::Mul<Output = T>
+{
+    a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
 }
 
 #[allow(dead_code)]

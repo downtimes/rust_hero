@@ -318,7 +318,7 @@ pub extern fn update_and_render(context: &ThreadContext,
     graphics::draw_rect(video_buffer, Default::default(), buffer_dim, 
                         0.5, 0.5, 0.5);
 
-//    graphics::draw_bitmap(video_buffer, &state.background_bitmap, 0.0, 0.0);
+    graphics::draw_bitmap(video_buffer, &state.background_bitmap, 0.0, 0.0);
 
     let screen_center_x = 0.5 * video_buffer.width as f32;
     let screen_center_y = 0.5 * video_buffer.height as f32;

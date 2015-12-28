@@ -28,7 +28,7 @@ pub mod pointer {
 #[cfg(target_arch = "x86_64")]
 pub mod pointer {
     pub type LONG_PTR = i64;
-    pub type UINT_PTR= u64;
+    pub type UINT_PTR = u64;
 }
 
 pub type HINSTANCE = HANDLE;
@@ -70,7 +70,7 @@ pub const WM_KEYDOWN: c_uint = 0x0100;
 pub const WM_KEYUP: c_uint = 0x0101;
 pub const WM_SYSKEYDOWN: c_uint = 0x0104;
 pub const WM_SYSKEYUP: c_uint = 0x0105;
-pub const WM_SETCURSOR: c_uint = 0x0020; 
+pub const WM_SETCURSOR: c_uint = 0x0020;
 
 
 pub const FILE_MAP_WRITE: DWORD = 0x0002;
@@ -91,7 +91,7 @@ pub const VK_DOWN: u8 = 0x28u8;
 pub const VK_F4: u8 = 0x73u8;
 pub const VK_RETURN: u8 = 0x0Du8;
 
-pub const GWL_STYLE: c_int = -16; 
+pub const GWL_STYLE: c_int = -16;
 
 pub const MONITOR_DEFAULTTOPRIMARY: DWORD = 1;
 
@@ -119,8 +119,9 @@ pub const WS_SYSMENU: LONG = 0x00080000;
 pub const WS_THICKFRAME: LONG = 0x00040000;
 pub const WS_MINIMIZEBOX: LONG = 0x00020000;
 pub const WS_MAXIMIZEBOX: LONG = 0x00010000;
-pub const WS_OVERLAPPEDWINDOW: LONG = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |
-                                     WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+pub const WS_OVERLAPPEDWINDOW: LONG = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME |
+                                      WS_MINIMIZEBOX |
+                                      WS_MAXIMIZEBOX;
 pub const WS_VISIBLE: DWORD = 0x10000000;
 
 pub const BLACKNESS: DWORD = 0x00000042;
@@ -174,7 +175,7 @@ pub struct XINPUT_GAMEPAD {
 
 impl Default for XINPUT_GAMEPAD {
     fn default() -> XINPUT_GAMEPAD {
-        XINPUT_GAMEPAD { 
+        XINPUT_GAMEPAD {
             wButtons: 0,
             bLeftTrigger: 0,
             bRightTrigger: 0,
@@ -207,18 +208,18 @@ impl Default for WIN32_FILE_ATTRIBUTE_DATA {
     fn default() -> WIN32_FILE_ATTRIBUTE_DATA {
         WIN32_FILE_ATTRIBUTE_DATA {
             dwFileAttributes: 0,
-            ftCreateonTime: FILETIME { 
-                                dwLowDateTime: 0,
-                                dwHighDateTime: 0,
-                            },
-            ftLastAccessTime: FILETIME { 
-                                dwLowDateTime: 0,
-                                dwHighDateTime: 0,
-                            },
-            ftLastWriteTime: FILETIME { 
-                                dwLowDateTime: 0,
-                                dwHighDateTime: 0,
-                            },
+            ftCreateonTime: FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
+            ftLastAccessTime: FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
+            ftLastWriteTime: FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
             nFileSizeHeigh: 0,
             nFileSizeLow: 0,
         }
@@ -292,10 +293,7 @@ pub struct POINT {
 
 impl Default for POINT {
     fn default() -> POINT {
-        POINT {
-            x: 0,
-            y: 0,
-        }
+        POINT { x: 0, y: 0 }
     }
 }
 
@@ -309,14 +307,16 @@ pub struct MSG {
     pub point: POINT,
 }
 
-impl Default for MSG{
+impl Default for MSG {
     fn default() -> MSG {
-        MSG{hwnd: 0 as HWND,
+        MSG {
+            hwnd: 0 as HWND,
             message: 0 as c_uint,
             wparam: 0 as WPARAM,
             lparam: 0 as LPARAM,
             time: 0 as DWORD,
-            point: POINT{x: 0, y: 0}}
+            point: POINT { x: 0, y: 0 },
+        }
     }
 }
 
@@ -332,12 +332,14 @@ pub struct PAINTSTRUCT {
 
 impl Default for PAINTSTRUCT {
     fn default() -> PAINTSTRUCT {
-        PAINTSTRUCT{hdc: 0 as HDC,
-                    fErase: 0 as BOOL,
-                    rcPasize: Default::default(),
-                    fRestore: 0 as BOOL,
-                    fIncUpdate: 0 as BOOL,
-                    rgbReserved: [0 as BYTE; 32]}
+        PAINTSTRUCT {
+            hdc: 0 as HDC,
+            fErase: 0 as BOOL,
+            rcPasize: Default::default(),
+            fRestore: 0 as BOOL,
+            fIncUpdate: 0 as BOOL,
+            rgbReserved: [0 as BYTE; 32],
+        }
     }
 }
 
@@ -352,8 +354,12 @@ pub struct RECT {
 
 impl Default for RECT {
     fn default() -> RECT {
-        RECT { left: 0, right:0,
-               bottom: 0, top: 0 }
+        RECT {
+            left: 0,
+            right: 0,
+            bottom: 0,
+            top: 0,
+        }
     }
 }
 
@@ -456,60 +462,91 @@ impl Default for BITMAPINFO {
     }
 }
 
-//user32 and kernel32
+// user32 and kernel32
 extern "system" {
     pub fn PostQuitMessage(nExitCode: c_int);
     pub fn GetModuleHandleA(lpModuleName: LPCTSTR) -> HMODULE;
-    pub fn DefWindowProcA(window: HWND, message: c_uint, 
-                         wparam: WPARAM, lparam: LPARAM) -> LRESULT;
+    pub fn DefWindowProcA(window: HWND,
+                          message: c_uint,
+                          wparam: WPARAM,
+                          lparam: LPARAM)
+                          -> LRESULT;
     pub fn RegisterClassA(class: *const WNDCLASS) -> ATOM;
-    pub fn CreateWindowExA(exStyle: DWORD, className: LPCTSTR, windowName : LPCTSTR,
-                          style: DWORD, x: c_int, y: c_int, width: c_int,
-                          height: c_int, parent: HWND, menu: HMENU,
-                          instance: HINSTANCE, param: LPVOID) -> HWND;
-    pub fn GetMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: c_uint,
-                       msgFilterMax: c_uint) -> BOOL;
-    pub fn PeekMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: c_uint,
-                        msgFIlterMax: c_uint, removeMsg: c_uint) -> BOOL;
+    pub fn CreateWindowExA(exStyle: DWORD,
+                           className: LPCTSTR,
+                           windowName: LPCTSTR,
+                           style: DWORD,
+                           x: c_int,
+                           y: c_int,
+                           width: c_int,
+                           height: c_int,
+                           parent: HWND,
+                           menu: HMENU,
+                           instance: HINSTANCE,
+                           param: LPVOID)
+                           -> HWND;
+    pub fn GetMessageA(msg: LPMSG, hwnd: HWND, msgFilterMin: c_uint, msgFilterMax: c_uint) -> BOOL;
+    pub fn PeekMessageA(msg: LPMSG,
+                        hwnd: HWND,
+                        msgFilterMin: c_uint,
+                        msgFIlterMax: c_uint,
+                        removeMsg: c_uint)
+                        -> BOOL;
     pub fn TranslateMessage(msg: *const MSG) -> BOOL;
     pub fn DispatchMessageA(msg: *const MSG) -> LRESULT;
     pub fn GetClientRect(hwnd: HWND, lpRect: LPRECT) -> BOOL;
-    pub fn ReleaseDC(hWnd: HWND, hDC : HDC) -> c_int;
+    pub fn ReleaseDC(hWnd: HWND, hDC: HDC) -> c_int;
     pub fn GetDC(hWnd: HWND) -> HDC;
     pub fn LoadLibraryA(lpFileName: LPCSTR) -> HMODULE;
     pub fn FreeLibrary(hModule: HMODULE) -> BOOL;
     pub fn GetProcAddress(hModule: HMODULE, lpProcName: LPCSTR) -> *const c_void;
     pub fn GetWindowLongPtrA(hWnd: HWND, nIndex: c_int) -> pointer::LONG_PTR;
-    pub fn SetWindowLongPtrA(hWnd: HWND, nIndex: c_int, 
-                             dwNewLong: pointer::LONG_PTR) -> pointer::LONG_PTR;
-    pub fn CreateFileA(lpFileName: LPCTSTR, dwDesiredAccess: DWORD,
-                      dwShareMode: DWORD, lpSecurityAttributes: *mut SECURITY_ATTRIBUTES,
-                      dwCreationDisposition: DWORD, dwFlagsAndAttributes: DWORD,
-                      hTemplateFile: HANDLE) -> HANDLE;
+    pub fn SetWindowLongPtrA(hWnd: HWND,
+                             nIndex: c_int,
+                             dwNewLong: pointer::LONG_PTR)
+                             -> pointer::LONG_PTR;
+    pub fn CreateFileA(lpFileName: LPCTSTR,
+                       dwDesiredAccess: DWORD,
+                       dwShareMode: DWORD,
+                       lpSecurityAttributes: *mut SECURITY_ATTRIBUTES,
+                       dwCreationDisposition: DWORD,
+                       dwFlagsAndAttributes: DWORD,
+                       hTemplateFile: HANDLE)
+                       -> HANDLE;
     pub fn GetFileSizeEx(hFile: HANDLE, lpFileSize: *mut i64) -> BOOL;
     pub fn Sleep(dwMilliseconds: DWORD);
-    pub fn CopyFileA(lpExistingFileName: LPCTSTR, lpNewFileName: LPCTSTR,
-                    bFeilIfExists: BOOL) -> BOOL;
-    pub fn GetFileAttributesExA(lpFileName: LPCTSTR, 
+    pub fn CopyFileA(lpExistingFileName: LPCTSTR,
+                     lpNewFileName: LPCTSTR,
+                     bFeilIfExists: BOOL)
+                     -> BOOL;
+    pub fn GetFileAttributesExA(lpFileName: LPCTSTR,
                                 fInfoLevelId: GET_FILEEX_INFO_LEVELS,
-                                lpFileInformation: LPVOID) -> BOOL;
-    pub fn CompareFileTime(lpFileTime1: *const FILETIME,
-                           lpFileTime2: *const FILETIME) -> LONG;
-    pub fn GetModuleFileNameA(hModule: HMODULE, lpFilename: LPTSTR,
-                             nSize: DWORD) -> DWORD;
+                                lpFileInformation: LPVOID)
+                                -> BOOL;
+    pub fn CompareFileTime(lpFileTime1: *const FILETIME, lpFileTime2: *const FILETIME) -> LONG;
+    pub fn GetModuleFileNameA(hModule: HMODULE, lpFilename: LPTSTR, nSize: DWORD) -> DWORD;
     pub fn GetCursorPos(lpPosize: *mut POINT) -> BOOL;
     pub fn GetKeyState(nVirtKey: c_int) -> SHORT;
     pub fn ScreenToClient(hWnd: HWND, lpPosize: *mut POINT) -> BOOL;
-    pub fn CreateFileMappingA(hFile: HANDLE, lpAttributes: *mut SECURITY_ATTRIBUTES,
-                             flProtect: DWORD, dwMaximumSizeHigh: DWORD,
-                             dwMaximumSizeLow: DWORD, lpName: LPCTSTR) -> HANDLE;
-    pub fn RtlCopyMemory(Destination: LPVOID, Source: *const c_void,
-                      Length: SIZE_T);
+    pub fn CreateFileMappingA(hFile: HANDLE,
+                              lpAttributes: *mut SECURITY_ATTRIBUTES,
+                              flProtect: DWORD,
+                              dwMaximumSizeHigh: DWORD,
+                              dwMaximumSizeLow: DWORD,
+                              lpName: LPCTSTR)
+                              -> HANDLE;
+    pub fn RtlCopyMemory(Destination: LPVOID, Source: *const c_void, Length: SIZE_T);
     pub fn LoadCursorA(hInstance: HINSTANCE, lpCursorName: LPCTSTR) -> HCURSOR;
     pub fn SetCursor(hCursor: HCURSOR) -> HCURSOR;
     pub fn GetWindowLongA(hWnd: HWND, nIndex: c_int) -> LONG;
-    pub fn SetWindowPos(hWnd: HWND, hWndInsertAfter: HWND, X: c_int,
-                        Y: c_int, cx: c_int, cy: c_int, uflags: UINT) -> BOOL;
+    pub fn SetWindowPos(hWnd: HWND,
+                        hWndInsertAfter: HWND,
+                        X: c_int,
+                        Y: c_int,
+                        cx: c_int,
+                        cy: c_int,
+                        uflags: UINT)
+                        -> BOOL;
     pub fn SetWindowLongA(hWnd: HWND, nIndex: c_int, dwNewLong: LONG) -> LONG;
     pub fn GetWindowPlacement(hWnd: HWND, lpwndpl: *mut WINDOWPLACEMENT) -> BOOL;
     pub fn SetWindowPlacement(hWnd: HWND, lpwndpl: *const WINDOWPLACEMENT) -> BOOL;
@@ -521,16 +558,34 @@ extern "system" {
 extern "system" {
     pub fn BeginPaint(hwnd: HWND, lpPasize: LPPAINTSTRUCT) -> HDC;
     pub fn EndPaint(hwnd: HWND, lpPasize: *const PAINTSTRUCT) -> BOOL;
-    pub fn PatBlt(hdc: HDC, nXLeft: c_int, nYLeft: c_int, nWidth: c_int, nHeight: c_int,
-                  dwRop: DWORD) -> BOOL;
-    pub fn CreateDIBSection(hdc: HDC, pbmi: *const BITMAPINFO, iUsage: c_uint,
-                            pvBits: *mut *mut c_void, hSection: HANDLE,
-                            dwOffset: DWORD) -> HBITMAP;
-    pub fn StretchDIBits(hdc: HDC, XDest: c_int, YDEst: c_int, nDestWidth: c_int,
-                        nDestHeight: c_int, XSrc: c_int, YSrc: c_int, nSrcWidth: c_int,
-                        nSrcHeight: c_int, lpBits: *const c_void,
-                        lpBitsInfo: *const BITMAPINFO, iUsage: c_uint,
-                        dwRop: DWORD) -> c_int;
+    pub fn PatBlt(hdc: HDC,
+                  nXLeft: c_int,
+                  nYLeft: c_int,
+                  nWidth: c_int,
+                  nHeight: c_int,
+                  dwRop: DWORD)
+                  -> BOOL;
+    pub fn CreateDIBSection(hdc: HDC,
+                            pbmi: *const BITMAPINFO,
+                            iUsage: c_uint,
+                            pvBits: *mut *mut c_void,
+                            hSection: HANDLE,
+                            dwOffset: DWORD)
+                            -> HBITMAP;
+    pub fn StretchDIBits(hdc: HDC,
+                         XDest: c_int,
+                         YDEst: c_int,
+                         nDestWidth: c_int,
+                         nDestHeight: c_int,
+                         XSrc: c_int,
+                         YSrc: c_int,
+                         nSrcWidth: c_int,
+                         nSrcHeight: c_int,
+                         lpBits: *const c_void,
+                         lpBitsInfo: *const BITMAPINFO,
+                         iUsage: c_uint,
+                         dwRop: DWORD)
+                         -> c_int;
     pub fn DeleteObject(hObject: HGDIOBJ) -> BOOL;
     pub fn CreateCompatibleDC(hdc: HDC) -> HDC;
     pub fn GetDeviceCaps(hdc: HDC, nIndex: c_int) -> c_int;

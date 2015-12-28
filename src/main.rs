@@ -28,4 +28,3 @@ mod linux;
 fn main() {
     linux::linuxmain();
 }
-

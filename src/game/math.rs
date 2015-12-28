@@ -7,7 +7,8 @@ pub struct Rect<T> {
     pub max: V2<T>,
 }
 
-impl<T> Rect<T> where T: Copy {
+impl<T> Rect<T> where T: Copy
+{
     pub fn get_min(&self) -> V2<T> {
         self.min
     }
@@ -25,8 +26,10 @@ impl<T> Rect<T> where T: Copy {
     }
 }
 
-impl<T> Rect<T> where V2<T>: ops::Add<Output=V2<T>>,
-                      T: Copy {
+impl<T> Rect<T>
+    where V2<T>: ops::Add<Output = V2<T>>,
+          T: Copy
+{
     #[allow(dead_code)]
     pub fn min_dim(min: V2<T>, dim: V2<T>) -> Rect<T> {
         Rect::<T> {
@@ -36,7 +39,8 @@ impl<T> Rect<T> where V2<T>: ops::Add<Output=V2<T>>,
     }
 }
 
-impl<T> Rect<T> where T: num::Float {
+impl<T> Rect<T> where T: num::Float
+{
     pub fn center_dim(center: V2<T>, dim: V2<T>) -> Rect<T> {
         Rect::<T> {
             min: center - dim * num::traits::cast(0.5).unwrap(),
@@ -50,31 +54,30 @@ impl<T> Rect<T> where T: num::Float {
     }
 }
 
-impl<T> Rect<T> where T: PartialOrd {
+impl<T> Rect<T> where T: PartialOrd
+{
     pub fn p_inside(&self, p: V2<T>) -> bool {
-        p.x >= self.min.x &&
-        p.y >= self.min.y &&
-        p.x < self.max.x &&
-        p.y < self.max.y
+        p.x >= self.min.x && p.y >= self.min.y && p.x < self.max.x && p.y < self.max.y
     }
 }
 
 #[derive(Copy, Clone, Default, PartialEq)]
-pub struct V3<T> { 
+pub struct V3<T> {
     pub x: T,
     pub y: T,
     pub z: T,
 }
 
-impl<T> V3<T> where T: Copy + ops::Add<Output=T> + ops::Mul<Output=T> {
+impl<T> V3<T> where T: Copy + ops::Add<Output = T> + ops::Mul<Output = T>
+{
     #[allow(dead_code)]
     pub fn length_sq(&self) -> T {
         dot_3(*self, *self)
     }
-
 }
 
-impl<T> V3<T> where T: num::Float {
+impl<T> V3<T> where T: num::Float
+{
     #[allow(dead_code)]
     pub fn length(&self) -> T {
         let val = self.length_sq();
@@ -92,12 +95,13 @@ impl<T> V3<T> where T: num::Float {
     }
 }
 
-impl<T> ops::Mul<T> for V3<T> where T: Copy + ops::Mul<Output=T> {
+impl<T> ops::Mul<T> for V3<T> where T: Copy + ops::Mul<Output = T>
+{
     type Output = V3<T>;
 
     fn mul(self, other: T) -> V3<T> {
         V3::<T> {
-            x: self.x * other, 
+            x: self.x * other,
             y: self.y * other,
             z: self.z * other,
         }
@@ -105,24 +109,26 @@ impl<T> ops::Mul<T> for V3<T> where T: Copy + ops::Mul<Output=T> {
 }
 
 
-impl<T> ops::Add<V3<T>> for V3<T> where T: ops::Add<Output=T>{
+impl<T> ops::Add<V3<T>> for V3<T> where T: ops::Add<Output = T>
+{
     type Output = V3<T>;
 
     fn add(self, other: V3<T>) -> V3<T> {
         V3::<T> {
-            x: self.x + other.x, 
+            x: self.x + other.x,
             y: self.y + other.y,
             z: self.z + other.z,
         }
     }
 }
 
-impl<T> ops::Sub<V3<T>> for V3<T> where T: ops::Sub<Output=T> {
+impl<T> ops::Sub<V3<T>> for V3<T> where T: ops::Sub<Output = T>
+{
     type Output = V3<T>;
 
     fn sub(self, other: V3<T>) -> V3<T> {
         V3::<T> {
-            x: self.x - other.x, 
+            x: self.x - other.x,
             y: self.y - other.y,
             z: self.z - other.z,
         }
@@ -130,12 +136,13 @@ impl<T> ops::Sub<V3<T>> for V3<T> where T: ops::Sub<Output=T> {
 }
 
 
-impl<T> ops::Neg for V3<T> where T: ops::Neg<Output=T> {
+impl<T> ops::Neg for V3<T> where T: ops::Neg<Output = T>
+{
     type Output = V3<T>;
 
     fn neg(self) -> V3<T> {
         V3::<T> {
-            x: -self.x, 
+            x: -self.x,
             y: -self.y,
             z: -self.z,
         }
@@ -143,19 +150,20 @@ impl<T> ops::Neg for V3<T> where T: ops::Neg<Output=T> {
 }
 
 #[derive(Copy, Clone, Default, PartialEq)]
-pub struct V2<T> { 
+pub struct V2<T> {
     pub x: T,
     pub y: T,
 }
 
-impl<T> V2<T> where T: Copy + ops::Add<Output=T> + ops::Mul<Output=T> {
+impl<T> V2<T> where T: Copy + ops::Add<Output = T> + ops::Mul<Output = T>
+{
     pub fn length_sq(&self) -> T {
         dot_2(*self, *self)
     }
-
 }
 
-impl<T> V2<T> where T: num::Float {
+impl<T> V2<T> where T: num::Float
+{
     pub fn length(&self) -> T {
         let val = self.length_sq();
         val.sqrt()
@@ -171,58 +179,64 @@ impl<T> V2<T> where T: num::Float {
 }
 
 #[allow(dead_code)]
-pub fn dot_3<T>(a: V3<T>, b: V3<T>) -> T where T: ops::Add<Output=T>
-                                                + ops::Mul<Output=T> {
+pub fn dot_3<T>(a: V3<T>, b: V3<T>) -> T
+    where T: ops::Add<Output = T> + ops::Mul<Output = T>
+{
     a.x * b.x + a.y * b.y + a.z * b.z
 }
 
-pub fn dot_2<T>(a: V2<T>, b: V2<T>) -> T where T: ops::Add<Output=T>
-                                                + ops::Mul<Output=T> {
+pub fn dot_2<T>(a: V2<T>, b: V2<T>) -> T
+    where T: ops::Add<Output = T> + ops::Mul<Output = T>
+{
     a.x * b.x + a.y * b.y
 }
 
-impl<T> ops::Mul<T> for V2<T> where T: Copy + ops::Mul<Output=T> {
+impl<T> ops::Mul<T> for V2<T> where T: Copy + ops::Mul<Output = T>
+{
     type Output = V2<T>;
 
     fn mul(self, other: T) -> V2<T> {
         V2::<T> {
-            x: self.x * other, 
-            y: self.y * other
+            x: self.x * other,
+            y: self.y * other,
         }
     }
 }
 
 
-impl<T> ops::Add<V2<T>> for V2<T> where T: ops::Add<Output=T>{
+impl<T> ops::Add<V2<T>> for V2<T> where T: ops::Add<Output = T>
+{
     type Output = V2<T>;
 
     fn add(self, other: V2<T>) -> V2<T> {
         V2::<T> {
-            x: self.x + other.x, 
-            y: self.y + other.y
+            x: self.x + other.x,
+            y: self.y + other.y,
         }
     }
 }
 
-impl<T> ops::Sub<V2<T>> for V2<T> where T: ops::Sub<Output=T> {
+impl<T> ops::Sub<V2<T>> for V2<T> where T: ops::Sub<Output = T>
+{
     type Output = V2<T>;
 
     fn sub(self, other: V2<T>) -> V2<T> {
         V2::<T> {
-            x: self.x - other.x, 
-            y: self.y - other.y
+            x: self.x - other.x,
+            y: self.y - other.y,
         }
     }
 }
 
 
-impl<T> ops::Neg for V2<T> where T: ops::Neg<Output=T> {
+impl<T> ops::Neg for V2<T> where T: ops::Neg<Output = T>
+{
     type Output = V2<T>;
 
     fn neg(self) -> V2<T> {
         V2::<T> {
-            x: -self.x, 
-            y: -self.y
+            x: -self.x,
+            y: -self.y,
         }
     }
 }

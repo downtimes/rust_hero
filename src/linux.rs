@@ -1,4 +1,4 @@
-use libc::{mode_t, size_t, S_IRUSR, S_IWUSR};
+use libc::{mode_t, size_t, S_IRUSR, S_IWUSR, S_IXUSR};
 use libc::{open, close, mmap, munmap, MAP_PRIVATE, MAP_FAILED, MAP_ANON};
 use libc::{O_RDONLY, O_WRONLY, O_CREAT, PROT_READ, PROT_WRITE, fstat, stat};
 use std::default::Default;
@@ -15,31 +15,15 @@ use common::util;
 use common::{GetSoundSamplesT, UpdateAndRenderT, Input, SoundBuffer, Button};
 use common::{ControllerInput, VideoBuffer, GameMemory, ThreadContext};
 
-fn get_stat_struct() -> stat {
-    stat {
-        st_dev: 0,
-        st_ino: 0,
-        st_nlink: 0,
-        st_mode: 0,
-        st_uid: 0,
-        st_gid: 0,
-        __pad0: 0,
-        st_rdev: 0,
-        st_size: 0,
-        st_blksize: 0,
-        st_blocks: 0,
-        st_atime: 0,
-        st_atime_nsec: 0,
-        st_mtime: 0,
-        st_mtime_nsec: 0,
-        st_ctime: 0,
-        st_ctime_nsec: 0,
-        __unused: [0; 3],
-    }
-}
-
 const S_IRGRP: mode_t = 32;
 const S_IROTH: mode_t = 4;
+
+#[derive(Eq, PartialEq)]
+enum TimeComp {
+    Earlier,
+    Later,
+    Same,
+}
 
 #[allow(unused_imports)]
 #[allow(dead_code)]
@@ -52,6 +36,7 @@ mod debug {
     use std::ptr;
     use std::default::Default;
     use std::ffi::CString;
+    use std::mem;
 
     use common::{ThreadContext, ReadFileResult};
     use common::util;
@@ -66,7 +51,7 @@ mod debug {
             unsafe { open(name.as_ptr(), O_RDONLY, 0) };
 
         if handle != -1 {
-            let mut file_stat: stat = super::get_stat_struct();
+            let mut file_stat: stat = unsafe { mem::uninitialized() };
             if unsafe { fstat(handle, &mut file_stat) != -1 } {
                 let size = util::safe_truncate_u64(file_stat.st_size as u64);
                 let memory: *mut c_void =
@@ -81,7 +66,7 @@ mod debug {
                     while bytes_to_read > 0 {
                         let bytes_read = unsafe { read(handle,
                                                        next_write_byte as *mut c_void,
-                                                       bytes_to_read as u64) };
+                                                       bytes_to_read as usize) };
                         if bytes_read == -1 {
                             break;
                         }
@@ -106,7 +91,7 @@ mod debug {
                 println!("Fstat for the File was not successfull! ({})", filename);
             }
             unsafe { close(handle); }
-        } else { 
+        } else {
             println!("The File could not be opened! ({})", filename);
         }
 
@@ -117,7 +102,7 @@ mod debug {
                                      memory: *mut u8,
                                      size: u32) {
         if !memory.is_null() {
-            unsafe { munmap(memory as *mut c_void, size as u64); }
+            unsafe { munmap(memory as *mut c_void, size as usize); }
         }
     }
 
@@ -137,7 +122,7 @@ mod debug {
             while bytes_to_write > 0 {
                 let bytes_written = unsafe { write(handle,
                                                    byte_to_write as *const c_void,
-                                                   bytes_to_write as u64) };
+                                                   bytes_to_write as usize) };
                 if bytes_written == -1 {
                     break;
                 }
@@ -190,19 +175,19 @@ struct SdlSoundOutput {
 
 struct Game {
     handle: *mut c_void,
-    get_sound_samples: GetSoundSamplesT, 
+    get_sound_samples: GetSoundSamplesT,
     update_and_render: UpdateAndRenderT,
     write_time: linux::timespec,
 }
 
 
-//Stub functons if none of the game Code could be loaded! 
-extern fn get_sound_samples_stub(_: &ThreadContext, _: &mut GameMemory, _: &mut SoundBuffer) { }
-extern fn update_and_render_stub(_: &ThreadContext, _: &mut GameMemory, _: &Input, _: &mut VideoBuffer) { } 
+//Stub functons if none of the game Code could be loaded!
+extern fn get_sound_samples_stub(_: &ThreadContext, _: &mut GameMemory, _: &mut SoundBuffer) { panic!("No sound function") }
+extern fn update_and_render_stub(_: &ThreadContext, _: &mut GameMemory, _: &Input, _: &mut VideoBuffer) { panic!("no update_and_render function") }
 
 
 fn get_last_write_time(file_path: &CString) -> linux::timespec {
-    let mut file_stat = get_stat_struct();
+    let mut file_stat = unsafe { mem::uninitialized() };
     if unsafe { stat(file_path.as_ptr(), &mut file_stat) != -1 } {
         linux::timespec {
             tv_sec: file_stat.st_mtime,
@@ -220,7 +205,7 @@ fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
 
     let in_fd = unsafe { open(game_so_name.as_ptr(), O_RDONLY, 0) };
     let out_fd = unsafe { open(temp_so_name.as_ptr(), O_WRONLY | O_CREAT,
-                          S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) };
+                          S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IROTH) };
 
     let mut result = Game {
         handle: ptr::null_mut(),
@@ -228,12 +213,12 @@ fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
         update_and_render: update_and_render_stub,
         write_time: linux::timespec { tv_sec: 0 , tv_nsec: 0 },
     };
-    
-    let mut file_stat: stat = get_stat_struct();
+
+    let mut file_stat: stat = unsafe { mem::uninitialized() };
     if unsafe { fstat(in_fd, &mut file_stat) != -1 } {
-        let size = file_stat.st_size as u64;
-        unsafe { 
-            linux::sendfile(out_fd, in_fd, ptr::null_mut(), size); 
+        let size = file_stat.st_size as usize;
+        unsafe {
+            linux::sendfile(out_fd, in_fd, ptr::null_mut(), size);
             result.write_time = get_last_write_time(temp_so_name);
             result.handle = linux::dlopen(temp_so_name.as_ptr(), linux::RTLD_LAZY);
 
@@ -241,9 +226,9 @@ fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
                 let get_sound_samples_name = CString::new("get_sound_samples").unwrap();
                 let update_and_render_name = CString::new("update_and_render").unwrap();
 
-                let get_sound_samples = linux::dlsym(result.handle, 
+                let get_sound_samples = linux::dlsym(result.handle,
                                                      get_sound_samples_name.as_ptr());
-                let update_and_render = linux::dlsym(result.handle, 
+                let update_and_render = linux::dlsym(result.handle,
                                                      update_and_render_name.as_ptr());
                 if !get_sound_samples.is_null() && !update_and_render.is_null() {
                     result.get_sound_samples = mem::transmute(get_sound_samples);
@@ -251,10 +236,9 @@ fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
                 }
             }
         }
-        
     }
 
-    unsafe { 
+    unsafe {
         close(in_fd);
         close(out_fd);
     }
@@ -273,7 +257,7 @@ fn unload_game_functions(game: &mut Game) {
 
 extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8,
                              length: c_int) {
-    let ring_buffer: &mut SdlAudioRingBuffer = 
+    let ring_buffer: &mut SdlAudioRingBuffer =
         unsafe { mem::transmute(user_data as *mut SdlAudioRingBuffer) };
 
     let mut region_size = length;
@@ -337,7 +321,7 @@ fn fill_sound_buffer(output: &mut SdlSoundOutput, byte_to_lock: i32,
     let region: *mut u8 = unsafe { ring_buffer.data
                                         .offset(byte_to_lock as isize) };
 
-    let region_size = 
+    let region_size =
         if bytes_to_write + byte_to_lock > output.secondary_buffer_size {
             output.secondary_buffer_size - byte_to_lock
         } else {
@@ -352,11 +336,11 @@ fn fill_sound_buffer(output: &mut SdlSoundOutput, byte_to_lock: i32,
     let region_sample_count = region_size/BYTES_PER_SAMPLE;
     let mut sample_out = region as *mut i16;
     for _ in 0..region_sample_count {
-        unsafe { 
+        unsafe {
             *sample_out = *samples;
             sample_out = sample_out.offset(1);
             samples = samples.offset(1);
-    
+
             *sample_out = *samples;
             sample_out = sample_out.offset(1);
             samples = samples.offset(1);
@@ -368,11 +352,11 @@ fn fill_sound_buffer(output: &mut SdlSoundOutput, byte_to_lock: i32,
     let region2_sample_count = region2_size/BYTES_PER_SAMPLE;
     let mut sample_out = region2 as *mut i16;
     for _ in 0..region2_sample_count {
-        unsafe { 
+        unsafe {
             *sample_out = *samples;
             sample_out = sample_out.offset(1);
             samples = samples.offset(1);
-    
+
             *sample_out = *samples;
             sample_out = sample_out.offset(1);
             samples = samples.offset(1);
@@ -397,7 +381,7 @@ fn init_audio(samples_per_second: i32, buffer_size: i32,
     };
 
     ring_buffer.size = buffer_size;
-    ring_buffer.data = unsafe { mmap(ptr::null_mut(), buffer_size as u64,
+    ring_buffer.data = unsafe { mmap(ptr::null_mut(), buffer_size as usize,
                                      PROT_READ | PROT_WRITE,
                                      MAP_PRIVATE | MAP_ANON, -1, 0) as *mut u8};
     ring_buffer.play_cursor = 0;
@@ -457,7 +441,7 @@ fn process_key_press(button: &mut Button, is_down: bool) {
     button.half_transitions += 1;
 }
 
-fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer, 
+fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer,
                 keyboard: &mut ControllerInput) -> bool {
 
     let mut keep_running = true;
@@ -495,11 +479,11 @@ fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer,
                 };
 
             if was_down != is_down {
-                let alt_key_down = 
+                let alt_key_down =
                     if (keyboard_event.keysym._mod & KMOD_ALT) != 0 {
                         true
                     } else {
-                        false 
+                        false
                     };
                 match code {
                     SDLK_F4 => if alt_key_down { keep_running = false; },
@@ -514,7 +498,7 @@ fn handle_event(event: &SDL_Event, buffer: &mut BackBuffer,
                     SDLK_RIGHT => process_key_press(&mut keyboard.action_right, is_down),
                     SDLK_DOWN => process_key_press(&mut keyboard.action_down, is_down),
                     SDLK_ESCAPE => process_key_press(&mut keyboard.back, is_down),
-                    SDLK_SPACE => process_key_press(&mut keyboard.start, is_down), 
+                    SDLK_SPACE => process_key_press(&mut keyboard.start, is_down),
                     _ => (),
                 }
             }
@@ -563,14 +547,14 @@ fn get_exe_path() -> PathBuf {
     read_link("/proc/self/exe").unwrap()
 }
 
-fn compare_file_time(time1: &linux::timespec, time2: &linux::timespec) -> i8 {
+fn compare_file_time(time1: &linux::timespec, time2: &linux::timespec) -> TimeComp {
     if (time1.tv_sec == time2.tv_sec) && (time1.tv_nsec == time2.tv_nsec) {
-        0
-    } else if (time1.tv_sec > time2.tv_sec) || 
+        TimeComp::Same
+    } else if (time1.tv_sec > time2.tv_sec) ||
               ((time1.tv_sec == time2.tv_sec) && (time1.tv_nsec > time2.tv_nsec)) {
-        -1
+        TimeComp::Earlier
     } else {
-        1
+        TimeComp::Later
     }
 }
 
@@ -592,7 +576,7 @@ fn get_window_refresh_rate(window: *mut SDL_Window) -> c_int {
 }
 
 pub fn linuxmain() {
-    if unsafe { SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER 
+    if unsafe { SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER
                         | SDL_INIT_AUDIO) != 0 } {
         panic!("SDL initialisation failed!");
     }
@@ -623,7 +607,7 @@ pub fn linuxmain() {
                         };
         resize_texture(renderer, &mut buffer, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-        let monitor_refresh_rate = get_window_refresh_rate(window); 
+        let monitor_refresh_rate = get_window_refresh_rate(window);
         let game_refresh_rate = monitor_refresh_rate / 2;
         let target_seconds_per_frame = 1.0 / game_refresh_rate as f32;
 
@@ -647,10 +631,10 @@ pub fn linuxmain() {
                    &mut ring_buffer);
 
         unsafe { SDL_PauseAudio(0); }
-        let mut sound_samples: &mut [i16] = unsafe { 
+        let mut sound_samples: &mut [i16] = unsafe {
             //Allocation implicitly freed at the end of the execution
             let data = mmap(ptr::null_mut(),
-                            (SAMPLES_PER_SECOND * BYTES_PER_SAMPLE) as u64, 
+                            (SAMPLES_PER_SECOND * BYTES_PER_SAMPLE) as usize,
                             PROT_READ | PROT_WRITE,
                             MAP_PRIVATE | MAP_ANON, -1, 0);
             if data.is_null() {
@@ -667,18 +651,18 @@ pub fn linuxmain() {
         let total_size = permanent_store_size + transient_store_size;
 
         let memory = unsafe { mmap(base_address as *mut c_void,
-                                  total_size as u64, PROT_READ | PROT_WRITE,
+                                  total_size as usize, PROT_READ | PROT_WRITE,
                                   MAP_PRIVATE | MAP_ANON, -1, 0)  };
-            
+
         if memory.is_null() { panic!("Memory for the Game could not be obtained!"); }
 
-        let mut game_memory: GameMemory = 
+        let mut game_memory: GameMemory =
             GameMemory {
                 initialized: false,
-                permanent: unsafe { slice::from_raw_parts_mut(memory as *mut u8, 
+                permanent: unsafe { slice::from_raw_parts_mut(memory as *mut u8,
                                                               permanent_store_size) },
                 transient: unsafe { slice::from_raw_parts_mut((memory as *mut u8)
-                                                              .offset(permanent_store_size as isize), 
+                                                              .offset(permanent_store_size as isize),
                                                               transient_store_size) },
                 platform_read_entire_file: debug::platform_read_entire_file,
                 platform_write_entire_file: debug::platform_write_entire_file,
@@ -686,19 +670,19 @@ pub fn linuxmain() {
             };
 
         let frequency = unsafe { SDL_GetPerformanceFrequency() };
-        
+
         let mut exe_dirname = get_exe_path();
         exe_dirname.pop();
 
         let mut game_so_path = exe_dirname.clone();
-        game_so_path.push("libgame.so");
+        game_so_path.push("deps/libgame.so");
 
         let mut temp_so_path = exe_dirname.clone();
-        temp_so_path.push("libgame_temp.so");
+        temp_so_path.push("deps/libgame_temp.so");
 
         let game_so_string = CString::new(game_so_path.to_str().unwrap()).unwrap();
         let temp_so_string = CString::new(temp_so_path.to_str().unwrap()).unwrap();
-        
+
         let mut game = load_game_functions(&game_so_string, &temp_so_string);
 
         let thread_context = ThreadContext;
@@ -711,16 +695,15 @@ pub fn linuxmain() {
         while running {
 
             new_input.delta_t = target_seconds_per_frame;
-            
+
             let new_write_time = get_last_write_time(&game_so_string);
-            if compare_file_time(&game.write_time, &new_write_time) != 0 {
+            if compare_file_time(&game.write_time, &new_write_time) != TimeComp::Earlier {
                 unload_game_functions(&mut game);
                 game = load_game_functions(&game_so_string, &temp_so_string);
             }
 
             let mut event: SDL_Event = Default::default();
 
-            
             new_input.controllers[0] = old_input.controllers[0];
             new_input.controllers[0].is_connected = true;
             new_input.controllers[0].zero_half_transitions();
@@ -776,8 +759,8 @@ pub fn linuxmain() {
             }
 
             let mut video_buf = VideoBuffer {
-                memory: unsafe { slice::from_raw_parts_mut(buffer.pixels as *mut u32, 
-                                        (buffer.size/BYTES_PER_PIXEL as u64) as usize) },
+                memory: unsafe { slice::from_raw_parts_mut(buffer.pixels as *mut u32,
+                                        (buffer.size/BYTES_PER_PIXEL as usize) as usize) },
                 width: (buffer.width as i32) as usize,
                 height: (buffer.height as i32) as usize,
                 pitch: (buffer.width as i32) as usize,
@@ -791,11 +774,11 @@ pub fn linuxmain() {
             unsafe { SDL_LockAudio(); }
             let byte_to_lock = (sound_output.running_sample_idx * BYTES_PER_SAMPLE)
                                 % sound_output.secondary_buffer_size;
-            let target_cursor = (ring_buffer.play_cursor + 
+            let target_cursor = (ring_buffer.play_cursor +
                                   (sound_output.latency_sample_count *
-                                   BYTES_PER_SAMPLE)) 
+                                   BYTES_PER_SAMPLE))
                                  % sound_output.secondary_buffer_size;
-            let bytes_to_write = 
+            let bytes_to_write =
                 if byte_to_lock > target_cursor {
                     sound_output.secondary_buffer_size - byte_to_lock + target_cursor
                 } else {

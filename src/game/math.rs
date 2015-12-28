@@ -16,6 +16,7 @@ impl<T> Rect<T> where T: Copy {
         self.max
     }
 
+    #[allow(dead_code)]
     pub fn new(min: V2<T>, max: V2<T>) -> Rect<T> {
         Rect::<T> {
             min: min,
@@ -26,6 +27,7 @@ impl<T> Rect<T> where T: Copy {
 
 impl<T> Rect<T> where V2<T>: ops::Add<Output=V2<T>>,
                       T: Copy {
+    #[allow(dead_code)]
     pub fn min_dim(min: V2<T>, dim: V2<T>) -> Rect<T> {
         Rect::<T> {
             min: min,
@@ -35,13 +37,14 @@ impl<T> Rect<T> where V2<T>: ops::Add<Output=V2<T>>,
 }
 
 impl<T> Rect<T> where T: num::Float {
-   pub fn center_dim(center: V2<T>, dim: V2<T>) -> Rect<T> {
-       Rect::<T> {
-           min: center - dim * num::traits::cast(0.5).unwrap(),
-           max: center + dim * num::traits::cast(0.5).unwrap(),
-       }
-   }
+    pub fn center_dim(center: V2<T>, dim: V2<T>) -> Rect<T> {
+        Rect::<T> {
+            min: center - dim * num::traits::cast(0.5).unwrap(),
+            max: center + dim * num::traits::cast(0.5).unwrap(),
+        }
+    }
 
+    #[allow(dead_code)]
     pub fn get_center(&self) -> V2<T> {
         (self.min + self.max) * num::traits::cast(0.5).unwrap()
     }
@@ -64,6 +67,7 @@ pub struct V3<T> {
 }
 
 impl<T> V3<T> where T: Copy + ops::Add<Output=T> + ops::Mul<Output=T> {
+    #[allow(dead_code)]
     pub fn length_sq(&self) -> T {
         dot_3(*self, *self)
     }
@@ -71,11 +75,13 @@ impl<T> V3<T> where T: Copy + ops::Add<Output=T> + ops::Mul<Output=T> {
 }
 
 impl<T> V3<T> where T: num::Float {
+    #[allow(dead_code)]
     pub fn length(&self) -> T {
         let val = self.length_sq();
         val.sqrt()
     }
 
+    #[allow(dead_code)]
     pub fn normalize(&self) -> V3<T> {
         let length = self.length();
         V3 {
@@ -164,6 +170,7 @@ impl<T> V2<T> where T: num::Float {
     }
 }
 
+#[allow(dead_code)]
 pub fn dot_3<T>(a: V3<T>, b: V3<T>) -> T where T: ops::Add<Output=T>
                                                 + ops::Mul<Output=T> {
     a.x * b.x + a.y * b.y + a.z * b.z

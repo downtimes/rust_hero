@@ -124,6 +124,7 @@ pub fn draw_bitmap_alpha(buffer: &mut VideoBuffer, bitmap: &Bitmap,
     }
 }
 
+#[allow(dead_code)]
 pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {
     draw_bitmap_alpha(buffer, bitmap, V2{ x: x, y: y }, 1.0);
 }

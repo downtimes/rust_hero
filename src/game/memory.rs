@@ -30,6 +30,7 @@ impl MemoryArena {
 
     //This function pushes one element more than count on there so if the
     //user wants an array with 10 elements he gets 0 to 10 inclusive
+    #[allow(dead_code)]
     pub fn push_slice<T>(&mut self, count: usize) -> &'static mut [T] {
         let mem_size = count * mem::size_of::<T>();
         debug_assert!(self.used + mem_size <= self.size);

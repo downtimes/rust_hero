@@ -762,6 +762,7 @@ fn update_familiar(lf_entities: &mut [LfEntity], hf_entities: &mut [HfEntity],
                 camera_position, entity, acc, dt);
 }
 
+#[allow(unused_variables)]
 fn update_monster(lf_entities: &[LfEntity], hf_entities: &[HfEntity],
                   hf_entity_count: u32, entity: EntityMut, dt: f32) {
 }

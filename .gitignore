@@ -1,4 +1,6 @@
 /target
+src/target
 /data
 *~
 Cargo.lock
+*.bk

@@ -2,6 +2,7 @@ let SessionLoad = 1
 if &cp | set nocp | endif
 let s:cpo_save=&cpo
 set cpo&vim
+inoremap <Nul> 
 inoremap <C-Space> 
 inoremap <Right> <Nop>
 inoremap <Left> <Nop>
@@ -49,6 +50,7 @@ iabbr @@ michael.auracher@gmail.com
 let &cpo=s:cpo_save
 unlet s:cpo_save
 set autoindent
+set autowrite
 set background=dark
 set backspace=indent,eol,start
 set balloonexpr=SyntasticBalloonsExprNotifier()
@@ -81,14 +83,15 @@ if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
   let s:wipebuf = bufnr('%')
 endif
 set shortmess=aoO
-badd +13 src/ffi/linux.rs
-badd +1 src/linux.rs
+badd +12 src/ffi/linux.rs
+badd +30 src/linux.rs
 badd +1 src/ffi/sdl.rs
-badd +22 src/game/graphics.rs
-badd +0 src/game/math.rs
+badd +177 src/game/graphics.rs
+badd +89 src/game/math.rs
+badd +247 src/game/mod.rs
 argglobal
 silent! argdel *
-edit src/game/math.rs
+edit src/game/mod.rs
 set splitbelow splitright
 wincmd _ | wincmd |
 vsplit
@@ -102,11 +105,11 @@ set nosplitbelow
 set nosplitright
 wincmd t
 set winheight=1 winwidth=1
-exe 'vert 1resize ' . ((&columns * 84 + 84) / 168)
+exe 'vert 1resize ' . ((&columns * 93 + 84) / 168)
 exe '2resize ' . ((&lines * 33 + 23) / 46)
-exe 'vert 2resize ' . ((&columns * 83 + 84) / 168)
+exe 'vert 2resize ' . ((&columns * 74 + 84) / 168)
 exe '3resize ' . ((&lines * 10 + 23) / 46)
-exe 'vert 3resize ' . ((&columns * 83 + 84) / 168)
+exe 'vert 3resize ' . ((&columns * 74 + 84) / 168)
 argglobal
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
@@ -227,12 +230,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 89 - ((18 * winheight(0) + 22) / 44)
+let s:l = 737 - ((20 * winheight(0) + 22) / 44)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-89
-normal! 0
+737
+normal! 038|
 wincmd w
 argglobal
 edit src/ffi/sdl.rs
@@ -355,11 +358,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 1 - ((0 * winheight(0) + 16) / 33)
+let s:l = 2 - ((1 * winheight(0) + 16) / 33)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-1
+2
 normal! 0
 wincmd w
 argglobal
@@ -475,11 +478,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 wincmd w
-exe 'vert 1resize ' . ((&columns * 84 + 84) / 168)
+exe 'vert 1resize ' . ((&columns * 93 + 84) / 168)
 exe '2resize ' . ((&lines * 33 + 23) / 46)
-exe 'vert 2resize ' . ((&columns * 83 + 84) / 168)
+exe 'vert 2resize ' . ((&columns * 74 + 84) / 168)
 exe '3resize ' . ((&lines * 10 + 23) / 46)
-exe 'vert 3resize ' . ((&columns * 83 + 84) / 168)
+exe 'vert 3resize ' . ((&columns * 74 + 84) / 168)
 tabnext 1
 if exists('s:wipebuf')
   silent exe 'bwipe ' . s:wipebuf

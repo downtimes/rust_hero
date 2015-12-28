@@ -1,6 +1,6 @@
 #!/bin/sh
 
-cargo build
+cargo build --features "internal"
 cp -f target/debug/deps/libgame-* target/debug/deps/libgame.so
 
 if [[ "$1" == "run" ]]; then

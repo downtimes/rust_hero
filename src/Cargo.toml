@@ -11,14 +11,21 @@ path = "libgame.rs"
 [dependencies]
 num = "*"
 
+[features]
+internal = []
+
 [profile.dev]
 opt-level = 0
 debug = true
 rpath = false
 lto = false
+debug-assertions = true
+codegen-units = 1
 
 [profile.release]
 opt-level = 2
 debug = false
 rpath = false
 lto = true
+debug-assertions = false
+codegen-units = 0

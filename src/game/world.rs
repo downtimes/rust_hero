@@ -5,6 +5,7 @@ use std::default::Default;
 
 use super::memory::MemoryArena;
 use super::math::{V2, V3};
+use super::LfEntity;
 
 // TODO: Think about this number
 const WORLD_BORDER_CHUNKS: i32 = (i32::MAX / 64);
@@ -129,10 +130,26 @@ impl World {
 
     pub fn change_entity_location(&mut self,
                                   lf_index: u32,
-                                  old_pos: Option<&WorldPosition>,
-                                  new_pos: &WorldPosition,
+                                  lf_entity: &mut LfEntity,
+                                  old_pos: Option<WorldPosition>,
+                                  new_pos: Option<WorldPosition>,
                                   arena: &mut MemoryArena) {
-        if old_pos.is_some() && are_in_same_chunk(self, old_pos.unwrap(), new_pos) {
+        if new_pos.is_some() {
+            self.change_entity_location_raw(lf_index, old_pos, &new_pos.unwrap(), arena);
+            lf_entity.world_position = new_pos;
+        } else {
+            lf_entity.world_position = None;
+        }
+    }
+
+    pub fn change_entity_location_raw(&mut self,
+                                      lf_index: u32,
+                                      old_pos: Option<WorldPosition>,
+                                      new_pos: &WorldPosition,
+                                      arena: &mut MemoryArena) {
+        // TODO: if this moves an entity into the camera bounds, should it automatically
+        // go into the high set immediatly?
+        if old_pos.is_some() && are_in_same_chunk(self, &old_pos.unwrap(), new_pos) {
             // Do nothing because we are already in the right spot
         } else {
             if old_pos.is_some() {

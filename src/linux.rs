@@ -27,6 +27,7 @@ enum TimeComp {
 
 #[allow(unused_imports)]
 #[allow(dead_code)]
+#[cfg(feature = "internal")]
 mod debug {
 
     use libc::{c_void, open, close, mmap, munmap, O_RDONLY, O_CREAT};

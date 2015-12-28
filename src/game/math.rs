@@ -69,7 +69,8 @@ pub struct V4<T> {
     pub w: T,
 }
 
-impl<T> V4<T> where T: Copy {
+impl<T> V4<T> where T: Copy
+{
     #[allow(dead_code)]
     pub fn xyz(&self) -> V3<T> {
         V3 {

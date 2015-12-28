@@ -71,6 +71,10 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                                                    "test/test_hero_shadow.bmp")
                            .unwrap();
 
+        state.sword = graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
+                                                  context,
+                                                  "test2/rock03.bmp")
+                          .unwrap();
         state.hero_bitmaps[0].head =
             graphics::debug_load_bitmap(game_memory.platform_read_entire_file,
                                         context,
@@ -324,25 +328,55 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 }
             }
 
+            let mut d_sword = V2 { x: 0.0, y: 0.0 };
             let entity = force_hf_entity(state, e_index).unwrap();
             {
                 let hf_entity = entity.get_hf();
-                if controller.action_up.ended_down {
+                if controller.start.ended_down {
                     hf_entity.dz = 3.0;
                 }
+
+                if controller.action_up.ended_down {
+                    d_sword = V2 { x: 0.0, y: 1.0 };
+                }
+                if controller.action_down.ended_down {
+                    d_sword = V2 { x: 0.0, y: -1.0 };
+                }
+                if controller.action_left.ended_down {
+                    d_sword = V2 { x: -1.0, y: 0.0 };
+                }
+                if controller.action_right.ended_down {
+                    d_sword = V2 { x: 1.0, y: 0.0 };
+                }
             }
-            let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
-                                ref mut world_arena, hf_entity_count,
-                                ref mut world, ref camera_position, .. } = state;
-            move_entity(&mut lf_entities[..],
-                        &mut hf_entities[..],
-                        hf_entity_count,
-                        world,
-                        world_arena,
-                        camera_position,
-                        entity,
-                        acc,
-                        input.delta_t);
+            {
+                let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
+                                    ref mut world_arena, hf_entity_count,
+                                    ref mut world, ref camera_position, .. } = state;
+                move_entity(&mut lf_entities[..],
+                            &mut hf_entities[..],
+                            hf_entity_count,
+                            world,
+                            world_arena,
+                            camera_position,
+                            entity,
+                            acc,
+                            input.delta_t);
+            }
+
+            if (d_sword.x != 0.0) || (d_sword.y != 0.0) {
+                let &mut GameState{ ref mut lf_entities, ref mut world_arena,
+                                    ref mut world, .. } = state;
+                let s_index = lf_entities[e_index as usize].sword_lf_index;
+                if s_index.is_some() {
+                    let pos = lf_entities[e_index as usize].world_position.unwrap();
+                    world.change_entity_location(s_index.unwrap(),
+                                                 &mut lf_entities[s_index.unwrap() as usize],
+                                                 None,
+                                                 Some(pos),
+                                                 world_arena);
+                }
+            }
         } else {
             if controller.start.ended_down {
                 let e_index = add_player(state);
@@ -358,7 +392,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
         let new_cam_pos;
         {
             let entity_idx = state.camera_follows_entity_index.unwrap();
-            new_cam_pos = get_lf_entity(state, entity_idx).unwrap().world_position;
+            new_cam_pos = get_lf_entity(state, entity_idx).unwrap().world_position.unwrap();
         }
         set_camera(state, &new_cam_pos);
     }
@@ -370,14 +404,14 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
     };
     graphics::draw_rect(video_buffer, Default::default(), buffer_dim, 0.5, 0.5, 0.5);
 
-    graphics::draw_bitmap(video_buffer, &state.background_bitmap, 0.0, 0.0);
+    // graphics::draw_bitmap(video_buffer, &state.background_bitmap, 0.0, 0.0);
 
     let screen_center_x = 0.5 * video_buffer.width as f32;
     let screen_center_y = 0.5 * video_buffer.height as f32;
 
 
     for index in 0..state.hf_entity_count as usize {
-        let &mut GameState{ref shadow, ref tree, ref hero_bitmaps,
+        let &mut GameState{ref shadow, ref tree, ref sword, ref hero_bitmaps,
                            ref mut hf_entities, ref mut lf_entities,
                            hf_entity_count, ref mut world_arena, ref mut world,
                            ref camera_position, ..} = state;
@@ -437,31 +471,25 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                                         hero_bitmaps.align,
                                         1.0,
                                         1.0);
+                draw_hitpoints(lf, &mut piece_group);
 
-                if lf.max_hitpoints >= 1 {
-                    let health_dim = V2 { x: 0.2, y: 0.2 };
-                    let spacing_x = health_dim.x * 1.5;
-                    let first_x = (lf.max_hitpoints - 1) as f32 * 0.5 * spacing_x;
-                    let mut hit_p = V2 {
-                        x: -first_x,
-                        y: -0.25,
-                    };
-                    let d_hit_p = V2 {
-                        x: spacing_x,
-                        y: 0.0,
-                    };
-                    for idx in 0..lf.max_hitpoints as usize {
-                        let hp = &lf.hitpoints[idx];
-                        let color = if hp.filled != 0 {
-                            Color { r: 1.0, g: 0.0, b: 0.0, a: 1.0 }
-                        } else {
-                            Color { r: 0.5, g: 0.5, b: 0.5, a: 1.0 }
-                        };
-                        piece_group.push_rect(hit_p, 0.0, 0.0, health_dim, color);
-                        hit_p = hit_p + d_hit_p;
-                    }
-                }
             }
+
+            EntityType::Sword => {
+                piece_group.push_bitmap(shadow,
+                                        V2 { x: 0.0, y: 0.0 },
+                                        0.0,
+                                        hero_bitmaps.align,
+                                        0.0,
+                                        z_alpha);
+                piece_group.push_bitmap(sword,
+                                        V2 { x: 0.0, y: 0.0 },
+                                        0.0,
+                                        V2 { x: 29, y: 13 },
+                                        0.0,
+                                        1.0);
+            }
+
             EntityType::Monster => {
                 update_monster(&lf_entities[..],
                                &hf_entities[..],
@@ -480,6 +508,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                                         hero_bitmaps.align,
                                         1.0,
                                         1.0);
+                draw_hitpoints(lf, &mut piece_group);
             }
 
             EntityType::Wall => {
@@ -562,6 +591,42 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
 }
 
 // ======== End of the public interface =========
+
+fn draw_hitpoints<'a>(lf: &LfEntity, piece_group: &mut EntityPieceGroup<'a>) {
+    if lf.max_hitpoints >= 1 {
+        let health_dim = V2 { x: 0.2, y: 0.2 };
+        let spacing_x = health_dim.x * 1.5;
+        let first_x = (lf.max_hitpoints - 1) as f32 * 0.5 * spacing_x;
+        let mut hit_p = V2 {
+            x: -first_x,
+            y: -0.25,
+        };
+        let d_hit_p = V2 {
+            x: spacing_x,
+            y: 0.0,
+        };
+        for idx in 0..lf.max_hitpoints as usize {
+            let hp = &lf.hitpoints[idx];
+            let color = if hp.filled != 0 {
+                Color {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                }
+            } else {
+                Color {
+                    r: 0.5,
+                    g: 0.5,
+                    b: 0.5,
+                    a: 1.0,
+                }
+            };
+            piece_group.push_rect(hit_p, 0.0, 0.0, health_dim, color);
+            hit_p = hit_p + d_hit_p;
+        }
+    }
+}
 
 fn set_camera(state: &mut GameState, new_position: &WorldPosition) {
 
@@ -662,7 +727,7 @@ fn force_hf_entity(state: &mut GameState, index: u32) -> Option<EntityMut> {
 
 fn add_lf_entity<'a>(state: &'a mut GameState,
                      etype: EntityType,
-                     pos: WorldPosition)
+                     pos: Option<WorldPosition>)
                      -> (u32, &'a mut LfEntity) {
     let index = state.lf_entity_count;
     debug_assert!((index as usize) < state.lf_entities.len());
@@ -679,11 +744,13 @@ fn add_lf_entity<'a>(state: &'a mut GameState,
 
         max_hitpoints: 0,
         hitpoints: [Hitpoint::default(); HITPOINTS_ARRAY_MAX],
+        distance_remaining: 0.0,
+        sword_lf_index: None,
     };
 
-    {
+    if pos.is_some() {
         let &mut GameState{ ref mut world_arena, ref mut world, .. } = state;
-        world.change_entity_location(index, None, &pos, world_arena);
+        world.change_entity_location_raw(index, None, &pos.unwrap(), world_arena);
     }
 
     (index, &mut state.lf_entities[index as usize])
@@ -694,7 +761,7 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z:
     let pos = world_pos_from_tile(state.world, abs_tile_x, abs_tile_y, abs_tile_z);
     let tile_side_meters = state.world.tile_side_meters;
 
-    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Wall, pos);
+    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Wall, Some(pos));
 
     lf_entity.dim = V2 {
         x: tile_side_meters,
@@ -708,18 +775,17 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z:
 fn add_monster(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z: i32) -> u32 {
     let pos = world_pos_from_tile(state.world, abs_tile_x, abs_tile_y, abs_tile_z);
 
-    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Monster, pos);
+    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Monster, Some(pos));
 
     lf_entity.dim = V2 { x: 1.0, y: 0.5 };
     lf_entity.collides = true;
+    init_hit_points(3, lf_entity);
 
     e_index
 }
 
-fn add_familiar(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z: i32) -> u32 {
-    let pos = world_pos_from_tile(state.world, abs_tile_x, abs_tile_y, abs_tile_z);
-
-    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Familiar, pos);
+fn add_sword(state: &mut GameState) -> u32 {
+    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Sword, None);
 
     lf_entity.dim = V2 { x: 1.0, y: 0.5 };
     lf_entity.collides = false;
@@ -727,34 +793,44 @@ fn add_familiar(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_til
     e_index
 }
 
+fn add_familiar(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z: i32) -> u32 {
+    let pos = world_pos_from_tile(state.world, abs_tile_x, abs_tile_y, abs_tile_z);
+
+    let (e_index, lf_entity) = add_lf_entity(state, EntityType::Familiar, Some(pos));
+
+    lf_entity.dim = V2 { x: 1.0, y: 0.5 };
+    lf_entity.collides = false;
+
+    e_index
+}
+
+fn init_hit_points(hit_point_count: u8, lf_entity: &mut LfEntity) {
+    debug_assert!(hit_point_count as usize <= HITPOINTS_ARRAY_MAX);
+    lf_entity.max_hitpoints = hit_point_count as u32;
+    for idx in 0..lf_entity.max_hitpoints as usize {
+        lf_entity.hitpoints[idx].filled = HITPOINT_SUB_COUNT;
+    }
+}
+
 fn add_player(state: &mut GameState) -> u32 {
 
     let e_index = {
         let pos = state.camera_position;
-        let (e_index, lf_entity) = add_lf_entity(state, EntityType::Hero, pos);
+        let (e_index, lf_entity) = add_lf_entity(state, EntityType::Hero, Some(pos));
 
         lf_entity.dim = V2 { x: 1.0, y: 0.5 };
         lf_entity.collides = true;
-        lf_entity.max_hitpoints = 3;
-        for idx in 0..lf_entity.max_hitpoints as usize {
-            lf_entity.hitpoints[idx].filled = HITPOINT_SUB_COUNT;
-        }
+        init_hit_points(3, lf_entity);
+
         e_index
     };
+
+    let s_index = Some(add_sword(state));
+    state.lf_entities[e_index as usize].sword_lf_index = s_index;
 
     if state.camera_follows_entity_index.is_none() {
         state.camera_follows_entity_index = Some(e_index);
     }
-
-    let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
-                        ref mut hf_entity_count, ref world,
-                        ref camera_position, .. } = state;
-    make_high_frequency(&mut lf_entities[..],
-                        &mut hf_entities[..],
-                        hf_entity_count,
-                        world,
-                        camera_position,
-                        e_index);
 
     e_index
 }
@@ -787,7 +863,7 @@ fn get_camspace_p(world: &World,
                   camera_position: &WorldPosition)
                   -> V2<f32> {
     let lf = &lf_entities[lf_index as usize];
-    let V3{ x, y, .. } = subtract(world, &lf.world_position, camera_position);
+    let V3{ x, y, .. } = subtract(world, &lf.world_position.unwrap(), camera_position);
     V2 { x: x, y: y }
 }
 
@@ -804,7 +880,7 @@ fn make_high_frequency_pos(lf_entities: &mut [LfEntity],
             let hf = &mut hf_entities[hf_index];
             hf.position = camspace_p;
             hf.velocity = Default::default();
-            hf.chunk_z = lf.world_position.chunk_z;
+            hf.chunk_z = lf.world_position.unwrap().chunk_z;
             hf.face_direction = 0;
             hf.lf_index = lf_index;
 
@@ -1036,12 +1112,12 @@ fn move_entity(lf_entities: &mut [LfEntity],
     // map high_entity back to the low entity
     let lf_entity = entity.get_lf();
     let new_pos = map_into_world_space(world, camera_position, &hf_entity.position);
+    let old_pos = lf_entity.world_position;
     world.change_entity_location(entity.lf_index,
-                                 Some(&lf_entity.world_position),
-                                 &new_pos,
+                                 lf_entity,
+                                 old_pos,
+                                 Some(new_pos),
                                  world_arena);
-    lf_entity.world_position = new_pos;
-
 }
 
 fn test_wall(wall_value: f32,
@@ -1087,6 +1163,7 @@ enum EntityType {
     Wall,
     Monster,
     Familiar,
+    Sword,
 }
 
 impl Default for EntityType {
@@ -1228,7 +1305,7 @@ struct Hitpoint {
 #[derive(Copy, Clone)]
 struct LfEntity {
     etype: EntityType,
-    world_position: WorldPosition,
+    world_position: Option<WorldPosition>,
     dim: V2<f32>,
     collides: bool,
 
@@ -1236,6 +1313,9 @@ struct LfEntity {
 
     max_hitpoints: u32,
     hitpoints: [Hitpoint; HITPOINTS_ARRAY_MAX],
+
+    sword_lf_index: Option<u32>,
+    distance_remaining: f32,
 }
 
 #[derive(Copy, Clone)]
@@ -1275,5 +1355,6 @@ struct GameState<'a> {
     background_bitmap: graphics::Bitmap<'a>,
     shadow: graphics::Bitmap<'a>,
     tree: graphics::Bitmap<'a>,
+    sword: graphics::Bitmap<'a>,
     hero_bitmaps: [HeroBitmaps<'a>; 4],
 }

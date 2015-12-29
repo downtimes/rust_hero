@@ -8,6 +8,10 @@ inoremap <Right> <Nop>
 inoremap <Left> <Nop>
 inoremap <Down> <Nop>
 inoremap <Up> <Nop>
+nnoremap  h
+nnoremap <NL> j
+nnoremap  k
+nnoremap  l
 nnoremap  :update
 nnoremap   o
 nnoremap / /\v
@@ -17,8 +21,8 @@ nnoremap N Nzz
 vmap [% [%m'gv``
 vmap ]% ]%m'gv``
 vmap a% [%v]%
-nnoremap gd :call RacerGoToDefinition()
 nnoremap gD :vsplit:call RacerGoToDefinition()
+nnoremap gd :call RacerGoToDefinition()
 vmap gx <Plug>NetrwBrowseXVis
 nmap gx <Plug>NetrwBrowseX
 nnoremap j gj
@@ -26,8 +30,10 @@ nnoremap k gk
 nnoremap n nzz
 vnoremap <silent> <Plug>NetrwBrowseXVis :call netrw#BrowseXVis()
 nnoremap <silent> <Plug>NetrwBrowseX :call netrw#BrowseX(expand((exists("g:netrw_gx")? g:netrw_gx : '<cfile>')),netrw#CheckIfRemote())
+inoremap  h
 inoremap <NL> 
 inoremap  
+inoremap  l
 inoremap  :updatei
 nnoremap ösv :source $MYVIMRC:split:q
 nnoremap öev :rightbelow vsplit $MYVIMRC
@@ -85,10 +91,12 @@ endif
 set shortmess=aoO
 badd +12 src/ffi/linux.rs
 badd +30 src/linux.rs
-badd +1 src/ffi/sdl.rs
+badd +298 src/ffi/sdl.rs
 badd +177 src/game/graphics.rs
 badd +89 src/game/math.rs
-badd +247 src/game/mod.rs
+badd +974 src/game/mod.rs
+badd +124 ~/.vimrc
+badd +150 src/game/world.rs
 argglobal
 silent! argdel *
 edit src/game/mod.rs
@@ -105,11 +113,11 @@ set nosplitbelow
 set nosplitright
 wincmd t
 set winheight=1 winwidth=1
-exe 'vert 1resize ' . ((&columns * 93 + 84) / 168)
-exe '2resize ' . ((&lines * 33 + 23) / 46)
-exe 'vert 2resize ' . ((&columns * 74 + 84) / 168)
-exe '3resize ' . ((&lines * 10 + 23) / 46)
-exe 'vert 3resize ' . ((&columns * 74 + 84) / 168)
+exe 'vert 1resize ' . ((&columns * 106 + 96) / 193)
+exe '2resize ' . ((&lines * 42 + 29) / 58)
+exe 'vert 2resize ' . ((&columns * 86 + 96) / 193)
+exe '3resize ' . ((&lines * 13 + 29) / 58)
+exe 'vert 3resize ' . ((&columns * 86 + 96) / 193)
 argglobal
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
@@ -230,15 +238,15 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 737 - ((20 * winheight(0) + 22) / 44)
+let s:l = 671 - ((31 * winheight(0) + 28) / 56)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-737
-normal! 038|
+671
+normal! 095|
 wincmd w
 argglobal
-edit src/ffi/sdl.rs
+edit src/game/mod.rs
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
 onoremap <buffer> <silent> [[ :call rust#Jump('o', 'Back')
@@ -358,11 +366,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 2 - ((1 * winheight(0) + 16) / 33)
+let s:l = 1409 - ((26 * winheight(0) + 21) / 42)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-2
+1409
 normal! 0
 wincmd w
 argglobal
@@ -478,11 +486,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 wincmd w
-exe 'vert 1resize ' . ((&columns * 93 + 84) / 168)
-exe '2resize ' . ((&lines * 33 + 23) / 46)
-exe 'vert 2resize ' . ((&columns * 74 + 84) / 168)
-exe '3resize ' . ((&lines * 10 + 23) / 46)
-exe 'vert 3resize ' . ((&columns * 74 + 84) / 168)
+exe 'vert 1resize ' . ((&columns * 106 + 96) / 193)
+exe '2resize ' . ((&lines * 42 + 29) / 58)
+exe 'vert 2resize ' . ((&columns * 86 + 96) / 193)
+exe '3resize ' . ((&lines * 13 + 29) / 58)
+exe 'vert 3resize ' . ((&columns * 86 + 96) / 193)
 tabnext 1
 if exists('s:wipebuf')
   silent exe 'bwipe ' . s:wipebuf

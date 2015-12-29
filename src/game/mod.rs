@@ -328,7 +328,6 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 }
             }
 
-            let mut d_sword = V2 { x: 0.0, y: 0.0 };
             let entity = force_hf_entity(state, e_index).unwrap();
             {
                 let hf_entity = entity.get_hf();
@@ -336,23 +335,17 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                     hf_entity.dz = 3.0;
                 }
 
-                if controller.action_up.ended_down {
-                    d_sword = V2 { x: 0.0, y: 1.0 };
-                }
-                if controller.action_down.ended_down {
-                    d_sword = V2 { x: 0.0, y: -1.0 };
-                }
-                if controller.action_left.ended_down {
-                    d_sword = V2 { x: -1.0, y: 0.0 };
-                }
-                if controller.action_right.ended_down {
-                    d_sword = V2 { x: 1.0, y: 0.0 };
-                }
             }
             {
                 let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
                                     ref mut world_arena, hf_entity_count,
                                     ref mut world, ref camera_position, .. } = state;
+                let move_spec = MoveSpec {
+                    unit_max_accel_vector: true,
+                    drag: 8.0,
+                    speed: 50.0,
+                };
+
                 move_entity(&mut lf_entities[..],
                             &mut hf_entities[..],
                             hf_entity_count,
@@ -361,20 +354,41 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                             camera_position,
                             entity,
                             acc,
+                            &move_spec,
                             input.delta_t);
             }
 
+            let mut d_sword = V2 { x: 0.0, y: 0.0 };
+            if controller.action_up.ended_down {
+                d_sword = V2 { x: 0.0, y: 1.0 };
+            }
+            if controller.action_down.ended_down {
+                d_sword = V2 { x: 0.0, y: -1.0 };
+            }
+            if controller.action_left.ended_down {
+                d_sword = V2 { x: -1.0, y: 0.0 };
+            }
+            if controller.action_right.ended_down {
+                d_sword = V2 { x: 1.0, y: 0.0 };
+            }
             if (d_sword.x != 0.0) || (d_sword.y != 0.0) {
-                let &mut GameState{ ref mut lf_entities, ref mut world_arena,
-                                    ref mut world, .. } = state;
-                let s_index = lf_entities[e_index as usize].sword_lf_index;
-                if s_index.is_some() {
-                    let pos = lf_entities[e_index as usize].world_position.unwrap();
-                    world.change_entity_location(s_index.unwrap(),
-                                                 &mut lf_entities[s_index.unwrap() as usize],
-                                                 None,
-                                                 Some(pos),
-                                                 world_arena);
+                let s_index = state.lf_entities[e_index as usize].sword_lf_index;
+                if s_index.is_some() &&
+                   state.lf_entities[s_index.unwrap() as usize].world_position.is_none() {
+                    {
+                        let &mut GameState{ ref mut lf_entities, ref mut world_arena,
+                                        ref mut world, .. } = state;
+                        let pos = lf_entities[e_index as usize].world_position.unwrap();
+                        let sword_lf = &mut lf_entities[s_index.unwrap() as usize];
+                        world.change_entity_location(s_index.unwrap(),
+                                                     sword_lf,
+                                                     None,
+                                                     Some(pos),
+                                                     world_arena);
+                        sword_lf.distance_remaining = 5.0;
+                    }
+                    let sword = force_hf_entity(state, s_index.unwrap()).unwrap();
+                    sword.get_hf().velocity = d_sword * 5.0;
                 }
             }
         } else {
@@ -476,6 +490,14 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
             }
 
             EntityType::Sword => {
+                update_sword(&mut lf_entities[..],
+                             &mut hf_entities[..],
+                             hf_entity_count,
+                             world,
+                             world_arena,
+                             camera_position,
+                             entity,
+                             input.delta_t);
                 piece_group.push_bitmap(shadow,
                                         V2 { x: 0.0, y: 0.0 },
                                         0.0,
@@ -661,12 +683,13 @@ fn set_camera(state: &mut GameState, new_position: &WorldPosition) {
                                                        &lf_entities[..],
                                                        lf_index,
                                                        camera_position);
-                    if high_frequency_bounds.p_inside(cameraspace_p) {
+                    if cameraspace_p.is_some() &&
+                       high_frequency_bounds.p_inside(cameraspace_p.unwrap()) {
                         make_high_frequency_pos(&mut lf_entities[..],
                                                 &mut hf_entities[..],
                                                 hf_entity_count,
                                                 lf_index,
-                                                cameraspace_p);
+                                                cameraspace_p.unwrap());
                     }
                 }
             }
@@ -844,7 +867,8 @@ fn offset_and_check_frequency_by_area(state: &mut GameState, offset: V2<f32>, bo
             (hf.lf_index, hf.position)
         };
 
-        if !bounds.p_inside(check_position) {
+        let lf_entity = state.lf_entities[lf_index as usize];
+        if lf_entity.world_position.is_none() || !bounds.p_inside(check_position) {
             to_remove[index] = Some(lf_index);
         }
     }
@@ -861,10 +885,14 @@ fn get_camspace_p(world: &World,
                   lf_entities: &[LfEntity],
                   lf_index: u32,
                   camera_position: &WorldPosition)
-                  -> V2<f32> {
+                  -> Option<V2<f32>> {
     let lf = &lf_entities[lf_index as usize];
-    let V3{ x, y, .. } = subtract(world, &lf.world_position.unwrap(), camera_position);
-    V2 { x: x, y: y }
+    if lf.world_position.is_some() {
+        let V3{ x, y, .. } = subtract(world, &lf.world_position.unwrap(), camera_position);
+        Some(V2 { x: x, y: y })
+    } else {
+        None
+    }
 }
 
 fn make_high_frequency_pos(lf_entities: &mut [LfEntity],
@@ -898,11 +926,13 @@ fn make_high_frequency(lf_entities: &mut [LfEntity],
                        camera_position: &WorldPosition,
                        lf_index: u32) {
     let camspace_p = get_camspace_p(world, lf_entities, lf_index, camera_position);
-    make_high_frequency_pos(lf_entities,
-                            hf_entities,
-                            hf_entity_count,
-                            lf_index,
-                            camspace_p);
+    if camspace_p.is_some() {
+        make_high_frequency_pos(lf_entities,
+                                hf_entities,
+                                hf_entity_count,
+                                lf_index,
+                                camspace_p.unwrap());
+    }
 }
 
 fn make_low_frequency(state: &mut GameState, lf_index: u32) {
@@ -918,6 +948,43 @@ fn make_low_frequency(state: &mut GameState, lf_index: u32) {
         }
         state.lf_entities[lf_index as usize].hf_index = None;
         state.hf_entity_count -= 1;
+    }
+}
+
+fn update_sword(lf_entities: &mut [LfEntity],
+                hf_entities: &mut [HfEntity],
+                hf_entity_count: u32,
+                world: &mut World,
+                world_arena: &mut MemoryArena,
+                camera_position: &WorldPosition,
+                entity: EntityMut,
+                dt: f32) {
+
+    let move_spec = MoveSpec {
+        unit_max_accel_vector: false,
+        speed: 0.0,
+        drag: 0.0,
+    };
+    let old_p = entity.get_hf().position;
+    move_entity(lf_entities,
+                hf_entities,
+                hf_entity_count,
+                world,
+                world_arena,
+                camera_position,
+                entity,
+                V2 { x: 0.0, y: 0.0 },
+                &move_spec,
+                dt);
+    let travelled = (entity.get_hf().position - old_p).length();
+    entity.get_lf().distance_remaining -= travelled;
+
+    if entity.get_lf().distance_remaining < 0.0 {
+        world.change_entity_location(entity.lf_index,
+                                     entity.get_lf(),
+                                     entity.get_lf().world_position,
+                                     None,
+                                     world_arena);
     }
 }
 
@@ -961,6 +1028,11 @@ fn update_familiar(lf_entities: &mut [LfEntity],
         }
     }
 
+    let move_spec = MoveSpec {
+        unit_max_accel_vector: true,
+        drag: 8.0,
+        speed: 50.0,
+    };
     move_entity(lf_entities,
                 hf_entities,
                 hf_entity_count,
@@ -969,6 +1041,7 @@ fn update_familiar(lf_entities: &mut [LfEntity],
                 camera_position,
                 entity,
                 acc,
+                &move_spec,
                 dt);
 }
 
@@ -988,20 +1061,21 @@ fn move_entity(lf_entities: &mut [LfEntity],
                camera_position: &WorldPosition,
                entity: EntityMut,
                mut acc: V2<f32>,
+               move_spec: &MoveSpec,
                delta_t: f32) {
 
     // Diagonal correction.
-    if acc.length_sq() > 1.0 {
-        acc = acc.normalize();
+    if move_spec.unit_max_accel_vector {
+        if acc.length_sq() > 1.0 {
+            acc = acc.normalize();
+        }
     }
 
-    let entity_speed = 15.0; // m/s^2
-
-    acc = acc * entity_speed;
+    acc = acc * move_spec.speed;
 
     let hf_entity = entity.get_hf();
     // friction force currently just by rule of thumb;
-    acc = acc - hf_entity.velocity * 10.0;
+    acc = acc - hf_entity.velocity * move_spec.drag;
 
 
     // Copy old player Position before we handle input
@@ -1020,67 +1094,70 @@ fn move_entity(lf_entities: &mut [LfEntity],
         let target_pos = hf_entity.position + entity_delta;
 
         let lf_entity = entity.get_lf();
-        for e_index in 0..hf_entity_count as usize {
-            if e_index == lf_entity.hf_index.unwrap() as usize {
-                continue;
-            }
-            let hf_test_entity = &hf_entities[e_index];
-            let lf_test_entity = &lf_entities[hf_test_entity.lf_index as usize];
-            if lf_test_entity.collides {
-                // Minkowski Sum
-                let diameter = V2 {
-                    x: lf_test_entity.dim.x + lf_entity.dim.x,
-                    y: lf_test_entity.dim.y + lf_entity.dim.y,
-                };
 
-                let min_corner = diameter * -0.5;
-                let max_corner = diameter * 0.5;
-                let rel = hf_entity.position - hf_test_entity.position;
+        if lf_entity.collides {
+            for e_index in 0..hf_entity_count as usize {
+                if e_index == lf_entity.hf_index.unwrap() as usize {
+                    continue;
+                }
+                let hf_test_entity = &hf_entities[e_index];
+                let lf_test_entity = &lf_entities[hf_test_entity.lf_index as usize];
+                if lf_test_entity.collides {
+                    // Minkowski Sum
+                    let diameter = V2 {
+                        x: lf_test_entity.dim.x + lf_entity.dim.x,
+                        y: lf_test_entity.dim.y + lf_entity.dim.y,
+                    };
 
-                // check against the 4 entity walls
-                if test_wall(max_corner.x,
-                             min_corner.y,
-                             max_corner.y,
-                             rel.x,
-                             rel.y,
-                             entity_delta.x,
-                             entity_delta.y,
-                             &mut t_min) {
-                    wall_normal = V2 { x: 1.0, y: 0.0 };
-                    hit_hf_e_index = lf_test_entity.hf_index;
-                }
-                if test_wall(min_corner.x,
-                             min_corner.y,
-                             max_corner.y,
-                             rel.x,
-                             rel.y,
-                             entity_delta.x,
-                             entity_delta.y,
-                             &mut t_min) {
-                    wall_normal = V2 { x: -1.0, y: 0.0 };
-                    hit_hf_e_index = lf_test_entity.hf_index;
-                }
-                if test_wall(max_corner.y,
-                             min_corner.x,
-                             max_corner.x,
-                             rel.y,
-                             rel.x,
-                             entity_delta.y,
-                             entity_delta.x,
-                             &mut t_min) {
-                    wall_normal = V2 { x: 0.0, y: 1.0 };
-                    hit_hf_e_index = lf_test_entity.hf_index;
-                }
-                if test_wall(min_corner.y,
-                             min_corner.x,
-                             max_corner.x,
-                             rel.y,
-                             rel.x,
-                             entity_delta.y,
-                             entity_delta.x,
-                             &mut t_min) {
-                    wall_normal = V2 { x: 0.0, y: -1.0 };
-                    hit_hf_e_index = lf_test_entity.hf_index;
+                    let min_corner = diameter * -0.5;
+                    let max_corner = diameter * 0.5;
+                    let rel = hf_entity.position - hf_test_entity.position;
+
+                    // check against the 4 entity walls
+                    if test_wall(max_corner.x,
+                                 min_corner.y,
+                                 max_corner.y,
+                                 rel.x,
+                                 rel.y,
+                                 entity_delta.x,
+                                 entity_delta.y,
+                                 &mut t_min) {
+                        wall_normal = V2 { x: 1.0, y: 0.0 };
+                        hit_hf_e_index = lf_test_entity.hf_index;
+                    }
+                    if test_wall(min_corner.x,
+                                 min_corner.y,
+                                 max_corner.y,
+                                 rel.x,
+                                 rel.y,
+                                 entity_delta.x,
+                                 entity_delta.y,
+                                 &mut t_min) {
+                        wall_normal = V2 { x: -1.0, y: 0.0 };
+                        hit_hf_e_index = lf_test_entity.hf_index;
+                    }
+                    if test_wall(max_corner.y,
+                                 min_corner.x,
+                                 max_corner.x,
+                                 rel.y,
+                                 rel.x,
+                                 entity_delta.y,
+                                 entity_delta.x,
+                                 &mut t_min) {
+                        wall_normal = V2 { x: 0.0, y: 1.0 };
+                        hit_hf_e_index = lf_test_entity.hf_index;
+                    }
+                    if test_wall(min_corner.y,
+                                 min_corner.x,
+                                 max_corner.x,
+                                 rel.y,
+                                 rel.x,
+                                 entity_delta.y,
+                                 entity_delta.x,
+                                 &mut t_min) {
+                        wall_normal = V2 { x: 0.0, y: -1.0 };
+                        hit_hf_e_index = lf_test_entity.hf_index;
+                    }
                 }
             }
         }
@@ -1295,6 +1372,23 @@ impl EntityMut {
 
 const HITPOINTS_ARRAY_MAX: usize = 16;
 const HITPOINT_SUB_COUNT: u8 = 4;
+
+#[derive(Copy, Clone)]
+struct MoveSpec {
+    unit_max_accel_vector: bool,
+    drag: f32,
+    speed: f32,
+}
+
+impl Default for MoveSpec {
+    fn default() -> MoveSpec {
+        MoveSpec {
+            unit_max_accel_vector: false,
+            drag: 0.0,
+            speed: 1.0,
+        }
+    }
+}
 
 #[derive(Default, Copy, Clone)]
 struct Hitpoint {

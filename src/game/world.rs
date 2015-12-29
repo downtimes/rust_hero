@@ -136,10 +136,9 @@ impl World {
                                   arena: &mut MemoryArena) {
         if new_pos.is_some() {
             self.change_entity_location_raw(lf_index, old_pos, &new_pos.unwrap(), arena);
-            lf_entity.world_position = new_pos;
-        } else {
-            lf_entity.world_position = None;
         }
+
+        lf_entity.world_position = new_pos;
     }
 
     pub fn change_entity_location_raw(&mut self,
@@ -148,7 +147,7 @@ impl World {
                                       new_pos: &WorldPosition,
                                       arena: &mut MemoryArena) {
         // TODO: if this moves an entity into the camera bounds, should it automatically
-        // go into the high set immediatly?
+        // go into the high set immediatly? And conversly move it out of high set?
         if old_pos.is_some() && are_in_same_chunk(self, &old_pos.unwrap(), new_pos) {
             // Do nothing because we are already in the right spot
         } else {

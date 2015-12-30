@@ -12,6 +12,7 @@ mod world;
 mod memory;
 mod random;
 mod math;
+mod simulation;
 
 use self::world::{World, subtract, map_into_world_space};
 use self::world::{WorldPosition, world_pos_from_tile};
@@ -372,14 +373,14 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 d_sword = V2 { x: 1.0, y: 0.0 };
             }
             if (d_sword.x != 0.0) || (d_sword.y != 0.0) {
-                let s_index = state.lf_entities[e_index as usize].sword_lf_index;
+                let s_index = state.lf_entities[e_index].sword_lf_index;
                 if s_index.is_some() &&
-                   state.lf_entities[s_index.unwrap() as usize].world_position.is_none() {
+                   state.lf_entities[s_index.unwrap()].world_position.is_none() {
                     {
                         let &mut GameState{ ref mut lf_entities, ref mut world_arena,
                                         ref mut world, .. } = state;
-                        let pos = lf_entities[e_index as usize].world_position.unwrap();
-                        let sword_lf = &mut lf_entities[s_index.unwrap() as usize];
+                        let pos = lf_entities[e_index].world_position.unwrap();
+                        let sword_lf = &mut lf_entities[s_index.unwrap()];
                         world.change_entity_location(s_index.unwrap(),
                                                      sword_lf,
                                                      None,
@@ -401,15 +402,20 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
 
     let meters_to_pixel = state.meters_to_pixel;
 
-    // Adjust the camera to look at the right position
-    if state.camera_follows_entity_index.is_some() {
-        let new_cam_pos;
-        {
-            let entity_idx = state.camera_follows_entity_index.unwrap();
-            new_cam_pos = get_lf_entity(state, entity_idx).unwrap().world_position.unwrap();
-        }
-        set_camera(state, &new_cam_pos);
-    }
+    // Simulate stuff around the camera
+    let tile_span_x = 17 * 3;
+    let tile_span_y = 9 * 3;
+    let tiles_in_work_set = V2 {
+        x: tile_span_x as f32,
+        y: tile_span_y as f32,
+    };
+    let camera_bounds = Rect::center_dim(Default::default(),
+                                         tiles_in_work_set * state.world.tile_side_meters);
+
+    let sim_region = SimRegion::begin_sim(sim_arena,
+                                          state.world,
+                                          state.camera_position,
+                                          camera_bounds);
 
     // Clear the screen to grey and start rendering
     let buffer_dim = V2 {
@@ -424,24 +430,14 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
     let screen_center_y = 0.5 * video_buffer.height as f32;
 
 
-    for index in 0..state.hf_entity_count as usize {
+    for index in 0..sim_region.entity_count {
         let &mut GameState{ref shadow, ref tree, ref sword, ref hero_bitmaps,
                            ref mut hf_entities, ref mut lf_entities,
                            hf_entity_count, ref mut world_arena, ref mut world,
                            ref camera_position, ..} = state;
+        let sim_entity = &mut sim_region.entities[index];
+        let lf = &mut lf_entities[sim_entity.storage_index];
 
-        let entity = {
-            let hf = &mut hf_entities[index];
-            let lf = &mut lf_entities[hf.lf_index as usize];
-
-            EntityMut {
-                lf_index: hf.lf_index,
-                hf: hf as *mut HfEntity,
-                lf: lf as *mut LfEntity,
-            }
-        };
-        let hf = entity.get_hf();
-        let lf = entity.get_lf();
 
         // TODO: is the alpha from the previous frame needs to be after
         // updates
@@ -452,7 +448,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
         };
 
 
-        let hero_bitmaps = &hero_bitmaps[hf.face_direction as usize];
+        let hero_bitmaps = &hero_bitmaps[lf.face_direction as usize];
         let mut piece_group = EntityPieceGroup {
             meters_to_pixel: meters_to_pixel,
             count: 0,
@@ -575,18 +571,18 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
         }
 
         let gravity = -9.81;
-        hf.z += gravity * 0.5 * input.delta_t.powi(2) + hf.dz * input.delta_t;
-        hf.dz = gravity * input.delta_t + hf.dz;
-        if hf.z < 0.0 {
-            hf.z = 0.0;
+        sim_entity.z += gravity * 0.5 * input.delta_t.powi(2) + sim_entity.dz * input.delta_t;
+        sim_entity.dz = gravity * input.delta_t + sim_entity.dz;
+        if sim_entity.z < 0.0 {
+            sim_entity.z = 0.0;
         }
 
         let entity_groundpoint = V2 {
-            x: screen_center_x + meters_to_pixel * hf.position.x,
-            y: screen_center_y - meters_to_pixel * hf.position.y,
+            x: screen_center_x + meters_to_pixel * sim_entity.position.x,
+            y: screen_center_y - meters_to_pixel * sim_entity.position.y,
         };
 
-        for index in 0..piece_group.count as usize {
+        for index in 0..piece_group.count {
             let piece = piece_group.pieces[index].as_ref().unwrap();
             let piece_point = V2 {
                 x: entity_groundpoint.x + piece.offset.x,
@@ -610,6 +606,8 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
             }
         }
     }
+
+    sim_region.end_sim(state);
 }
 
 // ======== End of the public interface =========
@@ -650,56 +648,12 @@ fn draw_hitpoints<'a>(lf: &LfEntity, piece_group: &mut EntityPieceGroup<'a>) {
     }
 }
 
-fn set_camera(state: &mut GameState, new_position: &WorldPosition) {
 
-    let V3{ x, y, .. } = subtract(state.world, new_position, &state.camera_position);
-    state.camera_position = *new_position;
-    let entity_offset_for_frame = V2 { x: -x, y: -y };
+fn sim_camera_region(state: &mut GameState) {}
 
-    let tile_span_x = 17 * 3;
-    let tile_span_y = 9 * 3;
-    let tiles_in_work_set = V2 {
-        x: tile_span_x as f32,
-        y: tile_span_y as f32,
-    };
-    let high_frequency_bounds = Rect::center_dim(Default::default(),
-                                                 tiles_in_work_set * state.world.tile_side_meters);
-
-    offset_and_check_frequency_by_area(state, entity_offset_for_frame, high_frequency_bounds);
-
-    // TODO: Needs to be spatialy now!
-    let min_p = map_into_world_space(state.world, new_position, &high_frequency_bounds.get_min());
-    let max_p = map_into_world_space(state.world, new_position, &high_frequency_bounds.get_max());
-    for ch in state.world.iter_spatially(min_p, max_p, new_position.chunk_z) {
-        for block in ch.first_block.iter() {
-            for block_idx in 0..block.e_count as usize {
-                let lf_index = block.lf_entities[block_idx];
-                let hf_index = state.lf_entities[lf_index as usize].hf_index;
-                if hf_index.is_none() {
-                    let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
-                                        ref mut hf_entity_count, ref world,
-                                        ref camera_position, .. } = state;
-                    let cameraspace_p = get_camspace_p(world,
-                                                       &lf_entities[..],
-                                                       lf_index,
-                                                       camera_position);
-                    if cameraspace_p.is_some() &&
-                       high_frequency_bounds.p_inside(cameraspace_p.unwrap()) {
-                        make_high_frequency_pos(&mut lf_entities[..],
-                                                &mut hf_entities[..],
-                                                hf_entity_count,
-                                                lf_index,
-                                                cameraspace_p.unwrap());
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn get_lf_entity<'a>(state: &'a mut GameState, index: u32) -> Option<&'a mut LfEntity> {
+pub fn get_lf_entity<'a>(state: &'a mut GameState, index: usize) -> Option<&'a mut LfEntity> {
     if index < state.lf_entity_count {
-        Some(&mut state.lf_entities[index as usize])
+        Some(&mut state.lf_entities[index])
     } else {
         None
     }
@@ -707,12 +661,12 @@ fn get_lf_entity<'a>(state: &'a mut GameState, index: u32) -> Option<&'a mut LfE
 
 fn entity_from_hf(lf_entities: &[LfEntity],
                   hf_entities: &[HfEntity],
-                  hf_entity_count: u32,
-                  hf_index: u32)
+                  hf_entity_count: usize,
+                  hf_index: usize)
                   -> Option<Entity> {
     if hf_index < hf_entity_count {
-        let hf = &hf_entities[hf_index as usize];
-        let lf = &lf_entities[hf.lf_index as usize];
+        let hf = &hf_entities[hf_index];
+        let lf = &lf_entities[hf.lf_index];
         Some(Entity {
             lf_index: hf.lf_index,
             lf: lf as *const LfEntity,
@@ -723,41 +677,16 @@ fn entity_from_hf(lf_entities: &[LfEntity],
     }
 }
 
-
-fn force_hf_entity(state: &mut GameState, index: u32) -> Option<EntityMut> {
-
-    let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
-                        ref mut hf_entity_count, ref lf_entity_count,
-                        ref world, ref camera_position, .. } = state;
-    if index < *lf_entity_count {
-        make_high_frequency(&mut lf_entities[..],
-                            &mut hf_entities[..],
-                            hf_entity_count,
-                            world,
-                            camera_position,
-                            index);
-        let lf = &mut lf_entities[index as usize];
-        let hf = &mut hf_entities[lf.hf_index.unwrap() as usize];
-        Some(EntityMut {
-            lf_index: index,
-            lf: lf as *mut LfEntity,
-            hf: hf as *mut HfEntity,
-        })
-    } else {
-        None
-    }
-}
-
 fn add_lf_entity<'a>(state: &'a mut GameState,
                      etype: EntityType,
                      pos: Option<WorldPosition>)
-                     -> (u32, &'a mut LfEntity) {
+                     -> (usize, &'a mut LfEntity) {
     let index = state.lf_entity_count;
-    debug_assert!((index as usize) < state.lf_entities.len());
+    debug_assert!((index) < state.lf_entities.len());
 
     state.lf_entity_count += 1;
 
-    state.lf_entities[index as usize] = LfEntity {
+    state.lf_entities[index] = LfEntity {
         etype: etype,
         world_position: pos,
         dim: V2::default(),
@@ -776,10 +705,10 @@ fn add_lf_entity<'a>(state: &'a mut GameState,
         world.change_entity_location_raw(index, None, &pos.unwrap(), world_arena);
     }
 
-    (index, &mut state.lf_entities[index as usize])
+    (index, &mut state.lf_entities[index])
 }
 
-fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z: i32) -> u32 {
+fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z: i32) -> usize {
 
     let pos = world_pos_from_tile(state.world, abs_tile_x, abs_tile_y, abs_tile_z);
     let tile_side_meters = state.world.tile_side_meters;
@@ -795,7 +724,7 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z:
     e_index
 }
 
-fn add_monster(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z: i32) -> u32 {
+fn add_monster(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z: i32) -> usize {
     let pos = world_pos_from_tile(state.world, abs_tile_x, abs_tile_y, abs_tile_z);
 
     let (e_index, lf_entity) = add_lf_entity(state, EntityType::Monster, Some(pos));
@@ -807,7 +736,7 @@ fn add_monster(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile
     e_index
 }
 
-fn add_sword(state: &mut GameState) -> u32 {
+fn add_sword(state: &mut GameState) -> usize {
     let (e_index, lf_entity) = add_lf_entity(state, EntityType::Sword, None);
 
     lf_entity.dim = V2 { x: 1.0, y: 0.5 };
@@ -816,7 +745,7 @@ fn add_sword(state: &mut GameState) -> u32 {
     e_index
 }
 
-fn add_familiar(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z: i32) -> u32 {
+fn add_familiar(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z: i32) -> usize {
     let pos = world_pos_from_tile(state.world, abs_tile_x, abs_tile_y, abs_tile_z);
 
     let (e_index, lf_entity) = add_lf_entity(state, EntityType::Familiar, Some(pos));
@@ -828,14 +757,14 @@ fn add_familiar(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_til
 }
 
 fn init_hit_points(hit_point_count: u8, lf_entity: &mut LfEntity) {
-    debug_assert!(hit_point_count as usize <= HITPOINTS_ARRAY_MAX);
+    debug_assert!(hit_point_count <= HITPOINTS_ARRAY_MAX);
     lf_entity.max_hitpoints = hit_point_count as u32;
     for idx in 0..lf_entity.max_hitpoints as usize {
         lf_entity.hitpoints[idx].filled = HITPOINT_SUB_COUNT;
     }
 }
 
-fn add_player(state: &mut GameState) -> u32 {
+fn add_player(state: &mut GameState) -> usize {
 
     let e_index = {
         let pos = state.camera_position;
@@ -849,7 +778,7 @@ fn add_player(state: &mut GameState) -> u32 {
     };
 
     let s_index = Some(add_sword(state));
-    state.lf_entities[e_index as usize].sword_lf_index = s_index;
+    state.lf_entities[e_index].sword_lf_index = s_index;
 
     if state.camera_follows_entity_index.is_none() {
         state.camera_follows_entity_index = Some(e_index);
@@ -858,35 +787,12 @@ fn add_player(state: &mut GameState) -> u32 {
     e_index
 }
 
-fn offset_and_check_frequency_by_area(state: &mut GameState, offset: V2<f32>, bounds: Rect<f32>) {
-    let mut to_remove = [None; MAX_HIGH_ENTITIES];
-    for index in 0..state.hf_entity_count as usize {
-        let (lf_index, check_position) = {
-            let hf = &mut state.hf_entities[index];
-            hf.position = hf.position + offset;
-            (hf.lf_index, hf.position)
-        };
-
-        let lf_entity = state.lf_entities[lf_index as usize];
-        if lf_entity.world_position.is_none() || !bounds.p_inside(check_position) {
-            to_remove[index] = Some(lf_index);
-        }
-    }
-
-    // map the fuckers out
-    for lf_index in to_remove.iter() {
-        if lf_index.is_some() {
-            make_low_frequency(state, lf_index.unwrap());
-        }
-    }
-}
-
 fn get_camspace_p(world: &World,
                   lf_entities: &[LfEntity],
-                  lf_index: u32,
+                  lf_index: usize,
                   camera_position: &WorldPosition)
                   -> Option<V2<f32>> {
-    let lf = &lf_entities[lf_index as usize];
+    let lf = &lf_entities[lf_index];
     if lf.world_position.is_some() {
         let V3{ x, y, .. } = subtract(world, &lf.world_position.unwrap(), camera_position);
         Some(V2 { x: x, y: y })
@@ -895,65 +801,9 @@ fn get_camspace_p(world: &World,
     }
 }
 
-fn make_high_frequency_pos(lf_entities: &mut [LfEntity],
-                           hf_entities: &mut [HfEntity],
-                           hf_entity_count: &mut u32,
-                           lf_index: u32,
-                           camspace_p: V2<f32>) {
-    let lf = &mut lf_entities[lf_index as usize];
-    if lf.hf_index.is_none() {
-        let hf_index = *hf_entity_count as usize;
-        if hf_index < hf_entities.len() {
-            *hf_entity_count += 1;
-            let hf = &mut hf_entities[hf_index];
-            hf.position = camspace_p;
-            hf.velocity = Default::default();
-            hf.chunk_z = lf.world_position.unwrap().chunk_z;
-            hf.face_direction = 0;
-            hf.lf_index = lf_index;
-
-            lf.hf_index = Some(hf_index as u32);
-        } else {
-            debug_assert!(true, "Should not reach this");
-        }
-    }
-}
-
-fn make_high_frequency(lf_entities: &mut [LfEntity],
-                       hf_entities: &mut [HfEntity],
-                       hf_entity_count: &mut u32,
-                       world: &World,
-                       camera_position: &WorldPosition,
-                       lf_index: u32) {
-    let camspace_p = get_camspace_p(world, lf_entities, lf_index, camera_position);
-    if camspace_p.is_some() {
-        make_high_frequency_pos(lf_entities,
-                                hf_entities,
-                                hf_entity_count,
-                                lf_index,
-                                camspace_p.unwrap());
-    }
-}
-
-fn make_low_frequency(state: &mut GameState, lf_index: u32) {
-    let hf_index = state.lf_entities[lf_index as usize].hf_index;
-    if hf_index.is_some() {
-        let index = hf_index.unwrap();
-        if index != state.hf_entity_count - 1 {
-            state.hf_entities[index as usize] = state.hf_entities[state.hf_entity_count as usize -
-                                                                  1];
-            let old_last_lf_index = state.hf_entities[index as usize].lf_index;
-            let lf_to_old_last = get_lf_entity(state, old_last_lf_index).unwrap();
-            lf_to_old_last.hf_index = hf_index;
-        }
-        state.lf_entities[lf_index as usize].hf_index = None;
-        state.hf_entity_count -= 1;
-    }
-}
-
 fn update_sword(lf_entities: &mut [LfEntity],
                 hf_entities: &mut [HfEntity],
-                hf_entity_count: u32,
+                hf_entity_count: usize,
                 world: &mut World,
                 world_arena: &mut MemoryArena,
                 camera_position: &WorldPosition,
@@ -990,7 +840,7 @@ fn update_sword(lf_entities: &mut [LfEntity],
 
 fn update_familiar(lf_entities: &mut [LfEntity],
                    hf_entities: &mut [HfEntity],
-                   hf_entity_count: u32,
+                   hf_entity_count: usize,
                    world: &mut World,
                    world_arena: &mut MemoryArena,
                    camera_position: &WorldPosition,
@@ -1048,14 +898,14 @@ fn update_familiar(lf_entities: &mut [LfEntity],
 #[allow(unused_variables)]
 fn update_monster(lf_entities: &[LfEntity],
                   hf_entities: &[HfEntity],
-                  hf_entity_count: u32,
+                  hf_entity_count: usize,
                   entity: EntityMut,
                   dt: f32) {
 }
 
 fn move_entity(lf_entities: &mut [LfEntity],
                hf_entities: &mut [HfEntity],
-               hf_entity_count: u32,
+               hf_entity_count: usize,
                world: &mut World,
                world_arena: &mut MemoryArena,
                camera_position: &WorldPosition,
@@ -1096,12 +946,12 @@ fn move_entity(lf_entities: &mut [LfEntity],
         let lf_entity = entity.get_lf();
 
         if lf_entity.collides {
-            for e_index in 0..hf_entity_count as usize {
-                if e_index == lf_entity.hf_index.unwrap() as usize {
+            for e_index in 0..hf_entity_count {
+                if e_index == lf_entity.hf_index.unwrap() {
                     continue;
                 }
                 let hf_test_entity = &hf_entities[e_index];
-                let lf_test_entity = &lf_entities[hf_test_entity.lf_index as usize];
+                let lf_test_entity = &lf_entities[hf_test_entity.lf_index];
                 if lf_test_entity.collides {
                     // Minkowski Sum
                     let diameter = V2 {
@@ -1265,7 +1115,7 @@ struct EntityPiece<'a> {
 
 struct EntityPieceGroup<'a> {
     meters_to_pixel: f32,
-    count: u32,
+    count: usize,
     pieces: [Option<EntityPiece<'a>>; 32],
 }
 
@@ -1278,8 +1128,8 @@ impl<'a> EntityPieceGroup<'a> {
                   color: Color,
                   align: V2<f32>,
                   entity_zc: f32) {
-        debug_assert!((self.count as usize) < self.pieces.len());
-        let piece = &mut self.pieces[self.count as usize];
+        debug_assert!((self.count) < self.pieces.len());
+        let piece = &mut self.pieces[self.count];
         self.count += 1;
         *piece = Some(EntityPiece {
             bitmap: bitmap,
@@ -1336,39 +1186,6 @@ impl<'a> EntityPieceGroup<'a> {
     }
 }
 
-struct Entity {
-    lf_index: u32,
-    lf: *const LfEntity,
-    hf: *const HfEntity,
-}
-
-impl Entity {
-    fn get_hf(&self) -> &HfEntity {
-        unsafe { mem::transmute(self.hf) }
-    }
-
-    fn get_lf(&self) -> &LfEntity {
-        unsafe { mem::transmute(self.lf) }
-    }
-}
-
-
-#[derive(Copy, Clone)]
-struct EntityMut {
-    lf_index: u32,
-    lf: *mut LfEntity,
-    hf: *mut HfEntity,
-}
-
-impl EntityMut {
-    fn get_hf(&self) -> &mut HfEntity {
-        unsafe { mem::transmute(self.hf) }
-    }
-
-    fn get_lf(&self) -> &mut LfEntity {
-        unsafe { mem::transmute(self.lf) }
-    }
-}
 
 const HITPOINTS_ARRAY_MAX: usize = 16;
 const HITPOINT_SUB_COUNT: u8 = 4;
@@ -1397,58 +1214,42 @@ struct Hitpoint {
 }
 
 #[derive(Copy, Clone)]
-struct LfEntity {
-    etype: EntityType,
-    world_position: Option<WorldPosition>,
-    dim: V2<f32>,
-    collides: bool,
+pub struct LfEntity {
+    pub etype: EntityType,
+    pub world_position: Option<WorldPosition>,
+    pub dim: V2<f32>,
+    pub collides: bool,
 
-    hf_index: Option<u32>,
+    pub max_hitpoints: u32,
+    pub hitpoints: [Hitpoint; HITPOINTS_ARRAY_MAX],
 
-    max_hitpoints: u32,
-    hitpoints: [Hitpoint; HITPOINTS_ARRAY_MAX],
+    pub sword_lf_index: Option<usize>,
+    pub distance_remaining: f32,
+    pub velocity: V2<f32>,
 
-    sword_lf_index: Option<u32>,
-    distance_remaining: f32,
-}
-
-#[derive(Copy, Clone)]
-struct HfEntity {
-    position: V2<f32>, // This position is relative to the camera
-    velocity: V2<f32>,
-    face_direction: u32,
-    chunk_z: i32,
-
-    z: f32,
-    dz: f32,
-
-    tbob: f32,
-
-    lf_index: u32,
+    pub tbob: f32,
+    pub face_direction: u32,
 }
 
 
-const MAX_HIGH_ENTITIES: usize = 256;
+pub struct GameState<'a> {
+    pub world_arena: MemoryArena,
+    pub world: &'a mut World,
 
-struct GameState<'a> {
-    world_arena: MemoryArena,
-    world: &'a mut World,
+    pub meters_to_pixel: f32,
 
-    meters_to_pixel: f32,
+    pub camera_follows_entity_index: Option<usize>,
+    pub camera_position: WorldPosition,
 
-    camera_follows_entity_index: Option<u32>,
-    camera_position: WorldPosition,
+    pub player_index_for_controller: [Option<usize>; MAX_CONTROLLERS],
 
-    player_index_for_controller: [Option<u32>; MAX_CONTROLLERS],
+    // TODO: rename all lf stuff to stored!
+    pub lf_entity_count: usize,
+    pub lf_entities: [LfEntity; 100000],
 
-    lf_entity_count: u32,
-    hf_entity_count: u32,
-    lf_entities: [LfEntity; 100000],
-    hf_entities: [HfEntity; MAX_HIGH_ENTITIES],
-
-    background_bitmap: graphics::Bitmap<'a>,
-    shadow: graphics::Bitmap<'a>,
-    tree: graphics::Bitmap<'a>,
-    sword: graphics::Bitmap<'a>,
-    hero_bitmaps: [HeroBitmaps<'a>; 4],
+    pub background_bitmap: graphics::Bitmap<'a>,
+    pub shadow: graphics::Bitmap<'a>,
+    pub tree: graphics::Bitmap<'a>,
+    pub sword: graphics::Bitmap<'a>,
+    pub hero_bitmaps: [HeroBitmaps<'a>; 4],
 }

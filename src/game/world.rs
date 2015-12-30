@@ -129,7 +129,7 @@ impl World {
     }
 
     pub fn change_entity_location(&mut self,
-                                  lf_index: u32,
+                                  lf_index: usize,
                                   lf_entity: &mut LfEntity,
                                   old_pos: Option<WorldPosition>,
                                   new_pos: Option<WorldPosition>,
@@ -142,7 +142,7 @@ impl World {
     }
 
     pub fn change_entity_location_raw(&mut self,
-                                      lf_index: u32,
+                                      lf_index: usize,
                                       old_pos: Option<WorldPosition>,
                                       new_pos: &WorldPosition,
                                       arena: &mut MemoryArena) {
@@ -166,24 +166,24 @@ impl World {
                     // NOTE: This is done seperately to avoid aliasing in the
                     // following loop because we could alias with our first_block
                     // variable
-                    for index in 0..first_block.e_count as usize {
+                    for index in 0..first_block.e_count {
                         if first_block.lf_entities[index] == lf_index {
                             debug_assert!(first_block.e_count > 0);
                             first_block.e_count -= 1;
                             first_block.lf_entities[index] =
-                                first_block.lf_entities[first_block.e_count as usize];
+                                first_block.lf_entities[first_block.e_count];
                             maybe_remove_block(self, first_block);
                         }
                     }
 
                     // in case it is in some of the consecutive blocks
                     'find: for block in first_block.iter_mut().skip(1) {
-                        for index in 0..block.e_count as usize {
+                        for index in 0..block.e_count {
                             if block.lf_entities[index] == lf_index {
                                 debug_assert!(first_block.e_count > 0);
                                 first_block.e_count -= 1;
                                 block.lf_entities[index] =
-                                    first_block.lf_entities[first_block.e_count as usize];
+                                    first_block.lf_entities[first_block.e_count];
                                 maybe_remove_block(self, first_block);
 
                                 // we have done our work no need to iterate over
@@ -214,7 +214,7 @@ impl World {
                                        Some(arena))
                             .unwrap();
             let block = &mut chunk.first_block;
-            if block.e_count as usize == block.lf_entities.len() {
+            if block.e_count == block.lf_entities.len() {
                 // Make new block to store it
                 let old_block = if self.first_free.is_some() {
                     let ptr = self.first_free.unwrap();
@@ -227,8 +227,8 @@ impl World {
                 block.next = Some(old_block as *mut EntityBlock);
                 block.e_count = 0;
             }
-            debug_assert!((block.e_count as usize) < block.lf_entities.len());
-            block.lf_entities[block.e_count as usize] = lf_index;
+            debug_assert!((block.e_count) < block.lf_entities.len());
+            block.lf_entities[block.e_count] = lf_index;
             block.e_count += 1;
         }
     }
@@ -339,8 +339,8 @@ impl Iterator for IterMut {
 
 #[derive(Copy, Clone)]
 pub struct EntityBlock {
-    pub e_count: u32,
-    pub lf_entities: [u32; 16],
+    pub e_count: usize,
+    pub lf_entities: [usize; 16],
 
     pub next: Option<*mut EntityBlock>,
 }

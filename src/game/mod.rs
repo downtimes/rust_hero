@@ -19,17 +19,8 @@ use self::world::{WorldPosition, world_pos_from_tile};
 use self::memory::MemoryArena;
 use self::graphics::Color;
 use self::math::{V2, V3, Rect};
+use self::simulation::{SimEntity, SimRegion, EntityReference};
 
-macro_rules! make_array {
-    ( $val:expr, $n:expr ) => {{
-        let mut arr: [_; $n] = unsafe { mem::uninitialized() };
-        for place in arr.iter_mut() {
-            unsafe { ptr::write(place, $val); }
-        }
-
-        arr
-    }}
-}
 
 // ============= The public interface ===============
 // Has to be very low latency!
@@ -292,8 +283,6 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
         // drop a test monster & familiar
         add_monster(state, cam_tile_x + 2, cam_tile_y + 2, cam_tile_z);
         add_familiar(state, cam_tile_x - 2, cam_tile_y + 2, cam_tile_z);
-
-        set_camera(state, &cam_position);
 
         game_memory.initialized = true;
     }
@@ -651,6 +640,9 @@ fn draw_hitpoints<'a>(lf: &LfEntity, piece_group: &mut EntityPieceGroup<'a>) {
 
 fn sim_camera_region(state: &mut GameState) {}
 
+// TODO: change all the manual indexing in the array with this here and make it a
+// method of the gamestate directly. Maby make it unsafe and get rid of lifetimes here
+// for the period while testing the designs?
 pub fn get_lf_entity<'a>(state: &'a mut GameState, index: usize) -> Option<&'a mut LfEntity> {
     if index < state.lf_entity_count {
         Some(&mut state.lf_entities[index])
@@ -659,23 +651,6 @@ pub fn get_lf_entity<'a>(state: &'a mut GameState, index: usize) -> Option<&'a m
     }
 }
 
-fn entity_from_hf(lf_entities: &[LfEntity],
-                  hf_entities: &[HfEntity],
-                  hf_entity_count: usize,
-                  hf_index: usize)
-                  -> Option<Entity> {
-    if hf_index < hf_entity_count {
-        let hf = &hf_entities[hf_index];
-        let lf = &lf_entities[hf.lf_index];
-        Some(Entity {
-            lf_index: hf.lf_index,
-            lf: lf as *const LfEntity,
-            hf: hf as *const HfEntity,
-        })
-    } else {
-        None
-    }
-}
 
 fn add_lf_entity<'a>(state: &'a mut GameState,
                      etype: EntityType,
@@ -777,8 +752,8 @@ fn add_player(state: &mut GameState) -> usize {
         e_index
     };
 
-    let s_index = Some(add_sword(state));
-    state.lf_entities[e_index].sword_lf_index = s_index;
+    let s_index = add_sword(state);
+    state.lf_entities[e_index].sim.sword = Some(EntityReference::Index(s_index));
 
     if state.camera_follows_entity_index.is_none() {
         state.camera_follows_entity_index = Some(e_index);
@@ -903,177 +878,6 @@ fn update_monster(lf_entities: &[LfEntity],
                   dt: f32) {
 }
 
-fn move_entity(lf_entities: &mut [LfEntity],
-               hf_entities: &mut [HfEntity],
-               hf_entity_count: usize,
-               world: &mut World,
-               world_arena: &mut MemoryArena,
-               camera_position: &WorldPosition,
-               entity: EntityMut,
-               mut acc: V2<f32>,
-               move_spec: &MoveSpec,
-               delta_t: f32) {
-
-    // Diagonal correction.
-    if move_spec.unit_max_accel_vector {
-        if acc.length_sq() > 1.0 {
-            acc = acc.normalize();
-        }
-    }
-
-    acc = acc * move_spec.speed;
-
-    let hf_entity = entity.get_hf();
-    // friction force currently just by rule of thumb;
-    acc = acc - hf_entity.velocity * move_spec.drag;
-
-
-    // Copy old player Position before we handle input
-    let mut entity_delta = acc * 0.5 * delta_t.powi(2) + hf_entity.velocity * delta_t;
-    hf_entity.velocity = acc * delta_t + hf_entity.velocity;
-
-
-    // try the collission detection multiple times to see if we can move with
-    // a corrected velocity after a collision
-    // TODO: we always loop 4 times. Look for a fast out if we moved enough
-    for _ in 0..4 {
-        let mut t_min = 1.0;
-        let mut wall_normal = Default::default();
-        let mut hit_hf_e_index = None;
-
-        let target_pos = hf_entity.position + entity_delta;
-
-        let lf_entity = entity.get_lf();
-
-        if lf_entity.collides {
-            for e_index in 0..hf_entity_count {
-                if e_index == lf_entity.hf_index.unwrap() {
-                    continue;
-                }
-                let hf_test_entity = &hf_entities[e_index];
-                let lf_test_entity = &lf_entities[hf_test_entity.lf_index];
-                if lf_test_entity.collides {
-                    // Minkowski Sum
-                    let diameter = V2 {
-                        x: lf_test_entity.dim.x + lf_entity.dim.x,
-                        y: lf_test_entity.dim.y + lf_entity.dim.y,
-                    };
-
-                    let min_corner = diameter * -0.5;
-                    let max_corner = diameter * 0.5;
-                    let rel = hf_entity.position - hf_test_entity.position;
-
-                    // check against the 4 entity walls
-                    if test_wall(max_corner.x,
-                                 min_corner.y,
-                                 max_corner.y,
-                                 rel.x,
-                                 rel.y,
-                                 entity_delta.x,
-                                 entity_delta.y,
-                                 &mut t_min) {
-                        wall_normal = V2 { x: 1.0, y: 0.0 };
-                        hit_hf_e_index = lf_test_entity.hf_index;
-                    }
-                    if test_wall(min_corner.x,
-                                 min_corner.y,
-                                 max_corner.y,
-                                 rel.x,
-                                 rel.y,
-                                 entity_delta.x,
-                                 entity_delta.y,
-                                 &mut t_min) {
-                        wall_normal = V2 { x: -1.0, y: 0.0 };
-                        hit_hf_e_index = lf_test_entity.hf_index;
-                    }
-                    if test_wall(max_corner.y,
-                                 min_corner.x,
-                                 max_corner.x,
-                                 rel.y,
-                                 rel.x,
-                                 entity_delta.y,
-                                 entity_delta.x,
-                                 &mut t_min) {
-                        wall_normal = V2 { x: 0.0, y: 1.0 };
-                        hit_hf_e_index = lf_test_entity.hf_index;
-                    }
-                    if test_wall(min_corner.y,
-                                 min_corner.x,
-                                 max_corner.x,
-                                 rel.y,
-                                 rel.x,
-                                 entity_delta.y,
-                                 entity_delta.x,
-                                 &mut t_min) {
-                        wall_normal = V2 { x: 0.0, y: -1.0 };
-                        hit_hf_e_index = lf_test_entity.hf_index;
-                    }
-                }
-            }
-        }
-
-        hf_entity.position = hf_entity.position + entity_delta * t_min;
-        if hit_hf_e_index.is_some() {
-            hf_entity.velocity = hf_entity.velocity -
-                                 wall_normal * math::dot_2(hf_entity.velocity, wall_normal);
-            entity_delta = target_pos - hf_entity.position;
-            entity_delta = entity_delta - wall_normal * math::dot_2(entity_delta, wall_normal);
-        }
-    }
-
-    // adjust facing direction depending on velocity
-    if hf_entity.velocity.x.abs() > hf_entity.velocity.y.abs() {
-        if hf_entity.velocity.x > 0.0 {
-            hf_entity.face_direction = 0;
-        } else {
-            hf_entity.face_direction = 2;
-        }
-    } else if hf_entity.velocity.x != 0.0 && hf_entity.velocity.y != 0.0 {
-        if hf_entity.velocity.y > 0.0 {
-            hf_entity.face_direction = 1;
-        } else {
-            hf_entity.face_direction = 3;
-        }
-    }
-
-    // map high_entity back to the low entity
-    let lf_entity = entity.get_lf();
-    let new_pos = map_into_world_space(world, camera_position, &hf_entity.position);
-    let old_pos = lf_entity.world_position;
-    world.change_entity_location(entity.lf_index,
-                                 lf_entity,
-                                 old_pos,
-                                 Some(new_pos),
-                                 world_arena);
-}
-
-fn test_wall(wall_value: f32,
-             min_ortho: f32,
-             max_ortho: f32,
-             rel_x: f32,
-             rel_y: f32,
-             delta_x: f32,
-             delta_y: f32,
-             t_min: &mut f32)
-             -> bool {
-    let t_epsilon = 0.001;
-    if delta_x != 0.0 {
-        let t_res = (wall_value - rel_x) / delta_x;
-        if t_res >= 0.0 && t_res < *t_min {
-            let y = rel_y + t_res * delta_y;
-            if min_ortho <= y && y <= max_ortho {
-                if t_res - t_epsilon < 0.0 {
-                    *t_min = 0.0;
-                    return true;
-                } else {
-                    *t_min = t_res - t_epsilon;
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
 
 struct HeroBitmaps<'a> {
     head: graphics::Bitmap<'a>,
@@ -1084,7 +888,7 @@ struct HeroBitmaps<'a> {
 }
 
 #[derive(Copy, Clone)]
-enum EntityType {
+pub enum EntityType {
     None,
     Hero,
     Wall,
@@ -1187,14 +991,14 @@ impl<'a> EntityPieceGroup<'a> {
 }
 
 
-const HITPOINTS_ARRAY_MAX: usize = 16;
+pub const HITPOINTS_ARRAY_MAX: usize = 16;
 const HITPOINT_SUB_COUNT: u8 = 4;
 
 #[derive(Copy, Clone)]
-struct MoveSpec {
-    unit_max_accel_vector: bool,
-    drag: f32,
-    speed: f32,
+pub struct MoveSpec {
+    pub unit_max_accel_vector: bool,
+    pub drag: f32,
+    pub speed: f32,
 }
 
 impl Default for MoveSpec {
@@ -1215,20 +1019,8 @@ struct Hitpoint {
 
 #[derive(Copy, Clone)]
 pub struct LfEntity {
-    pub etype: EntityType,
-    pub world_position: Option<WorldPosition>,
-    pub dim: V2<f32>,
-    pub collides: bool,
-
-    pub max_hitpoints: u32,
-    pub hitpoints: [Hitpoint; HITPOINTS_ARRAY_MAX],
-
-    pub sword_lf_index: Option<usize>,
-    pub distance_remaining: f32,
-    pub velocity: V2<f32>,
-
-    pub tbob: f32,
-    pub face_direction: u32,
+    pub sim: SimEntity,
+    pub world_position: WorldPosition,
 }
 
 

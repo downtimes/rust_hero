@@ -864,7 +864,7 @@ fn resize_dib_section(buffer: &mut Backbuffer, width: c_int, height: c_int) {
     if !buffer.memory.is_null() {
         unsafe {
             if VirtualFree(buffer.memory, 0 as SIZE_T, MEM_RELEASE) == 0 {
-                panic!("VirtualFree ran sizeo an error");
+                panic!("VirtualFree ran in an error");
             }
         }
     }

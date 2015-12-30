@@ -14,7 +14,6 @@ nnoremap  k
 nnoremap  l
 nnoremap  :update
 nnoremap   o
-nnoremap / /\v
 nnoremap H 0
 nnoremap L $
 nnoremap N Nzz
@@ -60,10 +59,10 @@ set autowrite
 set background=dark
 set backspace=indent,eol,start
 set balloonexpr=SyntasticBalloonsExprNotifier()
+set errorfile=_ent
 set fileencodings=ucs-bom,utf-8,default,latin1
 set helplang=de
 set hidden
-set hlsearch
 set ignorecase
 set incsearch
 set laststatus=2
@@ -89,17 +88,43 @@ if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
   let s:wipebuf = bufnr('%')
 endif
 set shortmess=aoO
-badd +12 src/ffi/linux.rs
-badd +30 src/linux.rs
-badd +298 src/ffi/sdl.rs
-badd +177 src/game/graphics.rs
-badd +89 src/game/math.rs
-badd +974 src/game/mod.rs
-badd +124 ~/.vimrc
-badd +150 src/game/world.rs
+badd +1 build.rs
+badd +5 src/common/mod.rs
+badd +0 src/ffi/direct_sound.rs
+badd +0 src/ffi/linux.rs
+badd +0 src/ffi/mod.rs
+badd +0 src/ffi/sdl.rs
+badd +0 src/game/graphics.rs
+badd +0 src/game/math.rs
+badd +0 src/game/memory.rs
+badd +1210 src/game/mod.rs
+badd +0 src/game/random.rs
+badd +104 src/game/simulation.rs
+badd +0 src/game/world.rs
+badd +3 src/libgame.rs
+badd +730 src/linux.rs
+badd +0 src/main.rs
+badd +1565 src/win32.rs
+badd +22 ~/.vimrc
 argglobal
 silent! argdel *
-edit src/game/mod.rs
+argadd src/common/mod.rs
+argadd src/ffi/direct_sound.rs
+argadd src/ffi/linux.rs
+argadd src/ffi/mod.rs
+argadd src/ffi/sdl.rs
+argadd src/game/graphics.rs
+argadd src/game/math.rs
+argadd src/game/memory.rs
+argadd src/game/mod.rs
+argadd src/game/random.rs
+argadd src/game/simulation.rs
+argadd src/game/world.rs
+argadd src/libgame.rs
+argadd src/linux.rs
+argadd src/main.rs
+argadd src/win32.rs
+edit src/game/simulation.rs
 set splitbelow splitright
 wincmd _ | wincmd |
 vsplit
@@ -113,12 +138,13 @@ set nosplitbelow
 set nosplitright
 wincmd t
 set winheight=1 winwidth=1
-exe 'vert 1resize ' . ((&columns * 106 + 96) / 193)
-exe '2resize ' . ((&lines * 42 + 29) / 58)
-exe 'vert 2resize ' . ((&columns * 86 + 96) / 193)
-exe '3resize ' . ((&lines * 13 + 29) / 58)
-exe 'vert 3resize ' . ((&columns * 86 + 96) / 193)
+exe 'vert 1resize ' . ((&columns * 96 + 96) / 193)
+exe '2resize ' . ((&lines * 45 + 29) / 58)
+exe 'vert 2resize ' . ((&columns * 96 + 96) / 193)
+exe '3resize ' . ((&lines * 10 + 29) / 58)
+exe 'vert 3resize ' . ((&columns * 96 + 96) / 193)
 argglobal
+edit src/game/simulation.rs
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
 nnoremap <buffer> <silent> <D-r> :RustRun
 onoremap <buffer> <silent> [[ :call rust#Jump('o', 'Back')
@@ -238,12 +264,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 671 - ((31 * winheight(0) + 28) / 56)
+let s:l = 104 - ((26 * winheight(0) + 28) / 56)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-671
-normal! 095|
+104
+normal! 0
 wincmd w
 argglobal
 edit src/game/mod.rs
@@ -366,11 +392,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 1409 - ((26 * winheight(0) + 21) / 42)
+let s:l = 1210 - ((22 * winheight(0) + 22) / 45)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-1409
+1210
 normal! 0
 wincmd w
 argglobal
@@ -442,7 +468,7 @@ setlocal nolisp
 setlocal lispwords=
 setlocal nolist
 setlocal makeprg=
-setlocal matchpairs=(:),{:},[:]
+setlocal matchpairs=(:),{:},[:],<:>
 setlocal modeline
 setlocal nomodifiable
 setlocal nrformats=octal,hex
@@ -486,11 +512,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 wincmd w
-exe 'vert 1resize ' . ((&columns * 106 + 96) / 193)
-exe '2resize ' . ((&lines * 42 + 29) / 58)
-exe 'vert 2resize ' . ((&columns * 86 + 96) / 193)
-exe '3resize ' . ((&lines * 13 + 29) / 58)
-exe 'vert 3resize ' . ((&columns * 86 + 96) / 193)
+exe 'vert 1resize ' . ((&columns * 96 + 96) / 193)
+exe '2resize ' . ((&lines * 45 + 29) / 58)
+exe 'vert 2resize ' . ((&columns * 96 + 96) / 193)
+exe '3resize ' . ((&lines * 10 + 29) / 58)
+exe 'vert 3resize ' . ((&columns * 96 + 96) / 193)
 tabnext 1
 if exists('s:wipebuf')
   silent exe 'bwipe ' . s:wipebuf

@@ -1,4 +1,18 @@
 use std::default::Default;
+use std::mem;
+use std::ptr;
+
+#[macro_export]
+macro_rules! make_array {
+    ( $val:expr, $n:expr ) => {{
+        let mut arr: [_; $n] = unsafe { mem::uninitialized() };
+        for place in arr.iter_mut() {
+            unsafe { ptr::write(place, $val); }
+        }
+
+        arr
+    }}
+}
 
 #[allow(dead_code)]
 pub mod util {

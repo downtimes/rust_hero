@@ -198,13 +198,13 @@ struct Game {
 
 // Stub functons if none of the game Code could be loaded!
 extern "C" fn get_sound_samples_stub(_: &ThreadContext, _: &mut GameMemory, _: &mut SoundBuffer) {
-    panic!("No sound function")
+    unimplemented!();
 }
 extern "C" fn update_and_render_stub(_: &ThreadContext,
                                      _: &mut GameMemory,
                                      _: &Input,
                                      _: &mut VideoBuffer) {
-    panic!("no update_and_render function")
+    unimplemented!();
 }
 
 

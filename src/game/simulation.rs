@@ -1,17 +1,20 @@
 use super::world::{World, WorldPosition, map_into_world_space, subtract};
 use super::math::{Rect, V2, V3, dot_2};
-use super::{GameState, LfEntity, get_lf_entity, EntityType, Hitpoint, HITPOINTS_ARRAY_MAX};
+use super::{GameState, LfEntity, EntityType, Hitpoint, HITPOINTS_ARRAY_MAX};
 use super::MoveSpec;
 use super::memory::MemoryArena;
 
 use std::ptr;
 
+//TODO: Get rid of all the raw Pointers once the exploratory Code is done
+#[derive(Copy, Clone, PartialEq)]
 pub enum EntityReference {
-    Ptr(&SimEntity),
+    Ptr(*mut SimEntity),
     Index(usize),
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+//TODO: Rename this struct to Entity instead? and the other one to StorageEntity
+#[derive(Copy, Clone, PartialEq)]
 pub struct SimEntity {
     pub position: V2<f32>,
     pub chunk_z: i32,
@@ -36,79 +39,95 @@ pub struct SimEntity {
     pub face_direction: u32,
 }
 
+
+const HASH_TABLE_LEN: usize = 4096;
 pub struct SimRegion<'a> {
-    // TODO: need a hashtable here to map stored entitys to sim_entities
-    world: &World,
-    origin: WorldPosition,
-    bounds: Rect<f32>,
-    max_entity_count: usize,
-    entity_count: usize,
-    entities: &'a mut [SimEntity],
+    pub world: &'a mut World,
+    pub origin: WorldPosition,
+    pub bounds: Rect<f32>,
+    pub max_entity_count: usize,
+    pub entity_count: usize,
+    pub entities: &'a mut [SimEntity],
 
     // TODO: Is Hash really the best data structure for this?
-    hash_table: [Option<SimEntityHash>; 4096],
+    pub hash_table: [Option<SimEntityHash<'a>>; HASH_TABLE_LEN],
 }
 
-struct SimEntityHash {
-    index: usize,
-    ptr: &mut SimEntity,
+pub struct SimEntityHash<'a> {
+    pub index: usize,
+    pub ptr: &'a mut SimEntity,
 }
 
-fn store_entity_reference(reference: &mut EntityReference) {
-    reference = if let EntityReference::Ptr(ptr) = reference {
-        EntityReference::Index(ptr.storage_index)
+fn store_entity_reference(reference: EntityReference) -> EntityReference {
+    if let EntityReference::Ptr(ptr) = reference {
+        let storage_index = unsafe { (*ptr).storage_index };
+        EntityReference::Index(storage_index)
     } else {
         reference
-    };
+    }
 }
 
 
-fn get_entity_by_index(sim_region: &SimRegion, store_index: usize) -> Option<&mut SimEntity> {
-    sim_region.get_hash_from_index(store_index).map(|hash| hash.ptr)
+#[allow(dead_code)]
+fn get_entity_by_index<'a>(sim_region: &'a mut SimRegion, store_index: usize) -> Option<&'a mut SimEntity> {
+    match sim_region.get_hash_from_index(store_index) {
+        Some(hash) => Some(hash.ptr),
+        None => None,
+    }
 }
 
-fn load_entity_reference(sim_region: &mut SimRegion,
+fn load_entity_reference<'a>(sim_region: &mut SimRegion,
                          state: &mut GameState,
-                         reference: &mut EntityReference) {
-    reference = if let EntityReference::Index(idx) = reference {
-        let hash = sim_region.get_hash_from_index(idx);
-        if hash.is_some() {
-            EntityReference::Ptr(hash.unwrap().ptr)
+                         reference: EntityReference) -> EntityReference {
+    if let EntityReference::Index(idx) = reference {
+        if sim_region.get_hash_from_index(idx).is_some() {
+            let hash = sim_region.get_hash_from_index(idx).unwrap();
+            EntityReference::Ptr(hash.ptr)
         } else {
-            EntityReference::Ptr(sim_region.add_entity(state.lf_entities[idx], idx, None))
+            //TODO: Remove lifetime hacks here!
+            let entity = unsafe { &mut *(state.get_stored_entity(idx).unwrap() as *mut _)};
+            EntityReference::Ptr(
+               sim_region.add_entity(state,
+                                     entity,
+                                     idx,
+                                     None)
+            )
         }
     } else {
         reference
-    };
+    }
 }
 
 
-impl SimRegion {
+impl<'a> SimRegion<'a> {
     pub fn get_sim_space_p(&self, entity: &LfEntity) -> V2<f32> {
 
-        let V3{ x, y, .. } = subtract(self.world, &entity.world_position.unwrap(), self.origin);
+        let V3{ x, y, .. } = subtract(self.world, &entity.world_position, &self.origin);
         V2 { x: x, y: y }
     }
 
-    pub fn end_sim(&mut self, state: &mut GameState) {
+    pub fn end_sim(&mut self, state: &mut GameState<'a>) {
 
         // TODO: Maybe store entities in the world and don't need GameState here
         for index in 0..self.entity_count {
-            let entity = &mut self.entitis[index];
+            let entity = &mut self.entities[index];
             let store_index = entity.storage_index;
             let stored_entity = &mut state.lf_entities[store_index];
 
             stored_entity.sim = *entity;
-            store_entity_reference(&mut stored_entity.sim.sword);
+            if let Some(sword) = stored_entity.sim.sword.as_mut() {
+                *sword = store_entity_reference(*sword);
+            }
 
             // TODO: Safe state back to stored entity once high entities
             // do state decompression, etc.
-            let new_pos = map_into_world_space(state.world, self.origin, entity.position);
+            let new_pos = map_into_world_space(state.world, &self.origin, &entity.position);
+            let world_pos = Some(stored_entity.world_position);
             self.world.change_entity_location(store_index,
                                               stored_entity,
-                                              stored_entity.world_position,
-                                              Some(new_pos),
-                                              state.world_arena);
+                                              world_pos,
+                                              new_pos,
+                                              &mut state.world_arena);
             if state.camera_follows_entity_index.is_some() &&
                (entity.storage_index == state.camera_follows_entity_index.unwrap()) {
                 let new_cam_p = stored_entity.world_position;
@@ -122,11 +141,13 @@ impl SimRegion {
                   store_index: usize,
                   sim_p: Option<V2<f32>>)
                   -> &mut SimEntity {
+        
+        let sim_space = self.get_sim_space_p(source);
         let sim_ent = self.add_entity_raw(state, store_index, source);
         if sim_p.is_some() {
             sim_ent.position = sim_p.unwrap();
         } else {
-            sim_ent.position = self.get_sim_space_p(source);
+            sim_ent.position = sim_space;
         }
         // TODO: convert StoredEntity to a simulation entity
         sim_ent
@@ -138,14 +159,18 @@ impl SimRegion {
                       source: &LfEntity)
                       -> &mut SimEntity {
         let sim_ent;
-        if self.entites.len() < self.max_entity_count {
+        if self.entities.len() >= self.max_entity_count - 1{
+            //TODO: unsafe not good!
+            sim_ent = unsafe {&mut *(&mut self.entities[self.entity_count] as *mut _) };
             self.entity_count += 1;
-            sim_ent = &mut self.entities[self.entity_count];
+
             self.map_index_to_sim_entity(store_index, sim_ent);
 
             // TODO: Decompression instead of just a plain copy
             *sim_ent = source.sim;
-            load_entity_reference(self, state, sim_ent.sword);
+            if let Some(sword) = sim_ent.sword {
+                load_entity_reference(self, state, sword);
+            }
             sim_ent.storage_index = store_index;
         } else {
             panic!("Not allowed to instert more entities than that!");
@@ -156,65 +181,60 @@ impl SimRegion {
 
     fn map_index_to_sim_entity(&mut self, store_index: usize, entity: &mut SimEntity) {
         let hash = self.get_hash_from_index(store_index);
-        debug_assert!(hash.is_none() || (hash.unwrap().index == store_index));
+        debug_assert!(hash.is_none() || (hash.as_ref().unwrap().index == store_index));
 
         if hash.is_some() {
             let hash = hash.unwrap();
-            hash.ptr = entity;
+            //TODO: remove unsafe here
+            hash.ptr = unsafe { &mut *(entity as *mut _) };
         }
     }
 
-    fn get_hash_from_index(&mut self, store_index: usize) -> Option<&mut SimEntityHash> {
-        let hash_value = store_index as u32;
+    fn get_hash_from_index(&mut self, store_index: usize) -> Option<&mut SimEntityHash<'a>> {
+        let hash_value = store_index;
 
         // Look through the whole table for a slot
-        for idx in 0..self.hash_table.len() {
-            let entry = self.hash_table[(store_index + idx) % self.hash_table.len()];
-            if entry.is_none() {
-                return None;
-            } else if entry.unwrap().index == store_index {
-                return Some(entry);
-            }
-        }
+        let len = self.hash_table.len();
+        self.hash_table[hash_value % len].as_mut()
     }
 
     pub fn begin_sim(state: &mut GameState,
-                     origin: WorldPosition,
-                     bounds: Rect<f32>)
-                     -> &'a mut SimRegion<'a> {
+                         sim_arena: &mut MemoryArena,
+                         origin: WorldPosition,
+                         bounds: Rect<f32>)
+                            -> &'static mut SimRegion<'static> {
+
         // TODO: If entities were stored in the world we wouldn't need a gamestate here
-        // TODO: clear the hashtable with ptr::write_bytes
         // TODO: Notion of inactive sim_entities for the apron around the simulation
 
-        let sim_region: &mut SimRegion = state.world_arena.push_struct();
-        sim_region.world = state.world;
+        let sim_region: &mut SimRegion = sim_arena.push_struct();
+        unsafe { ptr::write_bytes(sim_region.hash_table.as_mut_ptr(), 0, HASH_TABLE_LEN); }
+        //TODO: get rid of unsafe here 
+        sim_region.world = unsafe { &mut *(state.world as *mut _) };
         sim_region.origin = origin;
         sim_region.bounds = bounds;
         // TODO: Needs to be more specific later on?
         sim_region.max_entity_count = 4024;
         sim_region.entity_count = 0;
-        sim_region.entities = state.world_arena.push_slice(sim_region.max_entity_count);
+        sim_region.entities = sim_arena.push_slice(sim_region.max_entity_count);
 
         let min_p = map_into_world_space(state.world,
-                                         sim_region.center,
+                                         &sim_region.origin,
                                          &sim_region.bounds.get_min());
         let max_p = map_into_world_space(state.world,
-                                         sim_region.center,
+                                         &sim_region.origin,
                                          &sim_region.bounds.get_max());
-        for ch in state.world.iter_spatially(min_p, max_p, sim_region.center.chunk_z) {
+        for ch in state.world.iter_spatially(min_p, max_p, sim_region.origin.chunk_z) {
             for block in ch.first_block.iter() {
                 for block_idx in 0..block.e_count {
                     let lf_index = block.lf_entities[block_idx];
                     let lf_entity = state.lf_entities[lf_index];
 
-                    let &mut GameState{ ref mut lf_entities, ref mut hf_entities,
-                                        ref mut hf_entity_count, ref world,
-                                        ref camera_position, .. } = state;
-                    let sim_space_p = sim_region.get_sim_space_p(lf_entity);
+                    let sim_space_p = sim_region.get_sim_space_p(&lf_entity);
                     if sim_region.bounds.p_inside(sim_space_p) {
                         // TODO: check a second rectangle to set the entity to be movable
                         // or not
-                        sim_region.add_entity(state, lf_entity, lf_index, Some(sim_space_p));
+                        sim_region.add_entity(state, &lf_entity, lf_index, Some(sim_space_p));
                     }
                 }
             }
@@ -224,9 +244,6 @@ impl SimRegion {
     }
 
     pub fn move_entity(&mut self,
-                       lf_entities: &mut [LfEntity],
-                       world_arena: &mut MemoryArena,
-                       camera_position: &WorldPosition,
                        entity: &mut SimEntity,
                        mut acc: V2<f32>,
                        move_spec: &MoveSpec,
@@ -241,9 +258,17 @@ impl SimRegion {
 
         acc = acc * move_spec.speed;
 
-        let hf_entity = entity.get_hf();
         // friction force currently just by rule of thumb;
         acc = acc - entity.velocity * move_spec.drag;
+
+        // Gravity and "jumping"
+        let gravity = -9.81;
+        entity.z += gravity * 0.5 * delta_t.powi(2) + entity.dz * delta_t;
+        entity.dz = gravity * delta_t + entity.dz;
+
+        if entity.z < 0.0 {
+            entity.z = 0.0;
+        }
 
 
         // Copy old player Position before we handle input
@@ -257,11 +282,10 @@ impl SimRegion {
         for _ in 0..4 {
             let mut t_min = 1.0;
             let mut wall_normal = Default::default();
-            let mut hit_hf_e_index = None;
+            let mut hit_entity = None;
 
             let target_pos = entity.position + entity_delta;
 
-            let mut hit_entity = None;
             if entity.collides {
                 // TODO: do a spatial partition here eventually
                 for e_index in 0..self.entity_count {
@@ -282,7 +306,7 @@ impl SimRegion {
 
                         let min_corner = diameter * -0.5;
                         let max_corner = diameter * 0.5;
-                        let rel = hf_entity.position - test_entity.position;
+                        let rel = entity.position - test_entity.position;
 
                         // check against the 4 entity walls
                         if test_wall(max_corner.x,

@@ -197,7 +197,7 @@ impl<T> ops::Neg for V3<T> where T: ops::Neg<Output = T>
     }
 }
 
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq)]
 pub struct V2<T> {
     pub x: T,
     pub y: T,

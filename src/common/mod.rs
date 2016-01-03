@@ -1,6 +1,4 @@
 use std::default::Default;
-use std::mem;
-use std::ptr;
 
 #[macro_export]
 macro_rules! make_array {

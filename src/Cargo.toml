@@ -10,6 +10,7 @@ path = "libgame.rs"
 
 [dependencies]
 num = "*"
+bitflags = "*"
 
 [features]
 internal = []

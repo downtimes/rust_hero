@@ -8,6 +8,7 @@ inoremap <Right> <Nop>
 inoremap <Left> <Nop>
 inoremap <Down> <Nop>
 inoremap <Up> <Nop>
+map! <S-Insert> <MiddleMouse>
 nnoremap  h
 nnoremap <NL> j
 nnoremap  k
@@ -20,8 +21,8 @@ nnoremap N Nzz
 vmap [% [%m'gv``
 vmap ]% ]%m'gv``
 vmap a% [%v]%
-nnoremap gD :vsplit:call RacerGoToDefinition()
 nnoremap gd :call RacerGoToDefinition()
+nnoremap gD :vsplit:call RacerGoToDefinition()
 vmap gx <Plug>NetrwBrowseXVis
 nmap gx <Plug>NetrwBrowseX
 nnoremap j gj
@@ -29,6 +30,7 @@ nnoremap k gk
 nnoremap n nzz
 vnoremap <silent> <Plug>NetrwBrowseXVis :call netrw#BrowseXVis()
 nnoremap <silent> <Plug>NetrwBrowseX :call netrw#BrowseX(expand((exists("g:netrw_gx")? g:netrw_gx : '<cfile>')),netrw#CheckIfRemote())
+map <S-Insert> <MiddleMouse>
 inoremap  h
 inoremap <NL> 
 inoremap  
@@ -61,6 +63,7 @@ set backspace=indent,eol,start
 set balloonexpr=SyntasticBalloonsExprNotifier()
 set errorfile=_ent
 set fileencodings=ucs-bom,utf-8,default,latin1
+set guioptions=aegirLt
 set helplang=de
 set hidden
 set ignorecase
@@ -69,6 +72,7 @@ set laststatus=2
 set listchars=tab:▸\ ,eol:¬
 set makeprg=./build.sh
 set matchpairs=(:),{:},[:],<:>
+set mouse=a
 set ruler
 set runtimepath=~/.vim,~/.vim/bundle/Vundle.vim,~/.vim/bundle/molokai,~/.vim/bundle/vim-airline,~/.vim/bundle/syntastic,~/.vim/bundle/nerdtree,~/.vim/bundle/vim-cpp-enhanced-highlight,~/.vim/bundle/taglist.vim,~/.vim/bundle/rust.vim,~/.vim/bundle/vim-racer,/usr/share/vim/vimfiles,/usr/share/vim/vim74,/usr/share/vim/vimfiles/after,~/.vim/after,~/.vim/bundle/Vundle.vim,~/.vim/bundle/Vundle.vim/after,~/.vim/bundle/molokai/after,~/.vim/bundle/vim-airline/after,~/.vim/bundle/syntastic/after,~/.vim/bundle/nerdtree/after,~/.vim/bundle/vim-cpp-enhanced-highlight/after,~/.vim/bundle/taglist.vim/after,~/.vim/bundle/rust.vim/after,~/.vim/bundle/vim-racer/after
 set scrolloff=7
@@ -80,6 +84,7 @@ set smarttab
 set softtabstop=4
 set suffixes=.bak,~,.swp,.o,.info,.aux,.log,.dvi,.bbl,.blg,.brf,.cb,.ind,.idx,.ilg,.inx,.out,.toc,.png,.jpg
 set tabstop=4
+set termencoding=utf-8
 let s:so_save = &so | let s:siso_save = &siso | set so=0 siso=0
 let v:this_session=expand("<sfile>:p")
 silent only
@@ -90,22 +95,23 @@ endif
 set shortmess=aoO
 badd +1 build.rs
 badd +5 src/common/mod.rs
-badd +0 src/ffi/direct_sound.rs
-badd +0 src/ffi/linux.rs
-badd +0 src/ffi/mod.rs
-badd +0 src/ffi/sdl.rs
-badd +0 src/game/graphics.rs
-badd +0 src/game/math.rs
-badd +0 src/game/memory.rs
-badd +1210 src/game/mod.rs
-badd +0 src/game/random.rs
-badd +104 src/game/simulation.rs
-badd +0 src/game/world.rs
-badd +3 src/libgame.rs
-badd +730 src/linux.rs
-badd +0 src/main.rs
+badd +1 src/ffi/direct_sound.rs
+badd +1 src/ffi/linux.rs
+badd +1 src/ffi/mod.rs
+badd +1 src/ffi/sdl.rs
+badd +1 src/game/graphics.rs
+badd +1 src/game/math.rs
+badd +1 src/game/memory.rs
+badd +687 src/game/mod.rs
+badd +1 src/game/random.rs
+badd +139 src/game/simulation.rs
+badd +145 src/game/world.rs
+badd +5 src/libgame.rs
+badd +1 src/linux.rs
+badd +29 src/main.rs
 badd +1565 src/win32.rs
 badd +22 ~/.vimrc
+badd +13 src/Cargo.toml
 argglobal
 silent! argdel *
 argadd src/common/mod.rs
@@ -138,11 +144,11 @@ set nosplitbelow
 set nosplitright
 wincmd t
 set winheight=1 winwidth=1
-exe 'vert 1resize ' . ((&columns * 96 + 96) / 193)
-exe '2resize ' . ((&lines * 45 + 29) / 58)
-exe 'vert 2resize ' . ((&columns * 96 + 96) / 193)
-exe '3resize ' . ((&lines * 10 + 29) / 58)
-exe 'vert 3resize ' . ((&columns * 96 + 96) / 193)
+exe 'vert 1resize ' . ((&columns * 88 + 83) / 166)
+exe '2resize ' . ((&lines * 35 + 23) / 46)
+exe 'vert 2resize ' . ((&columns * 77 + 83) / 166)
+exe '3resize ' . ((&lines * 8 + 23) / 46)
+exe 'vert 3resize ' . ((&columns * 77 + 83) / 166)
 argglobal
 edit src/game/simulation.rs
 nnoremap <buffer> <D-R> :RustRun! =join(b:rust_last_rustc_args)erust#AppendCmdLine(' -- ' . join(b:rust_last_args))
@@ -206,7 +212,7 @@ setlocal formatexpr=
 setlocal formatoptions=croqnlj
 setlocal formatlistpat=^\\s*\\d\\+[\\]:.)}\\t\ ]\\s*
 setlocal grepprg=
-setlocal iminsert=2
+setlocal iminsert=0
 setlocal imsearch=2
 setlocal include=
 setlocal includeexpr=substitute(v:fname,'::','/','g')
@@ -264,12 +270,12 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 104 - ((26 * winheight(0) + 28) / 56)
+let s:l = 158 - ((20 * winheight(0) + 22) / 44)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-104
-normal! 0
+158
+normal! 037|
 wincmd w
 argglobal
 edit src/game/mod.rs
@@ -334,8 +340,8 @@ setlocal formatexpr=
 setlocal formatoptions=croqnlj
 setlocal formatlistpat=^\\s*\\d\\+[\\]:.)}\\t\ ]\\s*
 setlocal grepprg=
-setlocal iminsert=2
-setlocal imsearch=2
+setlocal iminsert=0
+setlocal imsearch=0
 setlocal include=
 setlocal includeexpr=substitute(v:fname,'::','/','g')
 setlocal indentexpr=GetRustIndent(v:lnum)
@@ -392,11 +398,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 1210 - ((22 * winheight(0) + 22) / 45)
+let s:l = 1 - ((0 * winheight(0) + 17) / 35)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-1210
+1
 normal! 0
 wincmd w
 argglobal
@@ -512,11 +518,11 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 wincmd w
-exe 'vert 1resize ' . ((&columns * 96 + 96) / 193)
-exe '2resize ' . ((&lines * 45 + 29) / 58)
-exe 'vert 2resize ' . ((&columns * 96 + 96) / 193)
-exe '3resize ' . ((&lines * 10 + 29) / 58)
-exe 'vert 3resize ' . ((&columns * 96 + 96) / 193)
+exe 'vert 1resize ' . ((&columns * 88 + 83) / 166)
+exe '2resize ' . ((&lines * 35 + 23) / 46)
+exe 'vert 2resize ' . ((&columns * 77 + 83) / 166)
+exe '3resize ' . ((&lines * 8 + 23) / 46)
+exe 'vert 3resize ' . ((&columns * 77 + 83) / 166)
 tabnext 1
 if exists('s:wipebuf')
   silent exe 'bwipe ' . s:wipebuf

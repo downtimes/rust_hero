@@ -131,22 +131,21 @@ impl World {
     pub fn change_entity_location(&mut self,
                                   lf_index: usize,
                                   lf_entity: &mut LfEntity,
-                                  old_pos: Option<WorldPosition>,
-                                  new_pos: WorldPosition,
+                                  new_pos: Option<WorldPosition>,
                                   arena: &mut MemoryArena) {
-        self.change_entity_location_raw(lf_index, old_pos, &new_pos, arena);
+        self.change_entity_location_raw(lf_index, lf_entity.world_position, new_pos, arena);
         lf_entity.world_position = new_pos;
-
     }
 
     pub fn change_entity_location_raw(&mut self,
                                       lf_index: usize,
                                       old_pos: Option<WorldPosition>,
-                                      new_pos: &WorldPosition,
+                                      new_pos: Option<WorldPosition>,
                                       arena: &mut MemoryArena) {
         // TODO: if this moves an entity into the camera bounds, should it automatically
         // go into the high set immediatly? And conversly move it out of high set?
-        if old_pos.is_some() && are_in_same_chunk(self, &old_pos.unwrap(), new_pos) {
+        if old_pos.is_some() && new_pos.is_some() &&
+           are_in_same_chunk(self, &old_pos.unwrap(), &new_pos.unwrap()) {
             // Do nothing because we are already in the right spot
         } else {
             if old_pos.is_some() {
@@ -206,28 +205,31 @@ impl World {
             }
 
             // Now start inserting the entity in the new Block
-            let chunk = self.get_chunk(new_pos.chunk_x,
-                                       new_pos.chunk_y,
-                                       new_pos.chunk_z,
-                                       Some(arena))
-                            .unwrap();
-            let block = &mut chunk.first_block;
-            if block.e_count == block.lf_entities.len() {
-                // Make new block to store it
-                let old_block = if self.first_free.is_some() {
-                    let ptr = self.first_free.unwrap();
-                    self.first_free = unsafe { (*ptr).next };
-                    unsafe { mem::transmute(ptr) }
-                } else {
-                    arena.push_struct::<EntityBlock>()
-                };
-                *old_block = *block;
-                block.next = Some(old_block as *mut EntityBlock);
-                block.e_count = 0;
+            if new_pos.is_some() {
+                let new_p = new_pos.unwrap();
+                let chunk = self.get_chunk(new_p.chunk_x,
+                                           new_p.chunk_y,
+                                           new_p.chunk_z,
+                                           Some(arena))
+                                .unwrap();
+                let block = &mut chunk.first_block;
+                if block.e_count == block.lf_entities.len() {
+                    // Make new block to store it
+                    let old_block = if self.first_free.is_some() {
+                        let ptr = self.first_free.unwrap();
+                        self.first_free = unsafe { (*ptr).next };
+                        unsafe { mem::transmute(ptr) }
+                    } else {
+                        arena.push_struct::<EntityBlock>()
+                    };
+                    *old_block = *block;
+                    block.next = Some(old_block as *mut EntityBlock);
+                    block.e_count = 0;
+                }
+                debug_assert!((block.e_count) < block.lf_entities.len());
+                block.lf_entities[block.e_count] = lf_index;
+                block.e_count += 1;
             }
-            debug_assert!((block.e_count) < block.lf_entities.len());
-            block.lf_entities[block.e_count] = lf_index;
-            block.e_count += 1;
         }
     }
 
@@ -393,17 +395,16 @@ pub struct WorldPosition {
 }
 
 pub fn are_in_same_chunk(world: &World, pos1: &WorldPosition, pos2: &WorldPosition) -> bool {
-    //TODO: Debug this stuff so we can reenable this check! Somewhere is a bad 
-    //call with none canonical coords
-    //debug_assert!(is_canonical_v(world, pos1.offset) && is_canonical_v(world, pos2.offset));
+    // TODO: Debug this stuff so we can reenable this check! Somewhere is a bad
+    // call with none canonical coords
+    // debug_assert!(is_canonical_v(world, pos1.offset) && is_canonical_v(world, pos2.offset));
     pos1.chunk_x == pos2.chunk_x && pos1.chunk_y == pos2.chunk_y && pos1.chunk_z == pos2.chunk_z
 }
 
 fn is_canonical(world: &World, rel: f32) -> bool {
-    //TODO: Fix floating point math so this can be exact?
-    
+    // TODO: Fix floating point math so this can be exact?
     let epsilon = 0.0001;
-    (rel >= -(0.5 * world.chunk_side_meters + epsilon)) && 
+    (rel >= -(0.5 * world.chunk_side_meters + epsilon)) &&
     (rel <= 0.5 * world.chunk_side_meters + epsilon)
 }
 

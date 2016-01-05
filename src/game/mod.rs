@@ -15,11 +15,12 @@ mod math;
 mod simulation;
 mod entity;
 
-use self::world::{World, subtract};
+use self::world::World;
 use self::world::{WorldPosition, world_pos_from_tile};
 use self::memory::MemoryArena;
 use self::graphics::Color;
-use self::math::{V2, V3, Rect};
+use self::math::{V2, Rect};
+use self::simulation::{EntityFlags, COLLIDES};
 use self::simulation::{SimEntity, SimRegion, EntityReference};
 use self::entity::{update_player, update_sword, update_familiar, update_monster};
 
@@ -282,6 +283,9 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
         let cam_tile_y = screen_base_y * tiles_per_screen_y + 9 / 2;
         let cam_tile_z = screen_base_z;
 
+        let camera_pos = world_pos_from_tile(state.world, cam_tile_x, cam_tile_y, cam_tile_z);
+        state.camera_position = camera_pos;
+
         // drop a test monster & familiar
         add_monster(state, cam_tile_x + 2, cam_tile_y + 2, cam_tile_z);
         add_familiar(state, cam_tile_x - 2, cam_tile_y + 2, cam_tile_z);
@@ -294,11 +298,11 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
 
         if let Some(controlled_hero) = state.controlled_heroes[c_index].as_mut() {
 
-            //Zero it out so we get only movement from the last frame!
+            // Zero it out so we get only movement from the last frame!
             let saved_index = controlled_hero.entity_index;
             *controlled_hero = Default::default();
             controlled_hero.entity_index = saved_index;
-            
+
 
             // Analog movement
             if controller.is_analog() {
@@ -350,7 +354,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
         let e_index = add_player(state);
         let con_h = ControlledHero {
             entity_index: e_index,
-            acc: V2::default() ,
+            acc: V2::default(),
             d_sword: V2::default(),
             d_z: 0.0,
         };
@@ -369,12 +373,10 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
     let camera_bounds = Rect::center_dim(Default::default(),
                                          tiles_in_work_set * state.world.tile_side_meters);
 
-    let mut sim_arena = MemoryArena::new(game_memory.transient.len(), game_memory.transient.as_ptr());
+    let mut sim_arena = MemoryArena::new(game_memory.transient.len(),
+                                         game_memory.transient.as_ptr());
     let camera_pos = state.camera_position;
-    let sim_region = SimRegion::begin_sim(state,
-                                          &mut sim_arena,
-                                          camera_pos,
-                                          camera_bounds);
+    let sim_region = SimRegion::begin_sim(state, &mut sim_arena, camera_pos, camera_bounds);
 
     // Clear the screen to grey and start rendering
     let buffer_dim = V2 {
@@ -393,8 +395,11 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
         let &mut GameState { ref hero_bitmaps, ref controlled_heroes,
                              ref shadow, ref sword, ref tree, .. } = state;
 
-        //TODO: get rid of unsafe sharing of data
-        let sim_entity: &mut SimEntity = unsafe {&mut *((&mut sim_region.entities[index]) as *mut _) };
+        // TODO: get rid of unsafe sharing of data
+        let sim_entity: &mut SimEntity = unsafe {
+            &mut *((&mut sim_region.entities[index]) as *mut _)
+        };
+
 
         // TODO: is the alpha from the previous frame needs to be after
         // updates
@@ -417,9 +422,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 for controlled_hero in controlled_heroes {
                     if let Some(con_hero) = controlled_hero.as_ref() {
                         if con_hero.entity_index == sim_entity.storage_index {
-                            update_player(sim_region,
-                                          sim_entity, input.delta_t,
-                                          con_hero);
+                            update_player(sim_region, sim_entity, input.delta_t, con_hero);
                         }
                     }
                 }
@@ -452,26 +455,18 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
             }
 
             EntityType::Sword => {
-                update_sword(sim_region,
-                             sim_entity, input.delta_t);
+                update_sword(sim_region, sim_entity, input.delta_t);
                 piece_group.push_bitmap(shadow,
                                         V2::default(),
                                         0.0,
                                         hero_bitmaps.align,
                                         0.0,
                                         z_alpha);
-                piece_group.push_bitmap(sword,
-                                        V2::default(),
-                                        0.0,
-                                        V2 { x: 29, y: 13 },
-                                        0.0,
-                                        1.0);
+                piece_group.push_bitmap(sword, V2::default(), 0.0, V2 { x: 29, y: 13 }, 0.0, 1.0);
             }
 
             EntityType::Monster => {
-                update_monster(sim_region,
-                               sim_entity,
-                               input.delta_t);
+                update_monster(sim_region, sim_entity, input.delta_t);
                 piece_group.push_bitmap(shadow,
                                         V2::default(),
                                         0.0,
@@ -488,18 +483,11 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
             }
 
             EntityType::Wall => {
-                piece_group.push_bitmap(tree,
-                                        V2::default(),
-                                        0.0,
-                                        V2 { x: 40, y: 80 },
-                                        1.0,
-                                        1.0);
+                piece_group.push_bitmap(tree, V2::default(), 0.0, V2 { x: 40, y: 80 }, 1.0, 1.0);
             }
 
             EntityType::Familiar => {
-                update_familiar(sim_region,
-                                sim_entity,
-                                input.delta_t);
+                update_familiar(sim_region, sim_entity, input.delta_t);
                 sim_entity.tbob += input.delta_t;
                 if sim_entity.tbob > 2.0 * PI {
                     sim_entity.tbob -= 2.0 * PI;
@@ -518,15 +506,17 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                                         1.0,
                                         1.0);
             }
-            _ => {
-                debug_assert!(true, "We forgot an important case!");
-            }
         }
 
+        // If we are not in a spatial state we don't do any drawing
+        // on this entity and skip to the next one
+        if sim_entity.position.is_none() {
+            continue;
+        }
 
         let entity_groundpoint = V2 {
-            x: screen_center_x + meters_to_pixel * sim_entity.position.x,
-            y: screen_center_y - meters_to_pixel * sim_entity.position.y,
+            x: screen_center_x + meters_to_pixel * sim_entity.position.unwrap().x,
+            y: screen_center_y - meters_to_pixel * sim_entity.position.unwrap().y,
         };
 
         for index in 0..piece_group.count {
@@ -553,14 +543,6 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
             }
         }
     }
-
-    //TODO: Figure out origin and fix the non-following camera
-    //TODO: Add logic for handleing unplace entities
-    let origin: WorldPosition = Default::default();
-    let V3 {x, y, ..} = subtract(sim_region.world, &origin, &sim_region.origin);
-    let diff = V2 { x: x, y: y};
-    graphics::draw_rect(video_buffer, diff, V2 {x: 10.0, y: 10.0}, 1.0, 1.0, 0.0);
-
 
     sim_region.end_sim(state);
 }
@@ -614,7 +596,7 @@ fn add_lf_entity<'a>(state: &'a mut GameState,
     state.lf_entity_count += 1;
 
     let sim_ent = SimEntity {
-        position: V2::default(),
+        position: None,
         chunk_z: 0,
 
         z: 0.0,
@@ -624,7 +606,7 @@ fn add_lf_entity<'a>(state: &'a mut GameState,
 
         etype: etype,
         dim: V2::default(),
-        collides: false,
+        flags: EntityFlags::empty(),
 
         max_hitpoints: 0,
         hitpoints: [Hitpoint::default(); HITPOINTS_ARRAY_MAX],
@@ -639,12 +621,12 @@ fn add_lf_entity<'a>(state: &'a mut GameState,
 
     state.lf_entities[index] = LfEntity {
         sim: sim_ent,
-        world_position: pos.unwrap_or_default(),
+        world_position: pos,
     };
 
     if pos.is_some() {
         let &mut GameState{ ref mut world_arena, ref mut world, .. } = state;
-        world.change_entity_location_raw(index, None, &pos.unwrap(), world_arena);
+        world.change_entity_location_raw(index, None, pos, world_arena);
     }
 
     (index, &mut state.lf_entities[index])
@@ -661,7 +643,7 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z:
         x: tile_side_meters,
         y: tile_side_meters,
     };
-    lf_entity.sim.collides = true;
+    lf_entity.sim.flags.insert(COLLIDES);
 
     e_index
 }
@@ -672,7 +654,7 @@ fn add_monster(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile
     let (e_index, lf_entity) = add_lf_entity(state, EntityType::Monster, Some(pos));
 
     lf_entity.sim.dim = V2 { x: 1.0, y: 0.5 };
-    lf_entity.sim.collides = true;
+    lf_entity.sim.flags.insert(COLLIDES);
     init_hit_points(3, lf_entity);
 
     e_index
@@ -682,7 +664,6 @@ fn add_sword(state: &mut GameState) -> usize {
     let (e_index, lf_entity) = add_lf_entity(state, EntityType::Sword, None);
 
     lf_entity.sim.dim = V2 { x: 1.0, y: 0.5 };
-    lf_entity.sim.collides = false;
 
     e_index
 }
@@ -693,7 +674,6 @@ fn add_familiar(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_til
     let (e_index, lf_entity) = add_lf_entity(state, EntityType::Familiar, Some(pos));
 
     lf_entity.sim.dim = V2 { x: 1.0, y: 0.5 };
-    lf_entity.sim.collides = false;
 
     e_index
 }
@@ -709,14 +689,12 @@ fn init_hit_points(hit_point_count: u8, lf_entity: &mut LfEntity) {
 fn add_player(state: &mut GameState) -> usize {
 
     let e_index = {
-        let mut pos = state.camera_position;
-        pos.offset.x = 5.0;
-        pos.offset.y = 5.0;
+        let pos = state.camera_position;
 
         let (e_index, lf_entity) = add_lf_entity(state, EntityType::Hero, Some(pos));
 
         lf_entity.sim.dim = V2 { x: 1.0, y: 0.5 };
-        lf_entity.sim.collides = true;
+        lf_entity.sim.flags.insert(COLLIDES);
         init_hit_points(3, lf_entity);
 
         e_index
@@ -742,18 +720,11 @@ pub struct HeroBitmaps<'a> {
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum EntityType {
-    None,
     Hero,
     Wall,
     Monster,
     Familiar,
     Sword,
-}
-
-impl Default for EntityType {
-    fn default() -> EntityType {
-        EntityType::None
-    }
 }
 
 struct EntityPiece<'a> {
@@ -873,11 +844,11 @@ pub struct Hitpoint {
 #[derive(Copy, Clone)]
 pub struct LfEntity {
     pub sim: SimEntity,
-    pub world_position: WorldPosition,
+    pub world_position: Option<WorldPosition>,
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct ControlledHero{
+pub struct ControlledHero {
     entity_index: usize,
     acc: V2<f32>,
     d_sword: V2<f32>,

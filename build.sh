@@ -1,11 +1,10 @@
 #!/bin/sh
 
-cargo build
-cp target/debug/rust_hero target/rust_hero
-cp target/debug/deps/libgame* target/libgame.so
+cargo build --features "internal"
+cp -f target/debug/deps/libgame-* target/debug/deps/libgame.so
 
 if [[ "$1" == "run" ]]; then
 	pushd data
-	RUST_BACKTRACE=1 ../target/rust_hero
+	RUST_BACKTRACE=1 ../target/debug/rust_hero
 	popd
 fi

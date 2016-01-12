@@ -1,4 +1,4 @@
-use libc::{mode_t, size_t, S_IRUSR, S_IWUSR};
+use libc::{mode_t, size_t, S_IRUSR, S_IWUSR, S_IXUSR};
 use libc::{open, close, mmap, munmap, MAP_PRIVATE, MAP_FAILED, MAP_ANON};
 use libc::{O_RDONLY, O_WRONLY, O_CREAT, PROT_READ, PROT_WRITE, fstat, stat};
 use std::default::Default;
@@ -15,34 +15,19 @@ use common::util;
 use common::{GetSoundSamplesT, UpdateAndRenderT, Input, SoundBuffer, Button};
 use common::{ControllerInput, VideoBuffer, GameMemory, ThreadContext};
 
-fn get_stat_struct() -> stat {
-    stat {
-        st_dev: 0,
-        st_ino: 0,
-        st_nlink: 0,
-        st_mode: 0,
-        st_uid: 0,
-        st_gid: 0,
-        __pad0: 0,
-        st_rdev: 0,
-        st_size: 0,
-        st_blksize: 0,
-        st_blocks: 0,
-        st_atime: 0,
-        st_atime_nsec: 0,
-        st_mtime: 0,
-        st_mtime_nsec: 0,
-        st_ctime: 0,
-        st_ctime_nsec: 0,
-        __unused: [0; 3],
-    }
-}
-
 const S_IRGRP: mode_t = 32;
 const S_IROTH: mode_t = 4;
 
+#[derive(Eq, PartialEq)]
+enum TimeComp {
+    Earlier,
+    Later,
+    Same,
+}
+
 #[allow(unused_imports)]
 #[allow(dead_code)]
+#[cfg(feature = "internal")]
 mod debug {
 
     use libc::{c_void, open, close, mmap, munmap, O_RDONLY, O_CREAT};
@@ -52,6 +37,7 @@ mod debug {
     use std::ptr;
     use std::default::Default;
     use std::ffi::CString;
+    use std::mem;
 
     use common::{ThreadContext, ReadFileResult};
     use common::util;
@@ -66,7 +52,7 @@ mod debug {
         let handle = unsafe { open(name.as_ptr(), O_RDONLY, 0) };
 
         if handle != -1 {
-            let mut file_stat: stat = super::get_stat_struct();
+            let mut file_stat: stat = unsafe { mem::uninitialized() };
             if unsafe { fstat(handle, &mut file_stat) != -1 } {
                 let size = util::safe_truncate_u64(file_stat.st_size as u64);
                 let memory: *mut c_void = unsafe {
@@ -84,7 +70,9 @@ mod debug {
 
                     while bytes_to_read > 0 {
                         let bytes_read = unsafe {
-                            read(handle, next_write_byte as *mut c_void, bytes_to_read as u64)
+                            read(handle,
+                                 next_write_byte as *mut c_void,
+                                 bytes_to_read as usize)
                         };
                         if bytes_read == -1 {
                             break;
@@ -121,7 +109,7 @@ mod debug {
     pub fn platform_free_file_memory(_context: &ThreadContext, memory: *mut u8, size: u32) {
         if !memory.is_null() {
             unsafe {
-                munmap(memory as *mut c_void, size as u64);
+                munmap(memory as *mut c_void, size as usize);
             }
         }
     }
@@ -147,7 +135,7 @@ mod debug {
                 let bytes_written = unsafe {
                     write(handle,
                           byte_to_write as *const c_void,
-                          bytes_to_write as u64)
+                          bytes_to_write as usize)
                 };
                 if bytes_written == -1 {
                     break;
@@ -209,16 +197,19 @@ struct Game {
 
 
 // Stub functons if none of the game Code could be loaded!
-extern "C" fn get_sound_samples_stub(_: &ThreadContext, _: &mut GameMemory, _: &mut SoundBuffer) {}
+extern "C" fn get_sound_samples_stub(_: &ThreadContext, _: &mut GameMemory, _: &mut SoundBuffer) {
+    unimplemented!();
+}
 extern "C" fn update_and_render_stub(_: &ThreadContext,
                                      _: &mut GameMemory,
                                      _: &Input,
                                      _: &mut VideoBuffer) {
+    unimplemented!();
 }
 
 
 fn get_last_write_time(file_path: &CString) -> linux::timespec {
-    let mut file_stat = get_stat_struct();
+    let mut file_stat = unsafe { mem::uninitialized() };
     if unsafe { stat(file_path.as_ptr(), &mut file_stat) != -1 } {
         linux::timespec {
             tv_sec: file_stat.st_mtime,
@@ -238,7 +229,7 @@ fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
     let out_fd = unsafe {
         open(temp_so_name.as_ptr(),
              O_WRONLY | O_CREAT,
-             S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
+             S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IROTH)
     };
 
     let mut result = Game {
@@ -251,9 +242,9 @@ fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
         },
     };
 
-    let mut file_stat: stat = get_stat_struct();
+    let mut file_stat: stat = unsafe { mem::uninitialized() };
     if unsafe { fstat(in_fd, &mut file_stat) != -1 } {
-        let size = file_stat.st_size as u64;
+        let size = file_stat.st_size as usize;
         unsafe {
             linux::sendfile(out_fd, in_fd, ptr::null_mut(), size);
             result.write_time = get_last_write_time(temp_so_name);
@@ -273,7 +264,6 @@ fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
                 }
             }
         }
-
     }
 
     unsafe {
@@ -427,7 +417,7 @@ fn init_audio(samples_per_second: i32, buffer_size: i32, ring_buffer: &mut SdlAu
     ring_buffer.size = buffer_size;
     ring_buffer.data = unsafe {
         mmap(ptr::null_mut(),
-             buffer_size as u64,
+             buffer_size as usize,
              PROT_READ | PROT_WRITE,
              MAP_PRIVATE | MAP_ANON,
              -1,
@@ -616,14 +606,14 @@ fn get_exe_path() -> PathBuf {
     read_link("/proc/self/exe").unwrap()
 }
 
-fn compare_file_time(time1: &linux::timespec, time2: &linux::timespec) -> i8 {
+fn compare_file_time(time1: &linux::timespec, time2: &linux::timespec) -> TimeComp {
     if (time1.tv_sec == time2.tv_sec) && (time1.tv_nsec == time2.tv_nsec) {
-        0
+        TimeComp::Same
     } else if (time1.tv_sec > time2.tv_sec) ||
        ((time1.tv_sec == time2.tv_sec) && (time1.tv_nsec > time2.tv_nsec)) {
-        -1
+        TimeComp::Earlier
     } else {
-        1
+        TimeComp::Later
     }
 }
 
@@ -705,7 +695,7 @@ pub fn linuxmain() {
         let mut sound_samples: &mut [i16] = unsafe {
             // Allocation implicitly freed at the end of the execution
             let data = mmap(ptr::null_mut(),
-                            (SAMPLES_PER_SECOND * BYTES_PER_SAMPLE) as u64,
+                            (SAMPLES_PER_SECOND * BYTES_PER_SAMPLE) as usize,
                             PROT_READ | PROT_WRITE,
                             MAP_PRIVATE | MAP_ANON,
                             -1,
@@ -729,7 +719,7 @@ pub fn linuxmain() {
 
         let memory = unsafe {
             mmap(base_address as *mut c_void,
-                 total_size as u64,
+                 total_size as usize,
                  PROT_READ | PROT_WRITE,
                  MAP_PRIVATE | MAP_ANON,
                  -1,
@@ -758,10 +748,10 @@ pub fn linuxmain() {
         exe_dirname.pop();
 
         let mut game_so_path = exe_dirname.clone();
-        game_so_path.push("libgame.so");
+        game_so_path.push("deps/libgame.so");
 
         let mut temp_so_path = exe_dirname.clone();
-        temp_so_path.push("libgame_temp.so");
+        temp_so_path.push("deps/libgame_temp.so");
 
         let game_so_string = CString::new(game_so_path.to_str().unwrap()).unwrap();
         let temp_so_string = CString::new(temp_so_path.to_str().unwrap()).unwrap();
@@ -780,13 +770,12 @@ pub fn linuxmain() {
             new_input.delta_t = target_seconds_per_frame;
 
             let new_write_time = get_last_write_time(&game_so_string);
-            if compare_file_time(&game.write_time, &new_write_time) != 0 {
+            if compare_file_time(&game.write_time, &new_write_time) != TimeComp::Earlier {
                 unload_game_functions(&mut game);
                 game = load_game_functions(&game_so_string, &temp_so_string);
             }
 
             let mut event: SDL_Event = Default::default();
-
 
             new_input.controllers[0] = old_input.controllers[0];
             new_input.controllers[0].is_connected = true;
@@ -844,7 +833,7 @@ pub fn linuxmain() {
             let mut video_buf = VideoBuffer {
                 memory: unsafe {
                     slice::from_raw_parts_mut(buffer.pixels as *mut u32,
-                                              (buffer.size / BYTES_PER_PIXEL as u64) as usize)
+                                              (buffer.size / BYTES_PER_PIXEL as usize) as usize)
                 },
                 width: (buffer.width as i32) as usize,
                 height: (buffer.height as i32) as usize,

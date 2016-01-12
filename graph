@@ -1,0 +1,21 @@
+digraph dependencies {
+	N0[label="rust_hero"];
+	N1[label="game"];
+	N2[label="libc"];
+	N3[label="advapi32-sys"];
+	N4[label="winapi"];
+	N5[label="winapi-build"];
+	N6[label="num"];
+	N7[label="rand"];
+	N8[label="rustc-serialize"];
+	N0 -> N1[label=""];
+	N0 -> N2[label=""];
+	N1 -> N6[label=""];
+	N3 -> N4[label=""];
+	N3 -> N5[label=""];
+	N6 -> N7[label=""];
+	N6 -> N8[label=""];
+	N7 -> N2[label=""];
+	N7 -> N3[label=""];
+	N7 -> N4[label=""];
+}

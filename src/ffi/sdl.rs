@@ -8,6 +8,10 @@ use std::ptr;
 pub type SDL_Keycode = i32;
 pub type SDL_AudioFormat = u16;
 pub type SDLAudioCallbackT = extern "C" fn(*mut c_void, *mut u8, c_int);
+pub type SDL_Window = c_void;
+pub type SDL_Renderer = c_void;
+pub type SDL_GameController = c_void;
+pub type SDL_Texture = c_void;
 
 pub const AUDIO_S16LSB: u16 = 0x8010;
 
@@ -68,8 +72,6 @@ pub const KMOD_RALT: u16 = 0x200;
 pub const KMOD_ALT: u16 = KMOD_LALT | KMOD_RALT;
 
 
-#[repr(C)]
-pub struct SDL_Window;
 
 #[repr(C)]
 #[derive(PartialEq, Eq)]
@@ -78,14 +80,6 @@ pub enum SDL_bool {
     SDL_TRUE,
 }
 
-#[repr(C)]
-pub struct SDL_Renderer;
-
-#[repr(C)]
-pub struct SDL_GameController;
-
-#[repr(C)]
-pub struct SDL_Texture;
 
 #[repr(C)]
 #[derive(Copy, Clone)]

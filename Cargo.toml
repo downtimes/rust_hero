@@ -6,18 +6,26 @@ build = "build.rs"
 
 [dependencies.game]
 path = "src"
+features = ["internal"]
 
 [dependencies]
 libc = "*"
 
+[features]
+internal = []
+
 [profile.dev]
 opt-level = 0
 debug = true
-rpath = false
+rpath = true
 lto = false
+debug-assertions = true
+codegen-units = 1
 
 [profile.release]
 opt-level = 2
 debug = false
-rpath = false
+rpath = true
 lto = true
+debug-assertions = false
+codegen-units = 0

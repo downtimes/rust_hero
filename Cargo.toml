@@ -11,10 +11,6 @@ features = ["internal"]
 [dependencies]
 libc = "*"
 
-[target.x86_64-pc-windows-msvc.dependencies]
-winapi = "*"
-kernel32-sys = "*"
-
 [features]
 internal = []
 

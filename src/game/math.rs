@@ -1,4 +1,6 @@
 use std::ops;
+// TODO: see if we can get rid of this Num crate here it is relatively heavyweight
+// and only used as a generic trait bound in here
 use num;
 
 #[derive(Copy, Clone)]

@@ -397,7 +397,7 @@ pub struct WorldPosition {
 pub fn are_in_same_chunk(world: &World, pos1: &WorldPosition, pos2: &WorldPosition) -> bool {
     // TODO: Debug this stuff so we can reenable this check! Somewhere is a bad
     // call with none canonical coords
-    // debug_assert!(is_canonical_v(world, pos1.offset) && is_canonical_v(world, pos2.offset));
+    //debug_assert!(is_canonical_v(world, pos1.offset) && is_canonical_v(world, pos2.offset));
     pos1.chunk_x == pos2.chunk_x && pos1.chunk_y == pos2.chunk_y && pos1.chunk_z == pos2.chunk_z
 }
 

@@ -1,6 +1,5 @@
 use std::mem;
 use std::ptr;
-use num::traits::Float;
 use std::default::Default;
 use std::f32::consts::PI;
 

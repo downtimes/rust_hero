@@ -2,7 +2,6 @@ use super::simulation::{EntityReference, SimRegion, SimEntity};
 use super::math::V2;
 use super::{EntityType, MoveSpec, ControlledHero};
 
-use num::traits::Float;
 
 pub fn update_sword(sim_region: &mut SimRegion, entity: &mut SimEntity, dt: f32) {
 
@@ -58,7 +57,7 @@ pub fn update_player(sim_region: &mut SimRegion,
 }
 
 pub fn update_familiar(sim_region: &mut SimRegion, entity: &mut SimEntity, dt: f32) {
-    let mut closest_hero_d_sq = 10.0.powi(2); //Maximum search range
+    let mut closest_hero_d_sq = 10.0_f32.powi(2); //Maximum search range
     let mut closest_hero = None;
 
 
@@ -81,7 +80,7 @@ pub fn update_familiar(sim_region: &mut SimRegion, entity: &mut SimEntity, dt: f
 
     let mut acc = V2 { x: 0.0, y: 0.0 };
     if let Some(hero) = closest_hero {
-        if closest_hero_d_sq > 3.0.powi(2) {
+        if closest_hero_d_sq > 3.0_f32.powi(2) {
             let acceleration = 0.5;
             let one_over_length = acceleration / closest_hero_d_sq.sqrt();
             acc = (hero.position.unwrap() - entity.position.unwrap()) * one_over_length;

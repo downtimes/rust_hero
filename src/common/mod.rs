@@ -47,7 +47,8 @@ pub type GetSoundSamplesT = extern "C" fn(&ThreadContext, &mut GameMemory, &mut 
 pub type UpdateAndRenderT = extern "C" fn(&ThreadContext,
                                           &mut GameMemory,
                                           &Input,
-                                          &mut VideoBuffer);
+                                          &mut VideoBuffer)
+                                         ;
 
 #[allow(dead_code)]
 pub struct ReadFileResult {

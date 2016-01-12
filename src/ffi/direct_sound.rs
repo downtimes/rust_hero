@@ -1,9 +1,13 @@
-pub use libc::c_void;
-pub use winapi::{BYTE, HANDLE, WORD, DWORD, LONG};
+pub use libc::{c_ulong, c_long, c_void, c_uchar, c_ushort};
 
 use std::default::Default;
 
 pub type HRESULT = LONG;
+pub type HANDLE = *mut c_void;
+pub type WORD = c_ushort;
+pub type DWORD = c_ulong;
+pub type LONG = c_long;
+pub type BYTE = c_uchar;
 pub type HWND = HANDLE;
 
 pub type DirectSoundCreate_t = extern "system" fn(pcGuidDevice: *const GUID,

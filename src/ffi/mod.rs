@@ -1,19 +1,7 @@
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 
-// TODO: Bad ffi interface which is a mix of the existing and tested winapi crate
-// and the other stuff i wrote by hand. Better use the tried and testet winapi crate
-// only and get rid of this whole ffi interface or don't rely on winapi crate at all
-pub use libc::{c_int, c_uint, c_long, c_char};
-pub use winapi::{LPCSTR, PAGE_READWRITE, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE};
-pub use winapi::{BOOL, TRUE, FALSE, LPVOID, SIZE_T};
-pub use winapi::{CREATE_ALWAYS, OPEN_EXISTING, FILE_BEGIN};
-pub use winapi::{FILE_ATTRIBUTE_NORMAL, GENERIC_READ, GENERIC_WRITE};
-pub use winapi::{SECURITY_ATTRIBUTES};
-pub use kernel32::{QueryPerformanceCounter, QueryPerformanceFrequency};
-pub use kernel32::{VirtualAlloc, VirtualFree, CloseHandle, ReadFile, WriteFile};
-pub use kernel32::{SetFilePointerEx, MapViewOfFile};
-pub use winapi::{INVALID_HANDLE_VALUE};
+pub use libc::{c_int, c_uint, c_char};
 pub use std::default::Default;
 
 pub use self::direct_sound::*;
@@ -25,13 +13,15 @@ use std::mem;
 
 #[cfg(target_arch = "x86")]
 pub mod pointer {
-    use libc::{c_long, c_uint};
+    use libc::{c_long, c_uint, c_ulong};
+    pub type ULONG_PTR = c_ulong;
     pub type LONG_PTR = c_long;
     pub type UINT_PTR = c_uint;
 }
 
 #[cfg(target_arch = "x86_64")]
 pub mod pointer {
+    pub type ULONG_PTR = u64;
     pub type LONG_PTR = i64;
     pub type UINT_PTR = u64;
 }
@@ -45,24 +35,46 @@ pub type HCURSOR = HANDLE;
 pub type HBRUSH = HANDLE;
 pub type HMENU = HANDLE;
 pub type LPCTSTR = LPCSTR;
+pub type CHAR = c_char;
 pub type UINT = c_uint;
+pub type BOOL = c_int;
 pub type LPARAM = pointer::LONG_PTR;
 pub type LRESULT = pointer::LONG_PTR;
 pub type WPARAM = pointer::UINT_PTR;
+pub type SIZE_T = pointer::ULONG_PTR;
 pub type ATOM = WORD;
 pub type LPMSG = *mut MSG;
 pub type LPPAINTSTRUCT = *mut PAINTSTRUCT;
 pub type HDC = HANDLE;
 pub type LPRECT = *mut RECT;
-pub type LPTSTR = *mut c_char;
+pub type LPTSTR = *mut CHAR;
 pub type HGDIOBJ = HANDLE;
 pub type MMRESULT = c_uint;
 pub type SHORT = i16;
+pub type LPCSTR = *const CHAR;
+pub type LPVOID = *mut c_void;
+pub type LONGLONG = i64;
+pub type LARGE_INTEGER = LONGLONG;
 
 pub type WNDPROC = extern "system" fn(HWND, c_uint, WPARAM, LPARAM) -> LRESULT;
 pub type XInputGetState_t = extern "system" fn(DWORD, *mut XINPUT_STATE) -> DWORD;
 pub type XInputSetState_t = extern "system" fn(DWORD, *mut XINPUT_VIBRATION) -> DWORD;
 
+
+pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
+
+pub const CREATE_ALWAYS: DWORD = 2;
+pub const OPEN_EXISTING: DWORD = 3;
+pub const FILE_BEGIN: DWORD = 0;
+
+pub const FILE_ATTRIBUTE_NORMAL: DWORD = 0x00000080;
+pub const GENERIC_READ: DWORD = 0x80000000;
+pub const GENERIC_WRITE: DWORD = 0x40000000;
+
+pub const PAGE_READWRITE: DWORD = 0x04;
+pub const MEM_COMMIT: DWORD = 0x1000;
+pub const MEM_RELEASE: DWORD = 0x8000;
+pub const MEM_RESERVE: DWORD = 0x2000;
 
 pub const WM_CREATE: c_uint = 0x0001;
 pub const WM_CLOSE: c_uint = 0x0010;
@@ -77,6 +89,8 @@ pub const WM_SYSKEYDOWN: c_uint = 0x0104;
 pub const WM_SYSKEYUP: c_uint = 0x0105;
 pub const WM_SETCURSOR: c_uint = 0x0020;
 
+pub const TRUE: BOOL = 1;
+pub const FALSE: BOOL = 0;
 
 pub const FILE_MAP_WRITE: DWORD = 0x0002;
 
@@ -168,6 +182,13 @@ pub const IDC_ARROW: LPCTSTR = 32512 as LPCTSTR;
 pub const CW_USEDEFAULT: c_int = 0x80000000;
 
 #[repr(C)]
+pub struct SECURITY_ATTRIBUTES {
+    pub nLength: DWORD,
+    pub lpSecurityDescriptor: LPVOID,
+    pub bInheritHandle: BOOL,
+}
+
+#[repr(C)]
 pub struct XINPUT_GAMEPAD {
     pub wButtons: WORD,
     pub bLeftTrigger: BYTE,
@@ -198,6 +219,14 @@ pub struct FILETIME {
     pub dwHighDateTime: DWORD,
 }
 
+#[repr(C)]
+pub struct OVERLAPPED {
+    pub Internal: pointer::ULONG_PTR,
+    pub InternalHigh: pointer::ULONG_PTR,
+    pub Offset: DWORD,
+    pub OffsetHigh: DWORD,
+    pub hEvent: HANDLE,
+}
 
 #[repr(C)]
 pub struct WIN32_FILE_ATTRIBUTE_DATA {
@@ -469,6 +498,38 @@ impl Default for BITMAPINFO {
 
 // user32 and kernel32
 extern "system" {
+    pub fn QueryPerformanceCounter(lpPerformanceCount: *mut LARGE_INTEGER) -> BOOL;
+    pub fn QueryPerformanceFrequency(lpFrequency: *mut LARGE_INTEGER) -> BOOL;
+    pub fn VirtualAlloc(lpAddress: LPVOID,
+                        dwSize: SIZE_T,
+                        flAllocationType: DWORD,
+                        flProtect: DWORD)
+                        -> LPVOID;
+    pub fn VirtualFree(lpAddress: LPVOID, dwSize: SIZE_T, dwFreeType: DWORD) -> BOOL;
+    pub fn CloseHandle(hObject: HANDLE) -> BOOL;
+    pub fn ReadFile(hFile: HANDLE,
+                    lpBuffer: LPVOID,
+                    nNumberOfBytesToRead: DWORD,
+                    lpNumberOfBytesRead: *mut DWORD,
+                    lpOverlapped: *mut OVERLAPPED)
+                    -> BOOL;
+    pub fn WriteFile(hFile: HANDLE,
+                     lpBuffer: *const c_void,
+                     nNumberOfBytesToWrite: DWORD,
+                     lpNumberOfBytesWritten: *mut DWORD,
+                     lpOverlapped: *mut OVERLAPPED)
+                     -> BOOL;
+    pub fn SetFilePointerEx(hFile: HANDLE,
+                            liDistanceToMove: LARGE_INTEGER,
+                            lpNewFilePointer: *mut LARGE_INTEGER,
+                            dwMoveMethod: DWORD)
+                            -> BOOL;
+    pub fn MapViewOfFile(hFileMappingObject: HANDLE,
+                         dwDesiredAccess: DWORD,
+                         dwFileOffsetHigh: DWORD,
+                         dwFileOffsetLow: DWORD,
+                         dwNumberOfBytesToMap: SIZE_T)
+                         -> LPVOID;
     pub fn PostQuitMessage(nExitCode: c_int);
     pub fn GetModuleHandleA(lpModuleName: LPCTSTR) -> HMODULE;
     pub fn DefWindowProcA(window: HWND,

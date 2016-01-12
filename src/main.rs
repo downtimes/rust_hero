@@ -2,10 +2,6 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 extern crate libc;
-#[cfg(target_os="windows")]
-extern crate winapi;
-#[cfg(target_os="windows")]
-extern crate kernel32;
 
 mod common;
 

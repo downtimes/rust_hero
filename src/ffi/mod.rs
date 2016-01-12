@@ -1,14 +1,19 @@
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 
+// TODO: Bad ffi interface which is a mix of the existing and tested winapi crate
+// and the other stuff i wrote by hand. Better use the tried and testet winapi crate
+// only and get rid of this whole ffi interface or don't rely on winapi crate at all
 pub use libc::{c_int, c_uint, c_long, c_char};
-pub use libc::{LPCSTR, LPVOID, BOOL, SIZE_T, FILE_BEGIN, PAGE_READWRITE};
-pub use libc::{MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, TRUE, FALSE};
-pub use libc::{CREATE_ALWAYS, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL};
-pub use libc::{GENERIC_READ, GENERIC_WRITE, SECURITY_ATTRIBUTES};
-pub use libc::{QueryPerformanceCounter, QueryPerformanceFrequency};
-pub use libc::{VirtualAlloc, VirtualFree, INVALID_HANDLE_VALUE};
-pub use libc::{CloseHandle, ReadFile, WriteFile, SetFilePointerEx, MapViewOfFile};
+pub use winapi::{LPCSTR, PAGE_READWRITE, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE};
+pub use winapi::{BOOL, TRUE, FALSE, LPVOID, SIZE_T};
+pub use winapi::{CREATE_ALWAYS, OPEN_EXISTING, FILE_BEGIN};
+pub use winapi::{FILE_ATTRIBUTE_NORMAL, GENERIC_READ, GENERIC_WRITE};
+pub use winapi::{SECURITY_ATTRIBUTES};
+pub use kernel32::{QueryPerformanceCounter, QueryPerformanceFrequency};
+pub use kernel32::{VirtualAlloc, VirtualFree, CloseHandle, ReadFile, WriteFile};
+pub use kernel32::{SetFilePointerEx, MapViewOfFile};
+pub use winapi::{INVALID_HANDLE_VALUE};
 pub use std::default::Default;
 
 pub use self::direct_sound::*;

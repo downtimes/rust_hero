@@ -5,13 +5,12 @@ REM stuff
 IF "%1" == "clean" (
     cargo clean
 ) ELSE (
-    cargo build
-    copy /Y /B target\debug\rust_hero.exe target\rust_hero.exe
-    copy /Y /B target\debug\deps\game* target\game.dll
+    cargo build --features "internal"
+    copy /Y /B target\debug\deps\game*.dll target\debug\game.dll
 )
 
 IF "%1" == "run" (
     pushd data
-    start ../target/rust_hero.exe
+    start ../target/debug/rust_hero.exe
     popd
 )

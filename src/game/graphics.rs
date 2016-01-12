@@ -130,7 +130,6 @@ pub fn draw_bitmap_alpha(buffer: &mut VideoBuffer,
     }
 }
 
-#[allow(dead_code)]
 pub fn draw_bitmap(buffer: &mut VideoBuffer, bitmap: &Bitmap, x: f32, y: f32) {
     draw_bitmap_alpha(buffer, bitmap, V2 { x: x, y: y }, 1.0);
 }
@@ -174,7 +173,7 @@ fn rotate_left(value: u32, mut amount: i32) -> u32 {
     value.rotate_left(amount as u32)
 }
 
-#[cfg(not(ndebug))]
+#[cfg(feature = "internal")]
 // Note: This function only loads a specific fileformat and is not generic.
 // only bottom up AABBGGRR Bitmaps
 pub fn debug_load_bitmap(read_func: PlatformReadEntireFileT,

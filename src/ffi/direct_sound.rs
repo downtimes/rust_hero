@@ -1,5 +1,5 @@
 pub use libc::c_void;
-pub use libc::{BYTE, HANDLE, WORD, DWORD, LONG};
+pub use winapi::{BYTE, HANDLE, WORD, DWORD, LONG};
 
 use std::default::Default;
 

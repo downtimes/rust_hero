@@ -2,6 +2,7 @@ use std::ptr;
 use std::path::PathBuf;
 use std::slice;
 use std::mem;
+use std::os::raw;
 use std::i16;
 use std::ffi::CString;
 use std::iter::FromIterator;
@@ -11,10 +12,11 @@ use common::{Input, GameMemory, SoundBuffer, ControllerInput, Button, VideoBuffe
 use common::{ThreadContext, GetSoundSamplesT, UpdateAndRenderT};
 use ffi::*;
 
-#[cfg(not(ndebug))]
+#[cfg(feature = "internal")]
 pub mod debug {
     use std::ptr;
     use std::ffi::CString;
+    use std::os::raw;
 
     use ffi::*;
     use common::{ReadFileResult, ThreadContext};
@@ -74,7 +76,7 @@ pub mod debug {
         if handle != INVALID_HANDLE_VALUE {
             let mut file_size: i64 = 0;
             if unsafe { GetFileSizeEx(handle, &mut file_size) } != 0 {
-                let memory: *mut c_void = unsafe {
+                let memory = unsafe {
                     VirtualAlloc(ptr::null_mut(),
                                  file_size as SIZE_T,
                                  MEM_RESERVE | MEM_COMMIT,
@@ -108,7 +110,7 @@ pub mod debug {
     pub fn platform_free_file_memory(_context: &ThreadContext, memory: *mut u8, _size: u32) {
         if !memory.is_null() {
             unsafe {
-                VirtualFree(memory as *mut c_void, 0, MEM_RELEASE);
+                VirtualFree(memory as *mut raw::c_void, 0, MEM_RELEASE);
             }
         }
     }
@@ -136,7 +138,7 @@ pub mod debug {
             let mut bytes_written = 0;
             if unsafe {
                 WriteFile(handle,
-                          memory as *mut c_void,
+                          memory as *const raw::c_void,
                           size,
                           &mut bytes_written,
                           ptr::null_mut())
@@ -206,8 +208,8 @@ enum ReplayState {
 struct Replay {
     input_path: CString,
     input_file_handle: HANDLE,
-    game_address: *mut c_void,
-    memory: *mut c_void,
+    game_address: *mut raw::c_void,
+    memory: *mut raw::c_void,
     memory_size: usize,
     state: ReplayState,
 }
@@ -275,7 +277,7 @@ impl Replay {
 
 struct Backbuffer {
     info: BITMAPINFO,
-    memory: *mut c_void,
+    memory: *mut raw::c_void,
     height: c_int,
     width: c_int,
     pitch: c_int,
@@ -604,11 +606,14 @@ extern "system" fn xinput_set_state_stub(_: DWORD, _: *mut XINPUT_VIBRATION) -> 
 
 
 // Stub functons if none of the game Code could be loaded!
-extern "C" fn get_sound_samples_stub(_: &ThreadContext, _: &mut GameMemory, _: &mut SoundBuffer) {}
+extern "C" fn get_sound_samples_stub(_: &ThreadContext, _: &mut GameMemory, _: &mut SoundBuffer) {
+    unimplemented!();
+}
 extern "C" fn update_and_render_stub(_: &ThreadContext,
                                      _: &mut GameMemory,
                                      _: &Input,
                                      _: &mut VideoBuffer) {
+    unimplemented!();
 }
 
 
@@ -618,7 +623,7 @@ fn get_last_write_time(file_name: &CString) -> Result<FILETIME, ()> {
     unsafe {
         if GetFileAttributesExA(file_name.as_ptr(),
                                 GET_FILEEX_INFO_LEVELS::GET_FILE_EX_INFO_STANDARD,
-                                (&mut file_info) as *mut _ as *mut c_void) != 0 {
+                                (&mut file_info) as *mut _ as *mut raw::c_void) != 0 {
             res = Ok(file_info.ftLastWriteTime);
         }
     }
@@ -1122,7 +1127,7 @@ fn get_exe_path() -> PathBuf {
 
 fn initialize_replay(exe_dirname: &PathBuf,
                      file_size: usize,
-                     game_address: *mut c_void)
+                     game_address: *mut raw::c_void)
                      -> Result<Replay, ()> {
     let mut result: Result<Replay, ()> = Err(());
 
@@ -1184,7 +1189,7 @@ fn log_input(replay: &Replay, input: &mut Input) {
     unsafe {
         let mut ignored: DWORD = 0;
         WriteFile(replay.input_file_handle,
-                  input as *mut _ as *mut c_void,
+                  input as *mut _ as *mut raw::c_void,
                   mem::size_of_val(input) as DWORD,
                   &mut ignored,
                   ptr::null_mut());
@@ -1196,7 +1201,7 @@ fn override_input(replay: &mut Replay, input: &mut Input) {
         if !replay.input_file_handle.is_null() {
             let mut bytes_read: DWORD = 0;
             ReadFile(replay.input_file_handle,
-                     input as *mut _ as *mut c_void,
+                     input as *mut _ as *mut raw::c_void,
                      mem::size_of_val(input) as DWORD,
                      &mut bytes_read,
                      ptr::null_mut());
@@ -1277,7 +1282,7 @@ pub fn winmain() {
                         0 as HWND,
                         0 as HWND,
                         module_handle,
-                        (&mut window) as *mut _ as *mut c_void)
+                        (&mut window) as *mut _ as *mut raw::c_void)
     };
 
     if window.handle.is_null() {

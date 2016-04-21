@@ -18,7 +18,7 @@ impl MemoryArena {
     }
 
     // TODO: Think about clear to zero options
-    pub fn push_struct<T>(&mut self) -> &'static mut T {
+    pub fn push_struct<'b, T>(&mut self) -> &'b mut T {
         let size = mem::size_of::<T>();
         debug_assert!(self.used + size <= self.size);
 
@@ -28,7 +28,7 @@ impl MemoryArena {
         unsafe { mem::transmute(result_ptr) }
     }
 
-    pub fn push_slice<T>(&mut self, count: usize) -> &'static mut [T] {
+    pub fn push_slice<'b, T>(&mut self, count: usize) -> &'b mut [T] {
         let mem_size = count * mem::size_of::<T>();
         debug_assert!(self.used + mem_size <= self.size);
 

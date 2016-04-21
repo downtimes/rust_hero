@@ -618,6 +618,7 @@ extern "system" {
     pub fn SetWindowPlacement(hWnd: HWND, lpwndpl: *const WINDOWPLACEMENT) -> BOOL;
     pub fn MonitorFromWindow(hWnd: HWND, dwFlags: DWORD) -> HMONITOR;
     pub fn GetMonitorInfoA(hMonitor: HMONITOR, lpmi: *mut MONITORINFO) -> BOOL;
+    pub fn GetLastError() -> DWORD;
 }
 
 // gdi32
@@ -664,8 +665,8 @@ extern "system" {
     pub fn timeEndPeriod(uPeriod: c_uint) -> MMRESULT;
 }
 
-#[inline(always)]
 pub mod intrinsics {
+    #[inline(always)]
     pub fn __rdtsc() -> u64 {
         let lower: u32;
         let higher: u32;

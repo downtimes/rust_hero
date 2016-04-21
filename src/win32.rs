@@ -665,6 +665,9 @@ fn load_game_functions(game_dll_name: &CString, temp_dll_name: &CString) -> Game
                 result.update_and_render = mem::transmute(update_and_render);
             }
         }
+    } else {
+        let failure = unsafe { GetLastError() };
+        println!("{}", failure);
     }
     result
 }
@@ -1346,7 +1349,7 @@ pub fn winmain() {
                                   sound_output.get_buffer_size() as usize / mem::size_of::<i16>())
     };
 
-    let base_address = if cfg!(ndebug) {
+    let base_address = if cfg!(not(ndebug)) {
         0
     } else {
         util::tera_bytes(2)

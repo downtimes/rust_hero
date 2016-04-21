@@ -21,7 +21,6 @@ use self::graphics::Color;
 use self::math::{V2, Rect};
 use self::simulation::{EntityFlags, COLLIDES};
 use self::simulation::{SimEntity, SimRegion, EntityReference};
-use self::entity::{update_player, update_sword, update_familiar, update_monster};
 
 
 // ============= The public interface ===============
@@ -394,151 +393,223 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
         let &mut GameState { ref hero_bitmaps, ref controlled_heroes,
                              ref shadow, ref sword, ref tree, .. } = state;
 
-        // TODO: get rid of unsafe sharing of data
-        let sim_entity: &mut SimEntity = unsafe {
-            &mut *((&mut sim_region.entities[index]) as *mut _)
-        };
+        let sim_entity: &mut SimEntity = sim_region.get_entity_ref(index);
+        if sim_entity.can_update {
 
-
-        // TODO: is the alpha from the previous frame needs to be after
-        // updates
-        let z_alpha = if sim_entity.z > 1.0 {
-            0.0
-        } else {
-            1.0 - sim_entity.z * 0.8
-        };
-
-
-        let hero_bitmaps = &hero_bitmaps[sim_entity.face_direction as usize];
-        let mut piece_group = EntityPieceGroup {
-            meters_to_pixel: meters_to_pixel,
-            count: 0,
-            pieces: make_array!(None, 32),
-        };
-
-        match sim_entity.etype {
-            EntityType::Hero => {
-                for controlled_hero in controlled_heroes {
-                    if let Some(con_hero) = controlled_hero.as_ref() {
-                        if con_hero.entity_index == sim_entity.storage_index {
-                            update_player(sim_region, sim_entity, input.delta_t, con_hero);
-                        }
-                    }
-                }
-                piece_group.push_bitmap(shadow,
-                                        V2::default(),
-                                        0.0,
-                                        hero_bitmaps.align,
-                                        0.0,
-                                        z_alpha);
-                piece_group.push_bitmap(&hero_bitmaps.torso,
-                                        V2::default(),
-                                        0.0,
-                                        hero_bitmaps.align,
-                                        1.0,
-                                        1.0);
-                piece_group.push_bitmap(&hero_bitmaps.cape,
-                                        V2::default(),
-                                        0.0,
-                                        hero_bitmaps.align,
-                                        1.0,
-                                        1.0);
-                piece_group.push_bitmap(&hero_bitmaps.head,
-                                        V2::default(),
-                                        0.0,
-                                        hero_bitmaps.align,
-                                        1.0,
-                                        1.0);
-                draw_hitpoints(sim_entity, &mut piece_group);
-
-            }
-
-            EntityType::Sword => {
-                update_sword(sim_region, sim_entity, input.delta_t);
-                piece_group.push_bitmap(shadow,
-                                        V2::default(),
-                                        0.0,
-                                        hero_bitmaps.align,
-                                        0.0,
-                                        z_alpha);
-                piece_group.push_bitmap(sword, V2::default(), 0.0, V2 { x: 29, y: 13 }, 0.0, 1.0);
-            }
-
-            EntityType::Monster => {
-                update_monster(sim_region, sim_entity, input.delta_t);
-                piece_group.push_bitmap(shadow,
-                                        V2::default(),
-                                        0.0,
-                                        hero_bitmaps.align,
-                                        0.0,
-                                        z_alpha);
-                piece_group.push_bitmap(&hero_bitmaps.torso,
-                                        V2::default(),
-                                        0.0,
-                                        hero_bitmaps.align,
-                                        1.0,
-                                        1.0);
-                draw_hitpoints(sim_entity, &mut piece_group);
-            }
-
-            EntityType::Wall => {
-                piece_group.push_bitmap(tree, V2::default(), 0.0, V2 { x: 40, y: 80 }, 1.0, 1.0);
-            }
-
-            EntityType::Familiar => {
-                update_familiar(sim_region, sim_entity, input.delta_t);
-                sim_entity.tbob += input.delta_t;
-                if sim_entity.tbob > 2.0 * PI {
-                    sim_entity.tbob -= 2.0 * PI;
-                }
-                let bob_sign = (sim_entity.tbob * 2.0).sin();
-                piece_group.push_bitmap(&shadow,
-                                        V2::default(),
-                                        0.0,
-                                        hero_bitmaps.align,
-                                        0.0,
-                                        (0.5 * z_alpha) + 0.2 * bob_sign);
-                piece_group.push_bitmap(&hero_bitmaps.head,
-                                        V2::default(),
-                                        0.25 * bob_sign,
-                                        hero_bitmaps.align,
-                                        1.0,
-                                        1.0);
-            }
-        }
-
-        // If we are not in a spatial state we don't do any drawing
-        // on this entity and skip to the next one
-        if sim_entity.position.is_none() {
-            continue;
-        }
-
-        let entity_groundpoint = V2 {
-            x: screen_center_x + meters_to_pixel * sim_entity.position.unwrap().x,
-            y: screen_center_y - meters_to_pixel * sim_entity.position.unwrap().y,
-        };
-
-        for index in 0..piece_group.count {
-            let piece = piece_group.pieces[index].as_ref().unwrap();
-            let piece_point = V2 {
-                x: entity_groundpoint.x + piece.offset.x,
-                y: entity_groundpoint.y + piece.offset.y + piece.offset_z -
-                   (meters_to_pixel * sim_entity.z) * piece.entity_zc,
+            // TODO: is the alpha from the previous frame needs to be after
+            // updates
+            let z_alpha = if sim_entity.z > 1.0 {
+                0.0
+            } else {
+                1.0 - sim_entity.z * 0.8
             };
 
-            if piece.bitmap.is_some() {
-                graphics::draw_bitmap_alpha(video_buffer,
-                                            piece.bitmap.unwrap(),
-                                            piece_point,
-                                            piece.alpha);
-            } else {
-                let half_dim = piece.dim * meters_to_pixel * 0.5;
-                graphics::draw_rect(video_buffer,
-                                    piece_point - half_dim,
-                                    piece_point + half_dim,
-                                    piece.r,
-                                    piece.g,
-                                    piece.b);
+
+            let hero_bitmaps = &hero_bitmaps[sim_entity.face_direction as usize];
+            let mut piece_group = EntityPieceGroup {
+                meters_to_pixel: meters_to_pixel,
+                count: 0,
+                pieces: make_array!(None, 32),
+            };
+
+            let mut move_spec = MoveSpec {
+                unit_max_accel_vector: false,
+                speed: 0.0,
+                drag: 0.0,
+            };
+
+            let mut acc = V2 { x: 0.0, y: 0.0 };
+
+            match sim_entity.etype {
+                EntityType::Hero => {
+                    for controlled_hero in controlled_heroes {
+                        if let Some(con_hero) = controlled_hero.as_ref() {
+                            if con_hero.entity_index == sim_entity.storage_index {
+                                if con_hero.d_z != 0.0 {
+                                    sim_entity.dz = con_hero.d_z;
+                                }
+
+                                if (con_hero.d_sword.x != 0.0) || (con_hero.d_sword.y != 0.0) {
+                                    if let Some(sword) = sim_entity.sword {
+                                        if let EntityReference::Ptr(ptr) = sword {
+                                            let sword_refe = unsafe { &mut *ptr };
+                                            if sword_refe.position.is_none() {
+                                                sword_refe.make_spatial(sim_entity.position.unwrap(), con_hero.d_sword * 5.0);
+                                                sword_refe.distance_remaining = 5.0;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                move_spec = MoveSpec {
+                                    unit_max_accel_vector: true,
+                                    drag: 8.0,
+                                    speed: 50.0,
+                                };
+                                acc = con_hero.acc;
+
+                            }
+                        }
+                    }
+                    piece_group.push_bitmap(shadow,
+                                            V2::default(),
+                                            0.0,
+                                            hero_bitmaps.align,
+                                            0.0,
+                                            z_alpha);
+                    piece_group.push_bitmap(&hero_bitmaps.torso,
+                                            V2::default(),
+                                            0.0,
+                                            hero_bitmaps.align,
+                                            1.0,
+                                            1.0);
+                    piece_group.push_bitmap(&hero_bitmaps.cape,
+                                            V2::default(),
+                                            0.0,
+                                            hero_bitmaps.align,
+                                            1.0,
+                                            1.0);
+                    piece_group.push_bitmap(&hero_bitmaps.head,
+                                            V2::default(),
+                                            0.0,
+                                            hero_bitmaps.align,
+                                            1.0,
+                                            1.0);
+                    draw_hitpoints(sim_entity, &mut piece_group);
+
+                }
+
+                EntityType::Sword => {
+                    // TODO: add ability in collision routines to limit movements
+                    // to a max distance
+                    let old_p = sim_entity.position;
+                    let travelled = (sim_entity.position.unwrap() - old_p.unwrap()).length();
+                    sim_entity.distance_remaining -= travelled;
+
+                    if sim_entity.distance_remaining < 0.0 {
+                        sim_entity.make_non_spatial();
+                    }
+                    piece_group.push_bitmap(shadow,
+                                            V2::default(),
+                                            0.0,
+                                            hero_bitmaps.align,
+                                            0.0,
+                                            z_alpha);
+                    piece_group.push_bitmap(sword, V2::default(), 0.0, V2 { x: 29, y: 13 }, 0.0, 1.0);
+                }
+
+                EntityType::Monster => {
+                    piece_group.push_bitmap(shadow,
+                                            V2::default(),
+                                            0.0,
+                                            hero_bitmaps.align,
+                                            0.0,
+                                            z_alpha);
+                    piece_group.push_bitmap(&hero_bitmaps.torso,
+                                            V2::default(),
+                                            0.0,
+                                            hero_bitmaps.align,
+                                            1.0,
+                                            1.0);
+                    draw_hitpoints(sim_entity, &mut piece_group);
+                }
+
+                EntityType::Wall => {
+                    piece_group.push_bitmap(tree, V2::default(), 0.0, V2 { x: 40, y: 80 }, 1.0, 1.0);
+                }
+
+                EntityType::Familiar => {
+                    let mut closest_hero_d_sq = 10.0_f32.powi(2); //Maximum search range
+                    let mut closest_hero = None;
+
+
+                    // TODO: make spatial querys easy for things
+                    for test_idx in 0..sim_region.entity_count {
+                        let test_entity = sim_region.entities[test_idx];
+
+                        match test_entity.etype {
+                            EntityType::Hero => {
+                                let test_d_sq = (test_entity.position.unwrap() - sim_entity.position.unwrap())
+                                    .length_sq();
+                                if closest_hero_d_sq > test_d_sq {
+                                    closest_hero_d_sq = test_d_sq;
+                                    closest_hero = Some(test_entity);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if let Some(hero) = closest_hero {
+                        if closest_hero_d_sq > 3.0_f32.powi(2) {
+                            let acceleration = 0.5;
+                            let one_over_length = acceleration / closest_hero_d_sq.sqrt();
+                            acc = (hero.position.unwrap() - sim_entity.position.unwrap()) * one_over_length;
+                        }
+                    }
+
+                    move_spec = MoveSpec {
+                        unit_max_accel_vector: true,
+                        drag: 8.0,
+                        speed: 50.0,
+                    };
+
+                    sim_entity.tbob += input.delta_t;
+                    if sim_entity.tbob > 2.0 * PI {
+                        sim_entity.tbob -= 2.0 * PI;
+                    }
+                    let bob_sign = (sim_entity.tbob * 2.0).sin();
+                    piece_group.push_bitmap(&shadow,
+                                            V2::default(),
+                                            0.0,
+                                            hero_bitmaps.align,
+                                            0.0,
+                                            (0.5 * z_alpha) + 0.2 * bob_sign);
+                    piece_group.push_bitmap(&hero_bitmaps.head,
+                                            V2::default(),
+                                            0.25 * bob_sign,
+                                            hero_bitmaps.align,
+                                            1.0,
+                                            1.0);
+                }
+            }
+
+
+            // If we are not in a spatial state we don't do any drawing
+            // or moving on this entity and skip to the next one
+            if sim_entity.position.is_none() {
+                continue;
+            }
+
+            sim_region.move_entity(sim_entity, acc, &move_spec, input.delta_t);
+
+            let entity_groundpoint = V2 {
+                x: screen_center_x + meters_to_pixel * sim_entity.position.unwrap().x,
+                y: screen_center_y - meters_to_pixel * sim_entity.position.unwrap().y,
+            };
+
+            for index in 0..piece_group.count {
+                let piece = piece_group.pieces[index].as_ref().unwrap();
+                let piece_point = V2 {
+                    x: entity_groundpoint.x + piece.offset.x,
+                    y: entity_groundpoint.y + piece.offset.y + piece.offset_z -
+                        (meters_to_pixel * sim_entity.z) * piece.entity_zc,
+                };
+
+                if piece.bitmap.is_some() {
+                    graphics::draw_bitmap_alpha(video_buffer,
+                                                piece.bitmap.unwrap(),
+                                                piece_point,
+                                                piece.alpha);
+                } else {
+                    let half_dim = piece.dim * meters_to_pixel * 0.5;
+                    graphics::draw_rect(video_buffer,
+                                        piece_point - half_dim,
+                                        piece_point + half_dim,
+                                        piece.r,
+                                        piece.g,
+                                        piece.b);
+                }
             }
         }
     }
@@ -595,13 +666,15 @@ fn add_lf_entity<'a>(state: &'a mut GameState,
     state.lf_entity_count += 1;
 
     let sim_ent = SimEntity {
+        storage_index: 0,
+        can_update: false,
+
+
         position: None,
         chunk_z: 0,
 
         z: 0.0,
         dz: 0.0,
-
-        storage_index: 0,
 
         etype: etype,
         dim: V2::default(),
@@ -877,6 +950,10 @@ pub struct GameState<'a> {
 }
 
 impl<'a> GameState<'a> {
+    pub fn get_world_ref<'b>(&mut self) -> &'b mut World {
+        return unsafe { &mut *(self.world as *mut _) };
+    }
+
     pub fn get_stored_entity(&mut self, index: usize) -> Option<&mut LfEntity> {
         if index < self.lf_entity_count {
             Some(&mut self.lf_entities[index])

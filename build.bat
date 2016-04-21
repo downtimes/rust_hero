@@ -11,6 +11,6 @@ IF "%1" == "clean" (
 
 IF "%1" == "run" (
     pushd data
-    start ../target/debug/rust_hero.exe
+    start ..\target\debug\rust_hero.exe
     popd
 )

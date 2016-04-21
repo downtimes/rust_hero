@@ -26,6 +26,7 @@ impl<T> Rect<T> where T: Copy
             max: max,
         }
     }
+
 }
 
 impl<T> Rect<T>
@@ -53,6 +54,13 @@ impl<T> Rect<T> where T: num::Float
     #[allow(dead_code)]
     pub fn get_center(&self) -> V2<T> {
         (self.min + self.max) * num::traits::cast(0.5).unwrap()
+    }
+
+    pub fn add_radius(&self, x_rad: T, y_rad: T) -> Rect<T> {
+        Rect::<T> {
+            min: self.min - V2 { x: x_rad, y: y_rad },
+            max: self.max + V2 { x: x_rad, y: y_rad },
+        }
     }
 }
 

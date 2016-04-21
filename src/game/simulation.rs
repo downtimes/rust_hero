@@ -7,7 +7,7 @@ use super::memory::MemoryArena;
 use std::ptr;
 
 bitflags! {
-    flags EntityFlags: u32 {
+    pub flags EntityFlags: u32 {
         const COLLIDES      = 0b0001,
         const SIMMING       = 0b1000,
     }
@@ -23,6 +23,12 @@ pub enum EntityReference {
 // TODO: Rename this struct to Entity instead? and the other one to StorageEntity
 #[derive(Copy, Clone, PartialEq)]
 pub struct SimEntity {
+    //Theese are only for the sim region
+    pub storage_index: usize,
+    pub can_update: bool,
+    
+
+    //Rest of the entity
     pub etype: EntityType,
 
     pub position: Option<V2<f32>>,
@@ -31,8 +37,6 @@ pub struct SimEntity {
     pub dz: f32,
 
     pub chunk_z: i32,
-
-    pub storage_index: usize,
 
     pub dim: V2<f32>,
     pub flags: EntityFlags,
@@ -46,7 +50,6 @@ pub struct SimEntity {
     pub tbob: f32,
     pub face_direction: u32,
 }
-
 
 impl SimEntity {
     pub fn make_non_spatial(&mut self) {
@@ -65,12 +68,19 @@ pub struct SimRegion<'a> {
     pub world: &'a mut World,
     pub origin: WorldPosition,
     pub bounds: Rect<f32>,
+    pub updatable_bounds: Rect<f32>,
     pub max_entity_count: usize,
     pub entity_count: usize,
     pub entities: &'a mut [SimEntity],
 
     // TODO: Is Hash really the best data structure for this?
     pub hash_table: [Option<SimEntityHash<'a>>; HASH_TABLE_LEN],
+}
+
+impl<'a> SimRegion<'a> {
+    pub fn get_entity_ref<'b>(&mut self, index: usize) -> &'b mut SimEntity {
+        return unsafe{ &mut *(&mut self.entities[index] as *mut _) };
+    }
 }
 
 pub struct SimEntityHash<'a> {
@@ -171,8 +181,12 @@ impl<'a> SimRegion<'a> {
             Some(_) => sim_p,
             None => self.get_sim_space_p(source),
         };
+        let updatable_bounds = self.updatable_bounds;
         let sim_ent = self.add_entity_raw(state, store_index, source);
         sim_ent.position = sim_space;
+        if sim_space.is_some() {
+            sim_ent.can_update = updatable_bounds.p_inside(sim_space.unwrap());
+        }
         // TODO: convert StoredEntity to a simulation entity
         sim_ent
     }
@@ -186,8 +200,8 @@ impl<'a> SimRegion<'a> {
         let sim_ent;
         if self.get_hash_from_index(store_index).is_none() {
             if self.entities.len() >= self.max_entity_count - 1 {
-                // TODO: unsafe not good!
-                sim_ent = unsafe { &mut *(&mut self.entities[self.entity_count] as *mut _) };
+                let ent_count = self.entity_count;
+                sim_ent = self.get_entity_ref(ent_count);
 
                 self.add_hash(store_index, sim_ent);
 
@@ -199,6 +213,7 @@ impl<'a> SimRegion<'a> {
                     sim_ent.sword = Some(load_entity_reference(self, state, sword));
                 }
                 sim_ent.storage_index = store_index;
+                sim_ent.can_update = false;
 
                 debug_assert!(!source.sim.flags.contains(SIMMING));
                 source.sim.flags.insert(SIMMING);
@@ -246,10 +261,14 @@ impl<'a> SimRegion<'a> {
         unsafe {
             ptr::write_bytes(sim_region.hash_table.as_mut_ptr(), 0, HASH_TABLE_LEN);
         }
-        // TODO: get rid of unsafe here
-        sim_region.world = unsafe { &mut *(state.world as *mut _) };
+
+        // TODO: caclulate eventually from all entities + speed
+        let update_safety_margin = 1.0;
+
+        sim_region.world = state.get_world_ref();
         sim_region.origin = origin;
-        sim_region.bounds = bounds;
+        sim_region.bounds = bounds.add_radius(update_safety_margin, update_safety_margin);
+        sim_region.updatable_bounds = bounds;
         // TODO: Needs to be more specific later on?
         sim_region.max_entity_count = 4024;
         sim_region.entity_count = 0;
@@ -282,8 +301,6 @@ impl<'a> SimRegion<'a> {
 
     pub fn move_entity(&mut self,
                        entity: &mut SimEntity,
-                       mut acc: V2<f32>,
-                       move_spec: &MoveSpec,
                        delta_t: f32) {
 
         // Diagonal correction.

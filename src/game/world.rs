@@ -166,9 +166,7 @@ impl World {
                 debug_assert!(chunk.is_some());
 
                 // pull entity out of the old slot
-                if chunk.is_some() {
-                    let ch = chunk.unwrap();
-
+                if let Some(ch) = chunk {
                     let first_block = &mut ch.first_block;
 
                     // in case the entity is in the first_block
@@ -206,8 +204,7 @@ impl World {
             }
 
             // Now start inserting the entity in the new Block
-            if new_pos.is_some() {
-                let new_p = new_pos.unwrap();
+            if let Some(new_p) = new_pos {
                 let chunk = self.get_chunk(new_p.chunk_x,
                                            new_p.chunk_y,
                                            new_p.chunk_z,
@@ -216,13 +213,13 @@ impl World {
                 let block = &mut chunk.first_block;
                 if block.e_count == block.lf_entities.len() {
                     // Make new block to store it
-                    let old_block = if self.first_free.is_some() {
-                        let ptr = self.first_free.unwrap();
-                        self.first_free = unsafe { (*ptr).next };
-                        unsafe { &mut *ptr }
-                    } else {
-                        arena.push_struct::<EntityBlock>()
-                    };
+                    let old_block = 
+                        if let Some(ptr) = self.first_free {
+                            self.first_free = unsafe { (*ptr).next };
+                            unsafe { &mut *ptr }
+                        } else {
+                            arena.push_struct::<EntityBlock>()
+                        };
                     *old_block = *block;
                     block.next = Some(old_block as *mut EntityBlock);
                     block.e_count = 0;
@@ -274,8 +271,8 @@ impl World {
 
                 // No more entries in the list
                 if chunk_val.next.is_none() {
-                    if arena.is_some() {
-                        let new_chunk = arena.unwrap().push_struct::<Chunk>();
+                    if let Some(arena) = arena {
+                        let new_chunk = arena.push_struct::<Chunk>();
                         new_chunk.first_block = Default::default();
                         new_chunk.chunk_x = chunk_x;
                         new_chunk.chunk_y = chunk_y;
@@ -378,7 +375,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn decouple(&mut self) -> &'static mut Chunk {
+    pub fn decouple<'b>(&mut self) -> &'b mut Chunk {
         unsafe { &mut *(self as *mut Chunk) }
     }
 }

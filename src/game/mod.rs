@@ -410,11 +410,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 pieces: make_array!(None, 32),
             };
 
-            let mut move_spec = MoveSpec {
-                unit_max_accel_vector: false,
-                speed: 0.0,
-                drag: 0.0,
-            };
+            let mut move_spec = MoveSpec::default();
 
             let mut acc = V2 { x: 0.0, y: 0.0 };
 
@@ -432,8 +428,9 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                                         if let EntityReference::Ptr(ptr) = sword {
                                             let sword_refe = unsafe { &mut *ptr };
                                             if sword_refe.position.is_none() {
-                                                sword_refe.make_spatial(sim_entity.position.unwrap(), con_hero.d_sword * 5.0);
-                                                sword_refe.distance_remaining = 5.0;
+                                                sword_refe.make_spatial(sim_entity.position.unwrap(), 
+                                                                        sim_entity.velocity + con_hero.d_sword * 5.0);
+                                                sword_refe.distance_limit = 5.0;
                                             }
                                         }
                                     }
@@ -478,13 +475,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 }
 
                 EntityType::Sword => {
-                    // TODO: add ability in collision routines to limit movements
-                    // to a max distance
-                    let old_p = sim_entity.position;
-                    let travelled = (sim_entity.position.unwrap() - old_p.unwrap()).length();
-                    sim_entity.distance_remaining -= travelled;
-
-                    if sim_entity.distance_remaining < 0.0 {
+                    if sim_entity.distance_limit <= 0.0 {
                         sim_entity.make_non_spatial();
                     }
                     piece_group.push_bitmap(shadow,
@@ -570,40 +561,45 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
             }
 
 
-            // If we are not in a spatial state we don't do any drawing
-            // or moving on this entity and skip to the next one
-            if sim_entity.position.is_none() {
-                continue;
-            }
+            // If we are not in a spatial state we don't do
+            // moving on this entity and skip to the next one
+            if sim_entity.position.is_some() {
 
-            sim_region.move_entity(sim_entity, &move_spec, acc, input.delta_t);
+                sim_region.move_entity(sim_entity, &move_spec, acc, input.delta_t);
 
-            let entity_groundpoint = V2 {
-                x: screen_center_x + meters_to_pixel * sim_entity.position.unwrap().x,
-                y: screen_center_y - meters_to_pixel * sim_entity.position.unwrap().y,
-            };
+                // move_entity can possibly make an entity none spatial so we need to
+                // check again if the entity has a position otherwise we don't need
+                // to draw stuff
+                if let Some(position) = sim_entity.position {
 
-            for index in 0..piece_group.count {
-                let piece = piece_group.pieces[index].as_ref().unwrap();
-                let piece_point = V2 {
-                    x: entity_groundpoint.x + piece.offset.x,
-                    y: entity_groundpoint.y + piece.offset.y + piece.offset_z -
-                        (meters_to_pixel * sim_entity.z) * piece.entity_zc,
-                };
+                    let entity_groundpoint = V2 {
+                        x: screen_center_x + meters_to_pixel * position.x,
+                        y: screen_center_y - meters_to_pixel * position.y,
+                    };
 
-                if piece.bitmap.is_some() {
-                    graphics::draw_bitmap_alpha(video_buffer,
-                                                piece.bitmap.unwrap(),
-                                                piece_point,
-                                                piece.alpha);
-                } else {
-                    let half_dim = piece.dim * meters_to_pixel * 0.5;
-                    graphics::draw_rect(video_buffer,
-                                        piece_point - half_dim,
-                                        piece_point + half_dim,
-                                        piece.r,
-                                        piece.g,
-                                        piece.b);
+                    for index in 0..piece_group.count {
+                        let piece = piece_group.pieces[index].as_ref().unwrap();
+                        let piece_point = V2 {
+                            x: entity_groundpoint.x + piece.offset.x,
+                            y: entity_groundpoint.y + piece.offset.y + piece.offset_z -
+                                (meters_to_pixel * sim_entity.z) * piece.entity_zc,
+                        };
+
+                        if let Some(bitmap) = piece.bitmap {
+                            graphics::draw_bitmap_alpha(video_buffer,
+                                                        bitmap,
+                                                        piece_point,
+                                                        piece.alpha);
+                        } else {
+                            let half_dim = piece.dim * meters_to_pixel * 0.5;
+                            graphics::draw_rect(video_buffer,
+                                                piece_point - half_dim,
+                                                piece_point + half_dim,
+                                                piece.r,
+                                                piece.g,
+                                                piece.b);
+                        }
+                    }
                 }
             }
         }
@@ -671,6 +667,8 @@ fn add_lf_entity<'a>(state: &'a mut GameState,
         z: 0.0,
         dz: 0.0,
 
+        distance_limit: 0.0,
+
         etype: etype,
         dim: V2::default(),
         flags: EntityFlags::empty(),
@@ -679,7 +677,6 @@ fn add_lf_entity<'a>(state: &'a mut GameState,
         hitpoints: [Hitpoint::default(); HITPOINTS_ARRAY_MAX],
 
         sword: None,
-        distance_remaining: 0.0,
 
         velocity: V2::default(),
         tbob: 0.0,
@@ -785,7 +782,7 @@ pub struct HeroBitmaps<'a> {
     pub align: V2<i32>,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub enum EntityType {
     Hero,
     Wall,
@@ -897,7 +894,7 @@ impl Default for MoveSpec {
         MoveSpec {
             unit_max_accel_vector: false,
             drag: 0.0,
-            speed: 1.0,
+            speed: 0.0,
         }
     }
 }

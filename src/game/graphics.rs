@@ -1,6 +1,5 @@
 use common::{VideoBuffer, ThreadContext};
 use common::PlatformReadEntireFileT;
-use std::mem;
 use std::slice;
 
 use super::math::V2;
@@ -185,7 +184,7 @@ pub fn debug_load_bitmap(read_func: PlatformReadEntireFileT,
     // Note: Bitmap byteorder is determined by the header. bottom up
     let file = read_func(context, file_name);
     if let Ok(result) = file {
-        let header: &BitmapHeader = unsafe { mem::transmute(result.contents) };
+        let header: &BitmapHeader = unsafe { &*(result.contents as *const _) };
 
         debug_assert!(header.compression == 3);
 

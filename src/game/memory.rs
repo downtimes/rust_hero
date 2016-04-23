@@ -25,7 +25,7 @@ impl MemoryArena {
         let result_ptr = unsafe { self.base_ptr.offset(self.used as isize) };
         self.used += size;
 
-        unsafe { mem::transmute(result_ptr) }
+        unsafe { &mut *(result_ptr as *mut T) }
     }
 
     pub fn push_slice<'b, T>(&mut self, count: usize) -> &'b mut [T] {

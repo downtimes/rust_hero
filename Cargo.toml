@@ -10,6 +10,7 @@ features = ["internal"]
 
 [dependencies]
 libc = "*"
+# clippy = "*"
 
 [features]
 internal = []

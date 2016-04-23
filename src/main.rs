@@ -1,4 +1,6 @@
-#![feature(asm)]
+#![feature(asm, plugin)]
+//#![plugin(clippy)]
+
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 extern crate libc;

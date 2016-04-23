@@ -296,7 +296,18 @@ impl Window {
     fn toggle_fullscreen(&mut self) {
         unsafe {
             let style = GetWindowLongA(self.handle, GWL_STYLE);
-            if (style & WS_OVERLAPPEDWINDOW) != 0 {
+            if (style & WS_OVERLAPPEDWINDOW) == 0 {
+                SetWindowLongA(self.handle, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+                SetWindowPlacement(self.handle, &self.win_pos);
+                SetWindowPos(self.handle,
+                             ptr::null_mut(),
+                             0,
+                             0,
+                             0,
+                             0,
+                             SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
+                             SWP_NOZORDER);
+            } else {
                 let mut monitor_info = Default::default();
                 let win_place = GetWindowPlacement(self.handle, &mut self.win_pos);
                 let mon_inf = GetMonitorInfoA(MonitorFromWindow(self.handle,
@@ -312,17 +323,6 @@ impl Window {
                                  monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
                                  SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
                 }
-            } else {
-                SetWindowLongA(self.handle, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
-                SetWindowPlacement(self.handle, &mut self.win_pos);
-                SetWindowPos(self.handle,
-                             ptr::null_mut(),
-                             0,
-                             0,
-                             0,
-                             0,
-                             SWP_NOOWNERZORDER | SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
-                             SWP_NOZORDER);
             }
         }
     }
@@ -401,12 +401,12 @@ extern "system" fn process_messages(handle: HWND,
         _ => {
             unsafe {
                 let window = GetWindowLongPtrA(handle, GWLP_USERDATA) as *mut Window;
-                if !window.is_null() {
-                    res = (*window).process_messages(message, wparam, lparam);
+                if window.is_null() {
                     // During construction when there is still no struct registered we need to
                     // handle all the cases with the default behavior
-                } else {
                     res = DefWindowProcA(handle, message, wparam, lparam);
+                } else {
+                    res = (*window).process_messages(message, wparam, lparam);
                 }
             }
         }
@@ -438,13 +438,6 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
 
     if SUCCEEDED(lock) {
 
-        debug_assert!(bytes_to_write == region1_size + region2_size);
-
-        let (samples_1, samples_2) = source.samples
-                                           .split_at(region1_size as usize / mem::size_of::<i16>());
-        fill_region(region1, region1_size, sound_output, samples_1);
-        fill_region(region2, region2_size, sound_output, samples_2);
-
         fn fill_region(region: *mut c_void,
                        region_size: DWORD,
                        sound_output: &mut SoundOutput,
@@ -462,6 +455,13 @@ fn fill_sound_output(sound_output: &mut SoundOutput,
                 sound_output.byte_index += 2;
             }
         }
+
+        debug_assert!(bytes_to_write == region1_size + region2_size);
+
+        let (samples_1, samples_2) = source.samples
+                                           .split_at(region1_size as usize / mem::size_of::<i16>());
+        fill_region(region1, region1_size, sound_output, samples_1);
+        fill_region(region2, region2_size, sound_output, samples_2);
 
         unsafe {
             ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,
@@ -493,10 +493,6 @@ fn clear_sound_output(sound_output: &mut SoundOutput) {
 
     if SUCCEEDED(lock) {
 
-
-        fill_region(region1, region1_size);
-        fill_region(region2, region2_size);
-
         fn fill_region(region: *mut c_void, region_size: DWORD) {
             let out: &mut [i32] = unsafe {
                 slice::from_raw_parts_mut(region as *mut i32,
@@ -506,6 +502,10 @@ fn clear_sound_output(sound_output: &mut SoundOutput) {
                 *sample = 0;
             }
         }
+
+
+        fill_region(region1, region1_size);
+        fill_region(region2, region2_size);
 
         unsafe {
             ((*(*sound_output.sound_buffer).lpVtbl).Unlock)(sound_output.sound_buffer,
@@ -648,7 +648,10 @@ fn load_game_functions(game_dll_name: &CString, temp_dll_name: &CString) -> Game
 
     result.handle = unsafe { LoadLibraryA(temp_dll_name.as_ptr()) };
 
-    if !result.handle.is_null() {
+    if result.handle.is_null() {
+        let failure = unsafe { GetLastError() };
+        println!("{}", failure);
+    } else {
         let get_sound_samples_name = CString::new("get_sound_samples").unwrap();
         let update_and_render_name = CString::new("update_and_render").unwrap();
 
@@ -665,9 +668,6 @@ fn load_game_functions(game_dll_name: &CString, temp_dll_name: &CString) -> Game
                 result.update_and_render = mem::transmute(update_and_render);
             }
         }
-    } else {
-        let failure = unsafe { GetLastError() };
-        println!("{}", failure);
     }
     result
 }
@@ -699,7 +699,9 @@ fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
         module = unsafe { LoadLibraryA(xlib_third_name.as_ptr()) };
     }
 
-    if !module.is_null() {
+    if module.is_null() {
+        (xinput_get_state_stub, xinput_set_state_stub)
+    } else {
         let get_state_name = CString::new("XInputGetState").unwrap();
         let set_state_name = CString::new("XInputSetState").unwrap();
 
@@ -710,8 +712,6 @@ fn load_xinput_functions() -> (XInputGetState_t, XInputSetState_t) {
             (mem::transmute(xinput_get_state),
              mem::transmute(xinput_set_state))
         }
-    } else {
-        (xinput_get_state_stub, xinput_set_state_stub)
     }
 }
 
@@ -728,10 +728,6 @@ fn process_xinput(XInputGetState: XInputGetState_t,
         match res {
             // Case the Controller is connected and we got data
             ERROR_SUCCESS => {
-                let old_controller = &old_controllers[index];
-                controller.is_connected = true;
-
-                let gamepad = &state.Gamepad;
 
                 fn process_xinput_stick(value: SHORT, dead_zone: SHORT) -> f32 {
                     if value < -dead_zone {
@@ -743,9 +739,15 @@ fn process_xinput(XInputGetState: XInputGetState_t,
                     }
                 }
 
-                let mut xvalue = process_xinput_stick(gamepad.sThumbLX,
+                let old_controller = &old_controllers[index];
+                controller.is_connected = true;
+
+                let gamepad = &state.Gamepad;
+
+
+                let mut x_value = process_xinput_stick(gamepad.sThumbLX,
                                                       XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-                let mut yvalue = process_xinput_stick(gamepad.sThumbLY,
+                let mut y_value = process_xinput_stick(gamepad.sThumbLY,
                                                       XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
 
                 let dpad_up = (gamepad.wButtons & XINPUT_GAMEPAD_DPAD_UP) != 0;
@@ -755,41 +757,41 @@ fn process_xinput(XInputGetState: XInputGetState_t,
 
                 // If the DPAD was not used default to analog input with
                 // the controllers
-                if !(dpad_up || dpad_down || dpad_left || dpad_right) {
-                    controller.average_x = Some(xvalue);
-                    controller.average_y = Some(yvalue);
-                } else {
+                if dpad_up || dpad_down || dpad_left || dpad_right {
                     controller.average_x = None;
                     controller.average_y = None;
                     if dpad_up {
-                        yvalue = 1.0;
+                        y_value = 1.0;
                     } else if dpad_down {
-                        yvalue = -1.0;
+                        y_value = -1.0;
                     }
                     if dpad_left {
-                        xvalue = -1.0;
+                        x_value = -1.0;
                     } else if dpad_right {
-                        xvalue = 1.0;
+                        x_value = 1.0;
                     }
+                } else {
+                    controller.average_x = Some(x_value);
+                    controller.average_y = Some(y_value);
                 }
 
                 let threshhold = 0.5;
-                let up_fake = if yvalue > threshhold {
+                let up_fake = if y_value > threshhold {
                     1
                 } else {
                     0
                 };
-                let down_fake = if yvalue < -threshhold {
+                let down_fake = if y_value < -threshhold {
                     1
                 } else {
                     0
                 };
-                let left_fake = if xvalue < -threshhold {
+                let left_fake = if x_value < -threshhold {
                     1
                 } else {
                     0
                 };
-                let right_fake = if xvalue > threshhold {
+                let right_fake = if x_value > threshhold {
                     1
                 } else {
                     0
@@ -955,10 +957,10 @@ fn process_xinput_button(xinput_button_state: WORD,
                          button_bit: WORD) {
 
     new_state.ended_down = (xinput_button_state & button_bit) == button_bit;
-    new_state.half_transitions = if old_state.ended_down != new_state.ended_down {
-        1
-    } else {
+    new_state.half_transitions = if old_state.ended_down == new_state.ended_down {
         0
+    } else {
+        1
     };
 }
 
@@ -1381,7 +1383,6 @@ pub fn winmain() {
     };
 
     let mut replay = initialize_replay(&exe_dirname, total_size, memory)
-                         .ok()
                          .expect("Error with replay");
 
     window.timer_fine_resolution = unsafe { timeBeginPeriod(1) == TIMERR_NOERROR };

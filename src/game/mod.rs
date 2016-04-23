@@ -30,7 +30,7 @@ pub extern "C" fn get_sound_samples(_context: &ThreadContext,
                                     game_memory: &mut GameMemory,
                                     _sound_buffer: &mut SoundBuffer) {
 
-    let _state: &mut GameState = unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
+    let _state: &mut GameState = unsafe { &mut *(game_memory.permanent.as_mut_ptr() as *mut _) };
 }
 
 #[no_mangle]
@@ -41,7 +41,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
 
     debug_assert!(mem::size_of::<GameState>() <= game_memory.permanent.len());
 
-    let state: &mut GameState = unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
+    let state: &mut GameState = unsafe { &mut *(game_memory.permanent.as_mut_ptr() as *mut _) };
 
     // random table index 6 start to get a room with staircase on the first
     // screen
@@ -268,12 +268,10 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 screen_x += 1;
             } else if random_choice == 1 {
                 screen_y += 1;
+            } else if abs_tile_z == screen_base_z {
+                abs_tile_z = screen_base_z + 1;
             } else {
-                if abs_tile_z == screen_base_z {
-                    abs_tile_z = screen_base_z + 1;
-                } else {
-                    abs_tile_z = screen_base_z;
-                }
+                abs_tile_z = screen_base_z;
             }
         }
 
@@ -527,16 +525,13 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                     for test_idx in 0..sim_region.entity_count {
                         let test_entity = sim_region.entities[test_idx];
 
-                        match test_entity.etype {
-                            EntityType::Hero => {
-                                let test_d_sq = (test_entity.position.unwrap() - sim_entity.position.unwrap())
-                                    .length_sq();
-                                if closest_hero_d_sq > test_d_sq {
-                                    closest_hero_d_sq = test_d_sq;
-                                    closest_hero = Some(test_entity);
-                                }
+                        if let EntityType::Hero = test_entity.etype {
+                            let test_d_sq = (test_entity.position.unwrap() - sim_entity.position.unwrap())
+                                .length_sq();
+                            if closest_hero_d_sq > test_d_sq {
+                                closest_hero_d_sq = test_d_sq;
+                                closest_hero = Some(test_entity);
                             }
-                            _ => {}
                         }
                     }
 
@@ -581,7 +576,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 continue;
             }
 
-            sim_region.move_entity(sim_entity, acc, &move_spec, input.delta_t);
+            sim_region.move_entity(sim_entity, &move_spec, acc, input.delta_t);
 
             let entity_groundpoint = V2 {
                 x: screen_center_x + meters_to_pixel * sim_entity.position.unwrap().x,
@@ -634,18 +629,18 @@ fn draw_hitpoints<'a>(sim_entity: &SimEntity, piece_group: &mut EntityPieceGroup
         };
         for idx in 0..sim_entity.max_hitpoints as usize {
             let hp = &sim_entity.hitpoints[idx];
-            let color = if hp.filled != 0 {
-                Color {
-                    r: 1.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                }
-            } else {
+            let color = if hp.filled == 0 {
                 Color {
                     r: 0.5,
                     g: 0.5,
                     b: 0.5,
+                    a: 1.0,
+                }
+            } else {
+                Color {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.0,
                     a: 1.0,
                 }
             };
@@ -951,7 +946,7 @@ pub struct GameState<'a> {
 
 impl<'a> GameState<'a> {
     pub fn get_world_ref<'b>(&mut self) -> &'b mut World {
-        return unsafe { &mut *(self.world as *mut _) };
+        unsafe { &mut *(self.world as *mut _) }
     }
 
     pub fn get_stored_entity(&mut self, index: usize) -> Option<&mut LfEntity> {

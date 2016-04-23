@@ -4,7 +4,7 @@ use std::default::Default;
 macro_rules! make_array {
     ( $val:expr, $n:expr ) => {{
         let mut arr: [_; $n] = unsafe { mem::uninitialized() };
-        for place in arr.iter_mut() {
+        for place in &mut arr {
             unsafe { ptr::write(place, $val); }
         }
 

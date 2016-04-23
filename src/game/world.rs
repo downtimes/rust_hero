@@ -1,5 +1,4 @@
 use std::num::Wrapping as w;
-use std::mem;
 use std::i32;
 use std::default::Default;
 
@@ -113,7 +112,7 @@ impl World {
                           z: i32)
                           -> IterChunk {
         IterChunk {
-            world: unsafe { mem::transmute(self as *mut World) },
+            world: unsafe { &mut *(self as *mut World) },
             min_x: min_p.chunk_x,
             curr_x: min_p.chunk_x,
             curr_y: min_p.chunk_y,
@@ -149,6 +148,19 @@ impl World {
             // Do nothing because we are already in the right spot
         } else {
             if old_pos.is_some() {
+
+                fn maybe_remove_block(world: &mut World, first_block: &mut EntityBlock) {
+                    if first_block.e_count == 0 && first_block.next.is_some() {
+                        let next_block: &mut EntityBlock = unsafe {
+                            &mut *first_block.next.unwrap()
+                        };
+                        *first_block = *next_block;
+                        // put the block in the freelist
+                        next_block.next = world.first_free;
+                        world.first_free = Some(next_block as *mut EntityBlock);
+                    }
+                }
+
                 let pos = old_pos.unwrap();
                 let chunk = self.get_chunk(pos.chunk_x, pos.chunk_y, pos.chunk_z, None);
                 debug_assert!(chunk.is_some());
@@ -191,17 +203,6 @@ impl World {
                     }
                 }
 
-                fn maybe_remove_block(world: &mut World, first_block: &mut EntityBlock) {
-                    if first_block.e_count == 0 && first_block.next.is_some() {
-                        let next_block: &mut EntityBlock = unsafe {
-                            mem::transmute(first_block.next.unwrap())
-                        };
-                        *first_block = *next_block;
-                        // put the block in the freelist
-                        next_block.next = world.first_free;
-                        world.first_free = Some(next_block as *mut EntityBlock);
-                    }
-                }
             }
 
             // Now start inserting the entity in the new Block
@@ -218,7 +219,7 @@ impl World {
                     let old_block = if self.first_free.is_some() {
                         let ptr = self.first_free.unwrap();
                         self.first_free = unsafe { (*ptr).next };
-                        unsafe { mem::transmute(ptr) }
+                        unsafe { &mut *ptr }
                     } else {
                         arena.push_struct::<EntityBlock>()
                     };
@@ -285,7 +286,7 @@ impl World {
                     }
                     break;
                 } else {
-                    chunk_val = unsafe { mem::transmute(chunk_val.next.unwrap()) };
+                    chunk_val = unsafe { &mut *chunk_val.next.unwrap() };
                 }
             }
         } else if arena.is_some() {
@@ -317,7 +318,7 @@ impl Iterator for Iter {
                     None => *self = Iter(None),
                     Some(next_ptr) => *self = Iter(Some(next_ptr as *const EntityBlock)),
                 }
-                Some(mem::transmute(ptr))
+                Some(&*ptr)
             },
         }
     }
@@ -331,7 +332,7 @@ impl Iterator for IterMut {
             IterMut(None) => None,
             IterMut(Some(ptr)) => unsafe {
                 *self = IterMut((*ptr).next);
-                Some(mem::transmute(ptr))
+                Some(&mut *ptr)
             },
         }
     }
@@ -378,7 +379,7 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn decouple(&mut self) -> &'static mut Chunk {
-        unsafe { mem::transmute(self as *mut Chunk) }
+        unsafe { &mut *(self as *mut Chunk) }
     }
 }
 
@@ -394,7 +395,7 @@ pub struct WorldPosition {
     pub offset: V2<f32>,
 }
 
-pub fn are_in_same_chunk(world: &World, pos1: &WorldPosition, pos2: &WorldPosition) -> bool {
+pub fn are_in_same_chunk(_world: &World, pos1: &WorldPosition, pos2: &WorldPosition) -> bool {
     // TODO: Debug this stuff so we can reenable this check! Somewhere is a bad
     // call with none canonical coords
     //debug_assert!(is_canonical_v(world, pos1.offset) && is_canonical_v(world, pos2.offset));
@@ -408,6 +409,7 @@ fn is_canonical(world: &World, rel: f32) -> bool {
     (rel <= 0.5 * world.chunk_side_meters + epsilon)
 }
 
+#[allow(dead_code)]
 fn is_canonical_v(world: &World, offset: V2<f32>) -> bool {
     is_canonical(world, offset.x) && is_canonical(world, offset.y)
 }

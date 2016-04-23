@@ -79,7 +79,7 @@ pub struct SimRegion<'a> {
 
 impl<'a> SimRegion<'a> {
     pub fn get_entity_ref<'b>(&mut self, index: usize) -> &'b mut SimEntity {
-        return unsafe{ &mut *(&mut self.entities[index] as *mut _) };
+        unsafe{ &mut *(&mut self.entities[index] as *mut _) }
     }
 }
 
@@ -108,7 +108,7 @@ fn get_entity_by_index<'a>(sim_region: &'a mut SimRegion,
     }
 }
 
-fn load_entity_reference<'a>(sim_region: &mut SimRegion,
+fn load_entity_reference(sim_region: &mut SimRegion,
                              state: &mut GameState,
                              reference: EntityReference)
                              -> EntityReference {
@@ -301,13 +301,13 @@ impl<'a> SimRegion<'a> {
 
     pub fn move_entity(&mut self,
                        entity: &mut SimEntity,
+                       move_spec: &MoveSpec,
+                       mut acc: V2<f32>,
                        delta_t: f32) {
 
         // Diagonal correction.
-        if move_spec.unit_max_accel_vector {
-            if acc.length_sq() > 1.0 {
-                acc = acc.normalize();
-            }
+        if move_spec.unit_max_accel_vector && (acc.length_sq() > 1.0) {
+            acc = acc.normalize();
         }
 
         acc = acc * move_spec.speed;
@@ -462,5 +462,5 @@ fn test_wall(wall_value: f32,
             }
         }
     }
-    return false;
+    false
 }

@@ -19,7 +19,7 @@ use self::world::{WorldPosition, world_pos_from_tile};
 use self::memory::MemoryArena;
 use self::graphics::Color;
 use self::math::{V2, Rect};
-use self::simulation::{EntityFlags, COLLIDES};
+use self::simulation::{EntityFlags, COLLIDES, PairCollisionRule};
 use self::simulation::{SimEntity, SimRegion, EntityReference};
 
 
@@ -430,6 +430,11 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                                             if sword_refe.position.is_none() {
                                                 sword_refe.make_spatial(sim_entity.position.unwrap(), 
                                                                         sim_entity.velocity + con_hero.d_sword * 5.0);
+                                                add_collision_rule(&mut state.world_arena, 
+                                                                   &mut state.pair_collision_rules,
+                                                                   sim_entity.storage_index, 
+                                                                   sword_refe.storage_index, 
+                                                                   false);
                                                 sword_refe.distance_limit = 5.0;
                                             }
                                         }
@@ -476,6 +481,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
 
                 EntityType::Sword => {
                     if sim_entity.distance_limit <= 0.0 {
+                        //TODO: here we need to clear the collision rules!
                         sim_entity.make_non_spatial();
                     }
                     piece_group.push_bitmap(shadow,
@@ -561,44 +567,44 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
             }
 
 
-            // If we are not in a spatial state we don't do
-            // moving on this entity and skip to the next one
-            if sim_entity.position.is_some() {
+            sim_region.move_entity(&mut state.world_arena, 
+                                   &mut state.pair_collision_rules, 
+                                   sim_entity, 
+                                   &move_spec, 
+                                   acc, 
+                                   input.delta_t);
 
-                sim_region.move_entity(sim_entity, &move_spec, acc, input.delta_t);
+            // move_entity can possibly make an entity none spatial so we need to
+            // check again if the entity has a position otherwise we don't need
+            // to draw stuff
+            if let Some(position) = sim_entity.position {
 
-                // move_entity can possibly make an entity none spatial so we need to
-                // check again if the entity has a position otherwise we don't need
-                // to draw stuff
-                if let Some(position) = sim_entity.position {
+                let entity_groundpoint = V2 {
+                    x: screen_center_x + meters_to_pixel * position.x,
+                    y: screen_center_y - meters_to_pixel * position.y,
+                };
 
-                    let entity_groundpoint = V2 {
-                        x: screen_center_x + meters_to_pixel * position.x,
-                        y: screen_center_y - meters_to_pixel * position.y,
+                for index in 0..piece_group.count {
+                    let piece = piece_group.pieces[index].as_ref().unwrap();
+                    let piece_point = V2 {
+                        x: entity_groundpoint.x + piece.offset.x,
+                        y: entity_groundpoint.y + piece.offset.y + piece.offset_z -
+                            (meters_to_pixel * sim_entity.z) * piece.entity_zc,
                     };
 
-                    for index in 0..piece_group.count {
-                        let piece = piece_group.pieces[index].as_ref().unwrap();
-                        let piece_point = V2 {
-                            x: entity_groundpoint.x + piece.offset.x,
-                            y: entity_groundpoint.y + piece.offset.y + piece.offset_z -
-                                (meters_to_pixel * sim_entity.z) * piece.entity_zc,
-                        };
-
-                        if let Some(bitmap) = piece.bitmap {
-                            graphics::draw_bitmap_alpha(video_buffer,
-                                                        bitmap,
-                                                        piece_point,
-                                                        piece.alpha);
-                        } else {
-                            let half_dim = piece.dim * meters_to_pixel * 0.5;
-                            graphics::draw_rect(video_buffer,
-                                                piece_point - half_dim,
-                                                piece_point + half_dim,
-                                                piece.r,
-                                                piece.g,
-                                                piece.b);
-                        }
+                    if let Some(bitmap) = piece.bitmap {
+                        graphics::draw_bitmap_alpha(video_buffer,
+                                                    bitmap,
+                                                    piece_point,
+                                                    piece.alpha);
+                    } else {
+                        let half_dim = piece.dim * meters_to_pixel * 0.5;
+                        graphics::draw_rect(video_buffer,
+                                            piece_point - half_dim,
+                                            piece_point + half_dim,
+                                            piece.r,
+                                            piece.g,
+                                            piece.b);
                     }
                 }
             }
@@ -609,6 +615,89 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
 }
 
 // ======== End of the public interface =========
+
+pub fn clear_collision_rules_for(table: &mut [Option<PairCollisionRule>],
+                                 storage_index: usize) {
+    // TODO: don't walk through every entry in the entire hashtable
+}
+
+
+pub fn add_collision_rule(arena: &mut MemoryArena, 
+                          table: &mut [Option<PairCollisionRule>], 
+                          mut a: usize, mut b: usize, collide: bool) {
+    if a > b {
+        let temp = a;
+        a = b;
+        b = temp;
+    }
+
+    // TODO: Collapse this part with should_collide
+    let mut found: &mut Option<PairCollisionRule> = &mut None;
+    let hash = a & (table.len() - 1);
+    let mut rule = table[hash]; 
+    while let Some(curr_rule) = rule {
+        if curr_rule.storage_index_a == a &&
+            curr_rule.storage_index_b == b {
+                // TODO: get rid of lifetime hack!
+                found = unsafe { &mut *(&mut rule as *mut _)};
+                break;
+            }
+        rule = *rule.unwrap().next_rule;
+    }
+
+    if found.is_none() {
+        let old_rule = arena.push_struct::<Option<PairCollisionRule>>();
+        *old_rule = table[hash];
+        table[hash] = 
+            Some(PairCollisionRule{ storage_index_a: a,
+            storage_index_b: b,
+            should_collide: collide,
+            next_rule: old_rule});
+    } else {
+        if let Some(rule) = found.as_mut() {
+            rule.storage_index_a = a;
+            rule.storage_index_b = b;
+            rule.should_collide = collide;
+        }
+    }
+}
+
+pub fn should_collide(table: &[Option<PairCollisionRule>], a: &mut SimEntity, b: &mut SimEntity) -> bool {
+    let mut res = true;
+    // Sort them depending on their storage index
+    let first;
+    let second;
+    if a.storage_index > b.storage_index {
+        first = b;
+        second = a;
+    } else {
+        first = a;
+        second = b;
+    }
+
+    // Property based logic goes here
+    if (first as *const _) == (second as *const _) {
+        res = false;
+    }
+    if first.position.is_none() || second.position.is_none() {
+        res = false;
+    }
+
+    // Table is last authority
+    // TODO: Better Hash function
+    let hash = first.storage_index & (table.len() - 1);
+    let mut rule = table[hash]; 
+    while let Some(curr_rule) = rule {
+        if curr_rule.storage_index_a == first.storage_index &&
+            curr_rule.storage_index_b == second.storage_index {
+                res = curr_rule.should_collide;
+                break;
+            }
+        rule = *rule.unwrap().next_rule;
+    }
+
+    res
+}
 
 fn draw_hitpoints<'a>(sim_entity: &SimEntity, piece_group: &mut EntityPieceGroup<'a>) {
     if sim_entity.max_hitpoints >= 1 {
@@ -766,6 +855,7 @@ fn add_player(state: &mut GameState) -> usize {
 
     let s_index = add_sword(state);
     state.lf_entities[e_index].sim.sword = Some(EntityReference::Index(s_index));
+
 
     if state.camera_follows_entity_index.is_none() {
         state.camera_follows_entity_index = Some(e_index);
@@ -939,6 +1029,10 @@ pub struct GameState<'a> {
     pub tree: graphics::Bitmap<'a>,
     pub sword: graphics::Bitmap<'a>,
     pub hero_bitmaps: [HeroBitmaps<'a>; 4],
+
+    // Must be a power of 2!
+    pub pair_collision_rules: [Option<PairCollisionRule<'a>>; 256],
+    pub free_collision_rule: &'a Option<PairCollisionRule<'a>>,
 }
 
 impl<'a> GameState<'a> {

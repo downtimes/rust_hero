@@ -1,7 +1,7 @@
 use super::world::{World, WorldPosition, map_into_world_space, subtract};
 use super::math::{Rect, V2, V3, dot_2};
 use super::{GameState, LfEntity, EntityType, Hitpoint, HITPOINTS_ARRAY_MAX};
-use super::MoveSpec;
+use super::{MoveSpec, add_collision_rule, should_collide};
 use super::memory::MemoryArena;
 
 use std::ptr;
@@ -87,6 +87,14 @@ impl<'a> SimRegion<'a> {
 pub struct SimEntityHash<'a> {
     pub index: usize,
     pub ptr: &'a mut SimEntity,
+}
+
+#[derive(Copy, Clone)]
+pub struct PairCollisionRule<'a> {
+    pub storage_index_a: usize,
+    pub storage_index_b: usize,
+    pub should_collide: bool,
+    pub next_rule: &'a Option<PairCollisionRule<'a>>,
 }
 
 fn store_entity_reference(reference: EntityReference) -> EntityReference {
@@ -304,6 +312,8 @@ impl<'a> SimRegion<'a> {
     }
 
     pub fn move_entity(&mut self,
+                       arena: &mut MemoryArena,
+                       table: &mut [Option<PairCollisionRule>],
                        entity: &mut SimEntity,
                        move_spec: &MoveSpec,
                        mut acc: V2<f32>,
@@ -348,6 +358,9 @@ impl<'a> SimRegion<'a> {
 
             let entity_delta_length = entity_delta.length();
             // TODO: what is a good value for espilon here.
+            // The check for a valid position is just an optimization to avoid
+            // entering the loop if the entity is not spatial. The loop can handle
+            // non-spatial entities just fine
             if entity_delta_length <= 0.0001 || entity.position.is_none() {
                 break;
             }
@@ -358,100 +371,87 @@ impl<'a> SimRegion<'a> {
             let mut wall_normal = Default::default();
             let mut hit_entity: Option<*mut SimEntity> = None;
 
-            let target_pos = entity.position.unwrap() + entity_delta;
+            let target_pos = entity.position.unwrap_or_default() + entity_delta;
 
-            let stops_on_collision = entity.flags.contains(COLLIDES);
 
             //if entity.flags.contains(COLLIDES) {
             // TODO: do a spatial partition here eventually
             for e_index in 0..self.entity_count {
                 let test_entity = &mut self.entities[e_index];
-                let test_entity_storage_index = test_entity.storage_index;
+                if should_collide(table, test_entity, entity) {
+                    if test_entity.flags.contains(COLLIDES) {
+                        // Minkowski Sum
+                        let diameter = V2 {
+                            x: test_entity.dim.x + entity.dim.x,
+                            y: test_entity.dim.y + entity.dim.y,
+                        };
 
-                // Important test so we don't try to collide with ourselves
-                if test_entity_storage_index == entity.storage_index {
-                    continue;
-                }
+                        let min_corner = diameter * -0.5;
+                        let max_corner = diameter * 0.5;
+                        let rel = entity.position.unwrap() - test_entity.position.unwrap();
 
-
-                if test_entity.flags.contains(COLLIDES) {
-                    // Minkowski Sum
-                    let diameter = V2 {
-                        x: test_entity.dim.x + entity.dim.x,
-                        y: test_entity.dim.y + entity.dim.y,
-                    };
-
-                    let min_corner = diameter * -0.5;
-                    let max_corner = diameter * 0.5;
-                    let rel = entity.position.unwrap() - test_entity.position.unwrap();
-
-                    // check against the 4 entity walls
-                    if test_wall(max_corner.x,
-                                 min_corner.y,
-                                 max_corner.y,
-                                 rel.x,
-                                 rel.y,
-                                 entity_delta.x,
-                                 entity_delta.y,
-                                 &mut t_min) {
-                        wall_normal = V2 { x: 1.0, y: 0.0 };
-                        hit_entity = Some(test_entity);
-                    }
-                    if test_wall(min_corner.x,
-                                 min_corner.y,
-                                 max_corner.y,
-                                 rel.x,
-                                 rel.y,
-                                 entity_delta.x,
-                                 entity_delta.y,
-                                 &mut t_min) {
-                        wall_normal = V2 { x: -1.0, y: 0.0 };
-                        hit_entity = Some(test_entity);
-                    }
-                    if test_wall(max_corner.y,
-                                 min_corner.x,
-                                 max_corner.x,
-                                 rel.y,
-                                 rel.x,
-                                 entity_delta.y,
-                                 entity_delta.x,
-                                 &mut t_min) {
-                        wall_normal = V2 { x: 0.0, y: 1.0 };
-                        hit_entity = Some(test_entity);
-                    }
-                    if test_wall(min_corner.y,
-                                 min_corner.x,
-                                 max_corner.x,
-                                 rel.y,
-                                 rel.x,
-                                 entity_delta.y,
-                                 entity_delta.x,
-                                 &mut t_min) {
-                        wall_normal = V2 { x: 0.0, y: -1.0 };
-                        hit_entity = Some(test_entity);
+                        // check against the 4 entity walls
+                        if test_wall(max_corner.x,
+                                     min_corner.y,
+                                     max_corner.y,
+                                     rel.x,
+                                     rel.y,
+                                     entity_delta.x,
+                                     entity_delta.y,
+                                     &mut t_min) {
+                            wall_normal = V2 { x: 1.0, y: 0.0 };
+                            hit_entity = Some(test_entity);
+                        }
+                        if test_wall(min_corner.x,
+                                     min_corner.y,
+                                     max_corner.y,
+                                     rel.x,
+                                     rel.y,
+                                     entity_delta.x,
+                                     entity_delta.y,
+                                     &mut t_min) {
+                            wall_normal = V2 { x: -1.0, y: 0.0 };
+                            hit_entity = Some(test_entity);
+                        }
+                        if test_wall(max_corner.y,
+                                     min_corner.x,
+                                     max_corner.x,
+                                     rel.y,
+                                     rel.x,
+                                     entity_delta.y,
+                                     entity_delta.x,
+                                     &mut t_min) {
+                            wall_normal = V2 { x: 0.0, y: 1.0 };
+                            hit_entity = Some(test_entity);
+                        }
+                        if test_wall(min_corner.y,
+                                     min_corner.x,
+                                     max_corner.x,
+                                     rel.y,
+                                     rel.x,
+                                     entity_delta.y,
+                                     entity_delta.x,
+                                     &mut t_min) {
+                            wall_normal = V2 { x: 0.0, y: -1.0 };
+                            hit_entity = Some(test_entity);
+                        }
                     }
                 }
             }
-
-
-
 
             entity.position = Some(entity.position.unwrap() + entity_delta * t_min);
             distance_remaining -= entity_delta_length * t_min;
             if let Some(hit_ent_ptr) = hit_entity {
                 let hit_ent = unsafe { &mut *hit_ent_ptr };
                 entity_delta = target_pos - entity.position.unwrap();
+                let stops_on_collision = handle_collision(entity, hit_ent);
                 if stops_on_collision {
                     entity_delta = entity_delta - wall_normal * dot_2(entity_delta, wall_normal);
                     entity.velocity = entity.velocity -
                         wall_normal * dot_2(entity.velocity, wall_normal);
-                }
-                //TODO: Need a collision table here
-
-                if entity.etype > hit_ent.etype {
-                    handle_collision(hit_ent, entity);
                 } else {
-                    handle_collision(entity, hit_ent);
+                    add_collision_rule(arena, table, entity.storage_index, 
+                                       hit_ent.storage_index, false);
                 }
             }
         }
@@ -477,13 +477,32 @@ impl<'a> SimRegion<'a> {
     }
 }
 
-fn handle_collision(a: &mut SimEntity, b: &mut SimEntity) {
-    if a.etype == EntityType::Monster && b.etype == EntityType::Sword {
-        if a.max_hitpoints > 0 {
-            a.max_hitpoints -= 1;
-        }
-        b.make_non_spatial();
+fn handle_collision(mut a: &mut SimEntity, mut b: &mut SimEntity) -> bool {
+    let stops_on_collision = 
+        if a.etype == EntityType::Sword {
+            false
+        } else {
+            true
+        };
+
+
+    let first;
+    let second;
+    if a.etype < b.etype {
+        first = a;
+        second = b;
+    } else {
+        first = b;
+        second = a;
     }
+
+    if first.etype == EntityType::Monster && second.etype == EntityType::Sword {
+        if first.max_hitpoints > 0 {
+            first.max_hitpoints -= 1;
+        }
+    }
+
+    stops_on_collision
 }
 
 // TODO: write some documentation for easier understanding how this function works

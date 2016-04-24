@@ -9,55 +9,6 @@ use super::LfEntity;
 // TODO: Think about this number
 const WORLD_BORDER_CHUNKS: i32 = (i32::MAX / 64);
 const TILES_PER_CHUNK: i32 = 16;
-
-pub fn world_pos_from_tile(world: &World, tile_x: i32, tile_y: i32, tile_z: i32) -> WorldPosition {
-    // TODO: move to 3D
-    let mut chunk_x = tile_x / TILES_PER_CHUNK;
-    let mut chunk_y = tile_y / TILES_PER_CHUNK;
-
-    if tile_x < 0 {
-        chunk_x -= 1;
-    }
-
-    if tile_y < 0 {
-        chunk_y -= 1;
-    }
-
-    WorldPosition {
-        chunk_x: chunk_x,
-        chunk_y: chunk_y,
-        chunk_z: tile_z,
-        offset: V2 {
-            x: (tile_x % TILES_PER_CHUNK) as f32 * world.tile_side_meters,
-            y: (tile_y % TILES_PER_CHUNK) as f32 * world.tile_side_meters,
-        },
-    }
-}
-
-// TODO: Better hash function for our use case
-fn get_hash(tile_chunk_x: i32, tile_chunk_y: i32, tile_chunk_z: i32) -> u32 {
-    let x = w(tile_chunk_x);
-    let y = w(tile_chunk_y);
-    let z = w(tile_chunk_z);
-
-
-    let res = x * w(19) + y * w(7) + z * w(3);
-    res.0 as u32
-}
-
-pub fn map_into_world_space(world: &World,
-                            world_pos: &WorldPosition,
-                            rel_pos: &V2<f32>)
-                            -> WorldPosition {
-
-    let mut pos = *world_pos;
-    pos.offset = pos.offset + *rel_pos;
-    canonicalize_coord(world, &mut pos.chunk_x, &mut pos.offset.x);
-    canonicalize_coord(world, &mut pos.chunk_y, &mut pos.offset.y);
-    pos
-}
-
-
 // TODO: Implement a way to iterate over chunks spatialy
 // with a simple iter(mincorner, maxcorner, z) or something
 pub struct World {
@@ -67,6 +18,7 @@ pub struct World {
     // Size must be a power of two at the moment
     pub chunk_hash: [Option<Chunk>; 4096],
 
+    // TODO: write generic freelist impl with macros and stuff!
     pub first_free: Option<*mut EntityBlock>,
 }
 
@@ -436,3 +388,52 @@ pub fn subtract(world: &World, a: &WorldPosition, b: &WorldPosition) -> V3<f32> 
         z: d_tile_z,
     }
 }
+
+pub fn world_pos_from_tile(world: &World, tile_x: i32, tile_y: i32, tile_z: i32) -> WorldPosition {
+    // TODO: move to 3D
+    let mut chunk_x = tile_x / TILES_PER_CHUNK;
+    let mut chunk_y = tile_y / TILES_PER_CHUNK;
+
+    if tile_x < 0 {
+        chunk_x -= 1;
+    }
+
+    if tile_y < 0 {
+        chunk_y -= 1;
+    }
+
+    WorldPosition {
+        chunk_x: chunk_x,
+        chunk_y: chunk_y,
+        chunk_z: tile_z,
+        offset: V2 {
+            x: (tile_x % TILES_PER_CHUNK) as f32 * world.tile_side_meters,
+            y: (tile_y % TILES_PER_CHUNK) as f32 * world.tile_side_meters,
+        },
+    }
+}
+
+// TODO: Better hash function for our use case
+fn get_hash(tile_chunk_x: i32, tile_chunk_y: i32, tile_chunk_z: i32) -> u32 {
+    let x = w(tile_chunk_x);
+    let y = w(tile_chunk_y);
+    let z = w(tile_chunk_z);
+
+
+    let res = x * w(19) + y * w(7) + z * w(3);
+    res.0 as u32
+}
+
+pub fn map_into_world_space(world: &World,
+                            world_pos: &WorldPosition,
+                            rel_pos: &V2<f32>)
+                            -> WorldPosition {
+
+    let mut pos = *world_pos;
+    pos.offset = pos.offset + *rel_pos;
+    canonicalize_coord(world, &mut pos.chunk_x, &mut pos.offset.x);
+    canonicalize_coord(world, &mut pos.chunk_y, &mut pos.offset.y);
+    pos
+}
+
+

@@ -166,7 +166,7 @@ impl<'a> SimRegion<'a> {
             if state.camera_follows_entity_index.is_some() &&
                (entity.storage_index == state.camera_follows_entity_index.unwrap()) {
                 state.camera_position = stored_entity.world_position.unwrap();
-            }
+            } 
         }
     }
 
@@ -197,8 +197,15 @@ impl<'a> SimRegion<'a> {
                       -> &mut SimEntity {
 
         let sim_ent;
-        if self.get_hash_from_index(store_index).is_none() {
-            if self.entities.len() >= self.max_entity_count - 1 {
+        let is_contained = 
+            if let Some(hash) = self.get_hash_from_index(store_index) {
+                hash.index == store_index
+            } else {
+                false
+            };
+            
+        if !is_contained {
+            if self.entities.len() - 1 >= self.entity_count {
                 let ent_count = self.entity_count;
                 sim_ent = self.get_entity_ref(ent_count);
 
@@ -319,6 +326,7 @@ impl<'a> SimRegion<'a> {
 
         if entity.z < 0.0 {
             entity.z = 0.0;
+            entity.dz = 0.0;
         }
 
         let mut entity_delta = acc * 0.5 * delta_t.powi(2) + entity.velocity * delta_t;

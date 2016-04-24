@@ -380,9 +380,9 @@ impl Chunk {
     }
 }
 
-#[derive(Copy, Clone, Default)]
 // TODO: add a reference to the world here so we don't have to pass it for
 // move calculations?
+#[derive(Debug, Copy, Clone, Default)]
 pub struct WorldPosition {
     pub chunk_x: i32,
     pub chunk_y: i32,

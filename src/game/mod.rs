@@ -632,20 +632,25 @@ pub fn add_collision_rule(arena: &mut MemoryArena,
     }
 
     // TODO: Collapse this part with should_collide
-    let mut found: &mut Option<PairCollisionRule> = &mut None;
+    let mut found = false; 
     let hash = a & (table.len() - 1);
     let mut rule = table[hash]; 
-    while let Some(curr_rule) = rule {
-        if curr_rule.storage_index_a == a &&
-            curr_rule.storage_index_b == b {
-                // TODO: get rid of lifetime hack!
-                found = unsafe { &mut *(&mut rule as *mut _)};
-                break;
+    while rule.is_some() {
+        {
+            let curr_rule = rule.as_mut().unwrap();
+            if curr_rule.storage_index_a == a &&
+                curr_rule.storage_index_b == b {
+                    curr_rule.storage_index_a = a;
+                    curr_rule.storage_index_b = b;
+                    curr_rule.should_collide = collide;
+                    found = true;
+                    break;
             }
+        }
         rule = *rule.unwrap().next_rule;
     }
 
-    if found.is_none() {
+    if !found {
         let old_rule = arena.push_struct::<Option<PairCollisionRule>>();
         *old_rule = table[hash];
         table[hash] = 
@@ -653,13 +658,7 @@ pub fn add_collision_rule(arena: &mut MemoryArena,
             storage_index_b: b,
             should_collide: collide,
             next_rule: old_rule});
-    } else {
-        if let Some(rule) = found.as_mut() {
-            rule.storage_index_a = a;
-            rule.storage_index_b = b;
-            rule.should_collide = collide;
-        }
-    }
+    } 
 }
 
 pub fn should_collide(table: &[Option<PairCollisionRule>], a: &mut SimEntity, b: &mut SimEntity) -> bool {

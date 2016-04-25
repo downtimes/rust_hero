@@ -19,7 +19,7 @@ pub struct World {
     pub chunk_hash: [Option<Chunk>; 4096],
 
     // TODO: write generic freelist impl with macros and stuff!
-    pub first_free: Option<*mut EntityBlock>,
+    pub first_free: Option<EntityBlock>,
 }
 
 pub struct IterChunk {
@@ -30,29 +30,27 @@ pub struct IterChunk {
     max_x: i32,
     max_y: i32,
     z: i32,
+    next_chunk: Option<&'static Chunk>,
 }
 
 impl Iterator for IterChunk {
     type Item = &'static Chunk;
 
     fn next(&mut self) -> Option<&'static Chunk> {
-        if self.curr_x == self.max_x && self.curr_y == self.max_y {
-            None
-        } else {
-            let ch = self.world.get_chunk(self.curr_x, self.curr_y, self.z, None);
+        let res = self.next_chunk;
+        if res.is_some() {
             self.curr_x += 1;
             if self.curr_x == self.max_x && self.curr_y != self.max_y {
-                self.curr_y += 1;
                 self.curr_x = self.min_x;
+                self.curr_y += 1
+            } 
+            if self.curr_x == self.max_x && self.curr_y == self.max_y {
+                self.next_chunk = None;
+            } else {
+                self.next_chunk = self.world.get_chunk(self.curr_x, self.curr_y, self.z, None).map(|refe| &*refe);
             }
-
-            // if on this position there is no chunk iterate to the next position
-            // recursively
-            match ch {
-                None => self.next(),
-                Some(chunk) => Some(chunk),
-            }
-        }
+        } 
+        res
     }
 }
 
@@ -71,6 +69,7 @@ impl World {
             max_x: max_p.chunk_x + 1,
             max_y: max_p.chunk_y + 1,
             z: z,
+            next_chunk: self.get_chunk(min_p.chunk_x, min_p.chunk_y, z, None).map(|refe| &* refe),
         }
     }
 
@@ -101,15 +100,14 @@ impl World {
         } else {
             if old_pos.is_some() {
 
-                fn maybe_remove_block(world: &mut World, first_block: &mut EntityBlock) {
-                    if first_block.e_count == 0 && first_block.next.is_some() {
-                        let next_block: &mut EntityBlock = unsafe {
-                            &mut *first_block.next.unwrap()
-                        };
-                        *first_block = *next_block;
+                fn maybe_remove_block(world: &mut World, block: &mut EntityBlock) {
+                    if block.e_count == 0 && block.next.is_some() {
+                        let next_block: &mut EntityBlock = &mut block.next.unwrap();
+                        *block = *next_block;
                         // put the block in the freelist
-                        next_block.next = world.first_free;
-                        world.first_free = Some(next_block as *mut EntityBlock);
+                        let temp = world.first_free;
+                        world.first_free = Some(*next_block);
+                        next_block.next = &temp;
                     }
                 }
 
@@ -164,17 +162,16 @@ impl World {
                                 .unwrap();
                 let block = &mut chunk.first_block;
                 if block.e_count == block.lf_entities.len() {
-                    // Make new block to store it
-                    let old_block = 
-                        if let Some(ptr) = self.first_free {
-                            self.first_free = unsafe { (*ptr).next };
-                            unsafe { &mut *ptr }
-                        } else {
-                            arena.push_struct::<EntityBlock>()
-                        };
-                    *old_block = *block;
-                    block.next = Some(old_block as *mut EntityBlock);
-                    block.e_count = 0;
+                    //We need a new block to insert our entity
+                    //If we have one in our freelist we use the one there
+                    if let Some(block) = self.first_free {
+                    //otherwise we have to allocate a new block
+                    } else {
+                        let new_block = arena.push_struct::<EntityBlock>();
+                        *new_block = Some(EntityBlock::default()); 
+                        new_block.as_mut().unwrap().next = block;
+                        block = &mut new_block;
+                    }
                 }
                 debug_assert!((block.e_count) < block.lf_entities.len());
                 block.lf_entities[block.e_count] = lf_index;
@@ -253,37 +250,34 @@ impl World {
     }
 }
 
-pub struct Iter(Option<*const EntityBlock>);
-pub struct IterMut(Option<*mut EntityBlock>);
+pub struct Iter<'a> {
+    next_block: Option<&'a EntityBlock>
+}
+pub struct IterMut<'a>{
+    next_block: Option<&'a mut EntityBlock>
+}
 
-impl Iterator for Iter {
-    type Item = &'static EntityBlock;
+impl<'a> Iterator for Iter<'a> {
+    type Item = &'a EntityBlock;
 
-    fn next(&mut self) -> Option<&'static EntityBlock> {
-        match *self {
-            Iter(None) => None,
-            Iter(Some(ptr)) => unsafe {
-                match (*ptr).next {
-                    None => *self = Iter(None),
-                    Some(next_ptr) => *self = Iter(Some(next_ptr as *const EntityBlock)),
-                }
-                Some(&*ptr)
-            },
+    fn next(&mut self) -> Option<&'a EntityBlock> {
+        let res = self.next_block;
+        if let Some(refe) = self.next_block {
+            self.next_block = refe.next.as_ref();
         }
+        res
     }
 }
 
-impl Iterator for IterMut {
-    type Item = &'static mut EntityBlock;
+impl<'a> Iterator for IterMut<'a> {
+    type Item = &'a mut EntityBlock;
 
-    fn next(&mut self) -> Option<&'static mut EntityBlock> {
-        match *self {
-            IterMut(None) => None,
-            IterMut(Some(ptr)) => unsafe {
-                *self = IterMut((*ptr).next);
-                Some(&mut *ptr)
-            },
+    fn next(&mut self) -> Option<&'a mut EntityBlock> {
+        let res = self.next_block;
+        if let Some(refe) = self.next_block {
+            self.next_block = refe.next.as_mut();
         }
+        res
     }
 }
 
@@ -292,27 +286,27 @@ pub struct EntityBlock {
     pub e_count: usize,
     pub lf_entities: [usize; 16],
 
-    pub next: Option<*mut EntityBlock>,
+    pub next: &'static Option<EntityBlock>,
 }
 
-impl Default for EntityBlock {
+impl<'a> Default for EntityBlock {
     fn default() -> EntityBlock {
         EntityBlock {
             e_count: 0,
             lf_entities: [Default::default(); 16],
 
-            next: None,
+            next: &None,
         }
     }
 }
 
 impl EntityBlock {
     pub fn iter(&self) -> Iter {
-        Iter(Some(self as *const EntityBlock))
+        Iter { next_block: Some(&self) } 
     }
 
     pub fn iter_mut(&mut self) -> IterMut {
-        IterMut(Some(self as *mut EntityBlock))
+        IterMut { next_block: Some(&mut self) }
     }
 }
 

@@ -185,7 +185,7 @@ struct SoundOutput {
 
 impl SoundOutput {
     fn get_buffer_size(&self) -> DWORD {
-        let mut dsbcaps: DSBCAPS = Default::default();
+        let mut dsbcaps: DSBCAPS = DSBCAPS::default();
         dsbcaps.dwSize = mem::size_of::<DSBCAPS>() as DWORD;
 
         unsafe {
@@ -358,7 +358,7 @@ impl Window {
             }
 
             WM_PAINT => {
-                let mut paint = Default::default();
+                let mut paint = PAINTSTRUCT::default();
 
                 let context = unsafe { BeginPaint(self.handle, &mut paint) };
                 if context.is_null() {
@@ -542,7 +542,7 @@ fn dsound_init(window: HWND,
                 dwBufferBytes: 0 as DWORD,
                 dwReserved: 0 as DWORD,
                 lpwfxFormat: ptr::null_mut(),
-                guid: Default::default(),
+                guid: GUID::default(),
             };
             let mut primary_buffer: *mut IDirectSoundBuffer = ptr::null_mut();
             // Holy shit: it's the syntax from hell!

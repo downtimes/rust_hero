@@ -1,6 +1,5 @@
 use std::mem;
 use std::ptr;
-use num::traits::Float;
 use std::default::Default;
 use std::f32::consts::PI;
 
@@ -20,7 +19,7 @@ use self::world::{WorldPosition, world_pos_from_tile};
 use self::memory::MemoryArena;
 use self::graphics::Color;
 use self::math::{V2, Rect};
-use self::simulation::{EntityFlags, COLLIDES};
+use self::simulation::{EntityFlags};
 use self::simulation::{SimEntity, SimRegion, EntityReference};
 use self::entity::{update_player, update_sword, update_familiar, update_monster};
 
@@ -32,7 +31,7 @@ pub extern "C" fn get_sound_samples(_context: &ThreadContext,
                                     game_memory: &mut GameMemory,
                                     _sound_buffer: &mut SoundBuffer) {
 
-    let _state: &mut GameState = unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
+    let _state: &mut GameState = unsafe { &mut *(game_memory.permanent.as_mut_ptr() as *mut GameState) };
 }
 
 #[no_mangle]
@@ -43,7 +42,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
 
     debug_assert!(mem::size_of::<GameState>() <= game_memory.permanent.len());
 
-    let state: &mut GameState = unsafe { mem::transmute(game_memory.permanent.as_mut_ptr()) };
+    let state: &mut GameState = unsafe { &mut *(game_memory.permanent.as_mut_ptr() as *mut GameState) };
 
     // random table index 6 start to get a room with staircase on the first
     // screen
@@ -270,12 +269,10 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 screen_x += 1;
             } else if random_choice == 1 {
                 screen_y += 1;
+            } else if abs_tile_z == screen_base_z {
+                abs_tile_z = screen_base_z + 1;
             } else {
-                if abs_tile_z == screen_base_z {
-                    abs_tile_z = screen_base_z + 1;
-                } else {
-                    abs_tile_z = screen_base_z;
-                }
+                abs_tile_z = screen_base_z;
             }
         }
 
@@ -343,10 +340,8 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                 controlled_hero.d_z = 3.0;
             }
 
-        } else {
-            if controller.start.ended_down {
-                player_to_add = Some(c_index);
-            }
+        } else if controller.start.ended_down {
+            player_to_add = Some(c_index);
         }
     }
 
@@ -493,7 +488,7 @@ pub extern "C" fn update_and_render(context: &ThreadContext,
                     sim_entity.tbob -= 2.0 * PI;
                 }
                 let bob_sign = (sim_entity.tbob * 2.0).sin();
-                piece_group.push_bitmap(&shadow,
+                piece_group.push_bitmap(shadow,
                                         V2::default(),
                                         0.0,
                                         hero_bitmaps.align,
@@ -643,7 +638,7 @@ fn add_wall(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile_z:
         x: tile_side_meters,
         y: tile_side_meters,
     };
-    lf_entity.sim.flags.insert(COLLIDES);
+    lf_entity.sim.flags.insert(EntityFlags::COLLIDES);
 
     e_index
 }
@@ -654,7 +649,7 @@ fn add_monster(state: &mut GameState, abs_tile_x: i32, abs_tile_y: i32, abs_tile
     let (e_index, lf_entity) = add_lf_entity(state, EntityType::Monster, Some(pos));
 
     lf_entity.sim.dim = V2 { x: 1.0, y: 0.5 };
-    lf_entity.sim.flags.insert(COLLIDES);
+    lf_entity.sim.flags.insert(EntityFlags::COLLIDES);
     init_hit_points(3, lf_entity);
 
     e_index
@@ -694,7 +689,7 @@ fn add_player(state: &mut GameState) -> usize {
         let (e_index, lf_entity) = add_lf_entity(state, EntityType::Hero, Some(pos));
 
         lf_entity.sim.dim = V2 { x: 1.0, y: 0.5 };
-        lf_entity.sim.flags.insert(COLLIDES);
+        lf_entity.sim.flags.insert(EntityFlags::COLLIDES);
         init_hit_points(3, lf_entity);
 
         e_index

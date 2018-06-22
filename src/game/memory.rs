@@ -1,7 +1,6 @@
 use std::mem;
 use std::slice;
 
-
 pub struct MemoryArena {
     size: usize,
     used: usize,
@@ -25,7 +24,7 @@ impl MemoryArena {
         let result_ptr = unsafe { self.base_ptr.offset(self.used as isize) };
         self.used += size;
 
-        unsafe { mem::transmute(result_ptr) }
+        unsafe { &mut *(result_ptr as *mut T) }
     }
 
     pub fn push_slice<T>(&mut self, count: usize) -> &'static mut [T] {

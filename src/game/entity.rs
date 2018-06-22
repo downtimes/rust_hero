@@ -66,16 +66,13 @@ pub fn update_familiar(sim_region: &mut SimRegion, entity: &mut SimEntity, dt: f
     for test_idx in 0..sim_region.entity_count {
         let test_entity = sim_region.entities[test_idx];
 
-        match test_entity.etype {
-            EntityType::Hero => {
-                let test_d_sq = (test_entity.position.unwrap() - entity.position.unwrap())
-                                    .length_sq();
-                if closest_hero_d_sq > test_d_sq {
-                    closest_hero_d_sq = test_d_sq;
-                    closest_hero = Some(test_entity);
-                }
+        if let EntityType::Hero = test_entity.etype {
+            let test_d_sq = (test_entity.position.unwrap() - entity.position.unwrap())
+                .length_sq();
+            if closest_hero_d_sq > test_d_sq {
+                closest_hero_d_sq = test_d_sq;
+                closest_hero = Some(test_entity);
             }
-            _ => {}
         }
     }
 

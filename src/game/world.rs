@@ -1,5 +1,4 @@
 use std::num::Wrapping as w;
-use std::mem;
 use std::i32;
 use std::default::Default;
 
@@ -113,7 +112,7 @@ impl World {
                           z: i32)
                           -> IterChunk {
         IterChunk {
-            world: unsafe { mem::transmute(self as *mut World) },
+            world: unsafe { &mut *(self as *mut World) },
             min_x: min_p.chunk_x,
             curr_x: min_p.chunk_x,
             curr_y: min_p.chunk_y,
@@ -193,9 +192,7 @@ impl World {
 
                 fn maybe_remove_block(world: &mut World, first_block: &mut EntityBlock) {
                     if first_block.e_count == 0 && first_block.next.is_some() {
-                        let next_block: &mut EntityBlock = unsafe {
-                            mem::transmute(first_block.next.unwrap())
-                        };
+                        let next_block: &mut EntityBlock = unsafe {  &mut *(first_block.next.unwrap()) };
                         *first_block = *next_block;
                         // put the block in the freelist
                         next_block.next = world.first_free;
@@ -218,7 +215,7 @@ impl World {
                     let old_block = if self.first_free.is_some() {
                         let ptr = self.first_free.unwrap();
                         self.first_free = unsafe { (*ptr).next };
-                        unsafe { mem::transmute(ptr) }
+                        unsafe{ &mut *ptr }
                     } else {
                         arena.push_struct::<EntityBlock>()
                     };
@@ -285,7 +282,7 @@ impl World {
                     }
                     break;
                 } else {
-                    chunk_val = unsafe { mem::transmute(chunk_val.next.unwrap()) };
+                    chunk_val = unsafe { &mut *(chunk_val.next.unwrap()) };
                 }
             }
         } else if arena.is_some() {
@@ -317,7 +314,7 @@ impl Iterator for Iter {
                     None => *self = Iter(None),
                     Some(next_ptr) => *self = Iter(Some(next_ptr as *const EntityBlock)),
                 }
-                Some(mem::transmute(ptr))
+                Some(&*ptr)
             },
         }
     }
@@ -331,7 +328,7 @@ impl Iterator for IterMut {
             IterMut(None) => None,
             IterMut(Some(ptr)) => unsafe {
                 *self = IterMut((*ptr).next);
-                Some(mem::transmute(ptr))
+                Some(&mut *ptr)
             },
         }
     }
@@ -378,7 +375,7 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn decouple(&mut self) -> &'static mut Chunk {
-        unsafe { mem::transmute(self as *mut Chunk) }
+        unsafe { &mut *(self as *mut Chunk) }
     }
 }
 

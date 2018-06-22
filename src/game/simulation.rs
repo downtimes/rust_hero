@@ -7,9 +7,9 @@ use super::memory::MemoryArena;
 use std::ptr;
 
 bitflags! {
-    flags EntityFlags: u32 {
-        const COLLIDES      = 0b0001,
-        const SIMMING       = 0b1000,
+    pub struct EntityFlags: u32 {
+        const COLLIDES      = 0b0001;
+        const SIMMING       = 0b1000;
     }
 }
 
@@ -98,7 +98,7 @@ fn get_entity_by_index<'a>(sim_region: &'a mut SimRegion,
     }
 }
 
-fn load_entity_reference<'a>(sim_region: &mut SimRegion,
+fn load_entity_reference(sim_region: &mut SimRegion,
                              state: &mut GameState,
                              reference: EntityReference)
                              -> EntityReference {
@@ -134,9 +134,9 @@ impl<'a> SimRegion<'a> {
             let store_index = entity.storage_index;
             let stored_entity = &mut state.lf_entities[store_index];
 
-            debug_assert!(stored_entity.sim.flags.contains(SIMMING));
+            debug_assert!(stored_entity.sim.flags.contains(EntityFlags::SIMMING));
             stored_entity.sim = *entity;
-            debug_assert!(!stored_entity.sim.flags.contains(SIMMING));
+            debug_assert!(!stored_entity.sim.flags.contains(EntityFlags::SIMMING));
 
             if let Some(sword) = stored_entity.sim.sword.as_mut() {
                 *sword = store_entity_reference(*sword);
@@ -200,8 +200,8 @@ impl<'a> SimRegion<'a> {
                 }
                 sim_ent.storage_index = store_index;
 
-                debug_assert!(!source.sim.flags.contains(SIMMING));
-                source.sim.flags.insert(SIMMING);
+                debug_assert!(!source.sim.flags.contains(EntityFlags::SIMMING));
+                source.sim.flags.insert(EntityFlags::SIMMING);
             } else {
                 panic!("Not allowed to instert more entities than that!");
             }
@@ -287,10 +287,8 @@ impl<'a> SimRegion<'a> {
                        delta_t: f32) {
 
         // Diagonal correction.
-        if move_spec.unit_max_accel_vector {
-            if acc.length_sq() > 1.0 {
-                acc = acc.normalize();
-            }
+        if move_spec.unit_max_accel_vector && (acc.length_sq() > 1.0) {
+            acc = acc.normalize();
         }
 
         acc = acc * move_spec.speed;
@@ -301,7 +299,7 @@ impl<'a> SimRegion<'a> {
         // Gravity and "jumping"
         let gravity = -9.81;
         entity.z += gravity * 0.5 * delta_t.powi(2) + entity.dz * delta_t;
-        entity.dz = gravity * delta_t + entity.dz;
+        entity.dz += gravity * delta_t;
 
         if entity.z < 0.0 {
             entity.z = 0.0;
@@ -323,7 +321,7 @@ impl<'a> SimRegion<'a> {
 
             let target_pos = entity.position.unwrap() + entity_delta;
 
-            if entity.flags.contains(COLLIDES) {
+            if entity.flags.contains(EntityFlags::COLLIDES) {
                 // TODO: do a spatial partition here eventually
                 for e_index in 0..self.entity_count {
                     let test_entity = &self.entities[e_index];
@@ -334,7 +332,7 @@ impl<'a> SimRegion<'a> {
                     }
 
 
-                    if test_entity.flags.contains(COLLIDES) {
+                    if test_entity.flags.contains(EntityFlags::COLLIDES) {
                         // Minkowski Sum
                         let diameter = V2 {
                             x: test_entity.dim.x + entity.dim.x,
@@ -445,5 +443,5 @@ fn test_wall(wall_value: f32,
             }
         }
     }
-    return false;
+    false
 }

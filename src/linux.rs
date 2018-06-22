@@ -29,7 +29,6 @@ enum TimeComp {
 #[allow(dead_code)]
 #[cfg(feature = "internal")]
 mod debug {
-
     use libc::{c_void, open, close, mmap, munmap, O_RDONLY, O_CREAT};
     use libc::{MAP_ANON, MAP_PRIVATE, MAP_FAILED, stat, write, read, fstat};
     use libc::{PROT_READ, PROT_WRITE, S_IRUSR, S_IWUSR};
@@ -251,6 +250,7 @@ fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
             result.handle = linux::dlopen(temp_so_name.as_ptr(), linux::RTLD_LAZY);
 
             if !result.handle.is_null() {
+                println!("Found corresponding file!");
                 let get_sound_samples_name = CString::new("get_sound_samples").unwrap();
                 let update_and_render_name = CString::new("update_and_render").unwrap();
 
@@ -259,9 +259,12 @@ fn load_game_functions(game_so_name: &CString, temp_so_name: &CString) -> Game {
                 let update_and_render = linux::dlsym(result.handle,
                                                      update_and_render_name.as_ptr());
                 if !get_sound_samples.is_null() && !update_and_render.is_null() {
+                    println!("Found both functions!");
                     result.get_sound_samples = mem::transmute(get_sound_samples);
                     result.update_and_render = mem::transmute(update_and_render);
                 }
+            } else {
+                println!("{:?}", linux::dl_error());
             }
         }
     }
@@ -286,17 +289,15 @@ fn unload_game_functions(game: &mut Game) {
 }
 
 extern "C" fn audio_callback(user_data: *mut c_void, audio_data: *mut u8, length: c_int) {
-    let ring_buffer: &mut SdlAudioRingBuffer = unsafe {
-        mem::transmute(user_data as *mut SdlAudioRingBuffer)
-    };
+    let ring_buffer: &mut SdlAudioRingBuffer = unsafe{ &mut *(user_data as *mut SdlAudioRingBuffer) };
 
     let mut region_size = length;
-    let mut region2_size = 0;
-
-    if ring_buffer.play_cursor + length > ring_buffer.size {
+    let region2_size = if ring_buffer.play_cursor + length > ring_buffer.size {
         region_size = ring_buffer.size - ring_buffer.play_cursor;
-        region2_size = length - region_size;
-    }
+        length - region_size
+    } else {
+        0
+    };
 
     copy_contents(audio_data,
                   unsafe {
@@ -490,7 +491,7 @@ fn update_window(renderer: *mut SDL_Renderer, buffer: &mut BackBuffer) {
 }
 
 fn process_key_press(button: &mut Button, is_down: bool) {
-    debug_assert!(button.ended_down != is_down);
+    debug_assert_ne!(button.ended_down, is_down);
     button.ended_down = is_down;
     button.half_transitions += 1;
 }
@@ -524,19 +525,10 @@ fn handle_event(event: &SDL_Event,
             let keyboard_event = event.keyboard_event();
             let code = keyboard_event.keysym.sym;
             let is_down = keyboard_event.state == SDL_PRESSED;
-            let was_down = if (keyboard_event.state != SDL_PRESSED) ||
-                              (keyboard_event.repeat != 0) {
-                true
-            } else {
-                false
-            };
-
+            let was_down = (keyboard_event.state != SDL_PRESSED) ||
+                              (keyboard_event.repeat != 0);
             if was_down != is_down {
-                let alt_key_down = if (keyboard_event.keysym._mod & KMOD_ALT) != 0 {
-                    true
-                } else {
-                    false
-                };
+                let alt_key_down = (keyboard_event.keysym._mod & KMOD_ALT) != 0;
                 match code {
                     SDLK_F4 => {
                         if alt_key_down {
@@ -625,9 +617,8 @@ fn get_window_refresh_rate(window: *mut SDL_Window) -> c_int {
     let mut mode: SDL_DisplayMode = Default::default();
     let index = unsafe { SDL_GetWindowDisplayIndex(window) };
 
-    if unsafe { SDL_GetDesktopDisplayMode(index, &mut mode) != 0 } {
-        60
-    } else if mode.refresh_rate == 0 {
+    if unsafe { SDL_GetDesktopDisplayMode(index, &mut mode) != 0 } ||
+        mode.refresh_rate == 0 {
         60
     } else {
         mode.refresh_rate
@@ -784,42 +775,41 @@ pub fn linuxmain() {
                 running = handle_event(&event, &mut buffer, &mut new_input.controllers[0]);
             }
 
-            for controller_idx in 0..controller_num as usize {
-                if unsafe { SDL_GameControllerGetAttached(controllers[controller_idx]) } ==
+            for controller in controllers.iter().take(controller_num as usize) {
+                if unsafe { SDL_GameControllerGetAttached(*controller) } ==
                    SDL_bool::SDL_TRUE {
 
-                    let controller = controllers[controller_idx];
                     let _up = unsafe {
                         SDL_GameControllerGetButton(
-                            controller,
+                            *controller,
                             SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_DPAD_UP) == 1
                     };
 
                     let _down = unsafe {
                         SDL_GameControllerGetButton(
-                            controller,
+                            *controller,
                             SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_DPAD_DOWN) == 1
                     };
                     let _left = unsafe {
                         SDL_GameControllerGetButton(
-                            controller,
+                            *controller,
                             SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_DPAD_LEFT) == 1
                     };
                     let _right = unsafe {
                         SDL_GameControllerGetButton(
-                            controller,
+                            *controller,
                             SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_DPAD_RIGHT) == 1
                     };
 
 
                     let _stick_x = unsafe {
                         SDL_GameControllerGetAxis(
-                            controller,
+                            *controller,
                             SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_LEFTX) == 1
                     };
                     let _stick_y = unsafe {
                         SDL_GameControllerGetAxis(
-                            controller,
+                            *controller,
                             SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_LEFTY) == 1
                     };
                 } else {

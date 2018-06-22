@@ -7,9 +7,9 @@ use super::memory::MemoryArena;
 use std::ptr;
 
 bitflags! {
-    pub flags EntityFlags: u32 {
-        const COLLIDES      = 0b0001,
-        const SIMMING       = 0b1000,
+    pub struct EntityFlags: u32 {
+        const COLLIDES      = 0b0001;
+        const SIMMING       = 0b1000;
     }
 }
 
@@ -153,9 +153,9 @@ impl<'a> SimRegion<'a> {
             let store_index = entity.storage_index;
             let stored_entity = &mut state.lf_entities[store_index];
 
-            debug_assert!(stored_entity.sim.flags.contains(SIMMING));
+            debug_assert!(stored_entity.sim.flags.contains(EntityFlags::SIMMING));
             stored_entity.sim = *entity;
-            debug_assert!(!stored_entity.sim.flags.contains(SIMMING));
+            debug_assert!(!stored_entity.sim.flags.contains(EntityFlags::SIMMING));
 
             if let Some(sword) = stored_entity.sim.sword.as_mut() {
                 *sword = store_entity_reference(*sword);
@@ -229,8 +229,8 @@ impl<'a> SimRegion<'a> {
                 sim_ent.storage_index = store_index;
                 sim_ent.can_update = false;
 
-                debug_assert!(!source.sim.flags.contains(SIMMING));
-                source.sim.flags.insert(SIMMING);
+                debug_assert!(!source.sim.flags.contains(EntityFlags::SIMMING));
+                source.sim.flags.insert(EntityFlags::SIMMING);
             } else {
                 panic!("Not allowed to instert more entities than that!");
             }
@@ -332,7 +332,7 @@ impl<'a> SimRegion<'a> {
         // Gravity and "jumping"
         let gravity = -9.81;
         entity.z += gravity * 0.5 * delta_t.powi(2) + entity.dz * delta_t;
-        entity.dz = gravity * delta_t + entity.dz;
+        entity.dz += gravity * delta_t;
 
         if entity.z < 0.0 {
             entity.z = 0.0;
@@ -368,8 +368,11 @@ impl<'a> SimRegion<'a> {
                 t_min = distance_remaining / entity_delta_length;
             }
 
-            let mut wall_normal = Default::default();
-            let mut hit_entity: Option<*mut SimEntity> = None;
+            if entity.flags.contains(EntityFlags::COLLIDES) {
+                // TODO: do a spatial partition here eventually
+                for e_index in 0..self.entity_count {
+                    let test_entity = &self.entities[e_index];
+                    let test_entity_storage_index = test_entity.storage_index;
 
             let target_pos = entity.position.unwrap_or_default() + entity_delta;
 

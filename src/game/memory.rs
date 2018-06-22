@@ -1,7 +1,6 @@
 use std::mem;
 use std::slice;
 
-
 pub struct MemoryArena {
     size: usize,
     used: usize,

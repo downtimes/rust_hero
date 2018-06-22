@@ -184,9 +184,9 @@ pub fn debug_load_bitmap(read_func: PlatformReadEntireFileT,
     // Note: Bitmap byteorder is determined by the header. bottom up
     let file = read_func(context, file_name);
     if let Ok(result) = file {
-        let header: &BitmapHeader = unsafe { &*(result.contents as *const _) };
+        let header: &BitmapHeader = unsafe { &*(result.contents as *const BitmapHeader) };
 
-        debug_assert!(header.compression == 3);
+        debug_assert_eq!(header.compression, 3);
 
         let pixels = unsafe {
             slice::from_raw_parts_mut(

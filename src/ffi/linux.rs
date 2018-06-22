@@ -4,7 +4,6 @@
 pub use libc::{c_char, c_int, c_void, c_long, size_t, ssize_t, off_t};
 pub use std::ffi::CString;
 
-use std::ptr;
 use std::ffi::CStr;
 
 
@@ -22,7 +21,7 @@ pub struct timespec {
 pub fn dl_error() -> Option<CString> {
     unsafe {
         let val = dlerror();
-        if val == ptr::null() {
+        if val.is_null() {
             None
         } else {
             Some(CString::new(CStr::from_ptr(val).to_bytes()).unwrap())

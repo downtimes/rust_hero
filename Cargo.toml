@@ -16,17 +16,13 @@ libc = "*"
 internal = []
 
 [profile.dev]
-opt-level = 0
+opt-level = 1
 debug = true
 rpath = true
-lto = false
 debug-assertions = true
-codegen-units = 1
 
 [profile.release]
 opt-level = 2
 debug = false
 rpath = true
-lto = true
 debug-assertions = false
-codegen-units = 0

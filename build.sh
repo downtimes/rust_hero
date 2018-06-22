@@ -1,14 +1,19 @@
 #!/bin/sh
 
-if [[ "$1" == "clean"]]; then
-    cargo clean
-else
-    cargo build --features "internal"
-    cp -f target/debug/deps/libgame-* target/debug/deps/libgame.so
+if [[ "$1" == "release" ]]; then
+	cargo build --release --features "internal"
+else 
+	cargo build --features "internal"
 fi
 
-if [[ "$1" == "run" ]]; then
-	pushd data
-	RUST_BACKTRACE=1 ../target/debug/rust_hero
-	popd
+if [[ "$2" == "run" ]]; then
+	if [[ "$1" == "release" ]]; then
+		pushd data
+		RUST_BACKTRACE=1 ../target/release/rust_hero
+		popd
+	else
+		pushd data
+		RUST_BACKTRACE=1 ../target/debug/rust_hero
+		popd
+	fi
 fi
